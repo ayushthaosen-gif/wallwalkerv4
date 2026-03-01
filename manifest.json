@@ -1,0 +1,17 @@
+{
+  "name": "PathRater Walkability",
+  "short_name": "PathRater",
+  "description": "Crowdsourced footpath and walkability tracker.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f4f7f6",
+  "theme_color": "#007bff",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3204/3204933.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
