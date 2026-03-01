@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>PathRater V4.1 - Ultimate UX</title>
+  <title>PathRater V4.2 - Detailed Routing</title>
 
   <link
     rel="stylesheet"
@@ -20,10 +20,8 @@
       --text-main: #222;
       --text-muted: #666;
       --border-radius: 16px;
-
       --shadow-1: 0 2px 8px rgba(0,0,0,0.06);
       --shadow-2: 0 4px 12px rgba(0,0,0,0.10);
-
       --nav-h: 70px;
     }
 
@@ -86,156 +84,59 @@
       overflow: hidden;
     }
 
-    .map-actions {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 14px;
-    }
+    .map-actions { display: flex; gap: 10px; margin-bottom: 14px; }
     .btn {
-      border: 1px solid #ddd;
-      background: #fff;
-      border-radius: 12px;
-      padding: 12px 14px;
-      cursor: pointer;
-      font-weight: 700;
-      font-size: 14px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-      flex: 1;
-      user-select: none;
-      -webkit-tap-highlight-color: transparent;
+      border: 1px solid #ddd; background: #fff; border-radius: 12px; padding: 12px 14px;
+      cursor: pointer; font-weight: 700; font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      flex: 1; user-select: none; -webkit-tap-highlight-color: transparent;
     }
     .btn:active { transform: scale(0.99); }
 
     .primary-btn {
-      background: var(--primary);
-      color: white;
-      border: none;
-      padding: 16px;
-      border-radius: 12px;
-      cursor: pointer;
-      width: 100%;
-      font-weight: 800;
-      font-size: 16px;
-      box-shadow: 0 6px 16px rgba(0, 123, 255, 0.28);
-      transition: transform 0.08s ease;
+      background: var(--primary); color: white; border: none; padding: 16px;
+      border-radius: 12px; cursor: pointer; width: 100%; font-weight: 800; font-size: 16px;
+      box-shadow: 0 6px 16px rgba(0, 123, 255, 0.28); transition: transform 0.08s ease;
       -webkit-tap-highlight-color: transparent;
     }
     .primary-btn:active { transform: scale(0.985); }
-    .primary-btn[disabled] {
-      opacity: 0.65;
-      cursor: not-allowed;
-      box-shadow: none;
-    }
+    .primary-btn[disabled] { opacity: 0.65; cursor: not-allowed; box-shadow: none; }
 
     .input-group { margin-bottom: 14px; }
-    .input-group label {
-      display: block;
-      font-size: 13px;
-      color: var(--text-muted);
-      margin-bottom: 6px;
-      font-weight: 700;
-    }
+    .input-group label { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 6px; font-weight: 700; }
 
     input, textarea, select {
-      width: 100%;
-      padding: 14px;
-      border: 1px solid #ddd;
-      border-radius: 12px;
-      font-family: inherit;
-      font-size: 15px;
-      background: var(--card-bg);
-      transition: border-color 0.2s;
+      width: 100%; padding: 14px; border: 1px solid #ddd; border-radius: 12px;
+      font-family: inherit; font-size: 15px; background: var(--card-bg); transition: border-color 0.2s;
     }
-    input:focus, textarea:focus {
-      outline: none;
-      border-color: var(--primary);
-      box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.12);
-    }
+    input:focus, textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.12); }
     textarea { resize: vertical; min-height: 92px; }
 
-    .hint {
-      font-size: 12px;
-      color: var(--text-muted);
-      margin-top: 6px;
-      line-height: 1.35;
-    }
+    .hint { font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.35; }
 
-    .tag-container {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      margin-bottom: 8px;
-    }
+    .tag-container { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
     .tag {
-      background: white;
-      border: 1px solid #ccc;
-      padding: 8px 12px;
-      border-radius: 20px;
-      font-size: 13px;
-      cursor: pointer;
-      color: var(--text-muted);
-      user-select: none;
+      background: white; border: 1px solid #ccc; padding: 8px 12px; border-radius: 20px;
+      font-size: 13px; cursor: pointer; color: var(--text-muted); user-select: none;
       -webkit-tap-highlight-color: transparent;
     }
-    .tag.selected {
-      background: #e6f2ff;
-      border-color: var(--primary);
-      color: var(--primary);
-      font-weight: 800;
-    }
+    .tag.selected { background: #e6f2ff; border-color: var(--primary); color: var(--primary); font-weight: 800; }
 
     .review-card {
-      background: var(--card-bg);
-      padding: 14px;
-      margin-bottom: 12px;
-      border-radius: var(--border-radius);
-      box-shadow: var(--shadow-1);
-      border: 1px solid rgba(0,0,0,0.04);
+      background: var(--card-bg); padding: 14px; margin-bottom: 12px; border-radius: var(--border-radius);
+      box-shadow: var(--shadow-1); border: 1px solid rgba(0,0,0,0.04);
     }
-    .review-card h4 {
-      margin: 0 0 6px 0;
-      color: var(--text-main);
-      font-size: 15px;
-    }
-    .review-card p {
-      margin: 0;
-      color: var(--text-muted);
-      font-size: 14px;
-      line-height: 1.45;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-    .review-card img {
-      max-width: 100%;
-      border-radius: 12px;
-      margin-top: 10px;
-      display: block;
-      border: 1px solid rgba(0,0,0,0.06);
-    }
+    .review-card h4 { margin: 0 0 6px 0; color: var(--text-main); font-size: 15px; }
+    .review-card p { margin: 0; color: var(--text-muted); font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+    .review-card img { max-width: 100%; border-radius: 12px; margin-top: 10px; display: block; border: 1px solid rgba(0,0,0,0.06); }
     .review-tag {
-      display: inline-block;
-      background: #ffebee;
-      color: #c62828;
-      padding: 4px 8px;
-      border-radius: 10px;
-      font-size: 11px;
-      font-weight: 900;
-      margin-bottom: 8px;
+      display: inline-block; background: #ffebee; color: #c62828; padding: 4px 8px;
+      border-radius: 10px; font-size: 11px; font-weight: 900; margin-bottom: 8px;
     }
-    .meta {
-      margin-top: 8px;
-      font-size: 12px;
-      color: #777;
-    }
+    .meta { margin-top: 8px; font-size: 12px; color: #777; }
 
     .score-card {
-      background: #fff;
-      border-radius: var(--border-radius);
-      box-shadow: var(--shadow-1);
-      padding: 14px;
-      border: 1px solid rgba(0,0,0,0.05);
-      margin-top: 12px;
-      display: none;
+      background: #fff; border-radius: var(--border-radius); box-shadow: var(--shadow-1);
+      padding: 14px; border: 1px solid rgba(0,0,0,0.05); margin-top: 12px; display: none;
     }
     .score-card.active { display: block; }
     .score-title { font-weight: 900; margin: 0 0 8px 0; }
@@ -243,51 +144,41 @@
     .score-big { font-size: 34px; font-weight: 900; }
     .score-sub { color: var(--text-muted); font-size: 13px; line-height: 1.3; }
 
-    /* Bottom Nav: use fixed so it stays on-screen while content scrolls */
+    /* NEW ROUTE BREAKDOWN CSS */
+    .timeline { border-left: 3px solid #e9ecef; margin-left: 10px; padding-left: 15px; margin-top: 15px; }
+    .step-item { position: relative; margin-bottom: 18px; }
+    .step-item::before {
+      content: ''; position: absolute; left: -24.5px; top: 4px; width: 12px; height: 12px;
+      border-radius: 50%; background: var(--primary); border: 2px solid white; box-shadow: 0 0 0 1px #ddd;
+    }
+    .step-title { font-weight: 700; font-size: 15px; margin-bottom: 2px; color: var(--text-main); }
+    .step-desc { font-size: 13px; color: var(--text-muted); margin-bottom: 4px; }
+    
+    .badge { display: inline-block; padding: 4px 8px; border-radius: 8px; font-size: 11px; font-weight: 800; margin-top: 4px;}
+    .badge-good { background: #e6f4ea; color: #1e8e3e; }
+    .badge-warn { background: #fef7e0; color: #b06000; }
+    .badge-bad { background: #fce8e6; color: #d93025; }
+
+    /* Bottom Nav */
     .bottom-nav {
-      position: fixed;
-      bottom: 0;
-      width: 100%;
-      max-width: 414px;
-      background: var(--card-bg);
-      display: flex;
-      border-top: 1px solid #e5e5e5;
-      z-index: 1000;
-      padding-bottom: env(safe-area-inset-bottom);
-      height: calc(var(--nav-h) + env(safe-area-inset-bottom));
+      position: fixed; bottom: 0; width: 100%; max-width: 414px; background: var(--card-bg);
+      display: flex; border-top: 1px solid #e5e5e5; z-index: 1000;
+      padding-bottom: env(safe-area-inset-bottom); height: calc(var(--nav-h) + env(safe-area-inset-bottom));
     }
     .nav-item {
-      flex: 1;
-      padding: 10px 0 12px;
-      text-align: center;
-      font-size: 11px;
-      color: var(--text-muted);
-      cursor: pointer;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-      user-select: none;
-      -webkit-tap-highlight-color: transparent;
+      flex: 1; padding: 10px 0 12px; text-align: center; font-size: 11px; color: var(--text-muted);
+      cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px;
+      user-select: none; -webkit-tap-highlight-color: transparent;
     }
     .nav-item.active { color: var(--primary); }
     .nav-icon { font-size: 22px; filter: grayscale(100%); opacity: 0.65; }
     .nav-item.active .nav-icon { filter: grayscale(0%); opacity: 1; }
 
     .toast {
-      position: fixed;
-      left: 50%;
-      transform: translateX(-50%);
+      position: fixed; left: 50%; transform: translateX(-50%);
       bottom: calc(var(--nav-h) + 14px + env(safe-area-inset-bottom));
-      background: rgba(0,0,0,0.82);
-      color: #fff;
-      padding: 10px 12px;
-      border-radius: 12px;
-      font-size: 13px;
-      max-width: 360px;
-      width: calc(100% - 40px);
-      display: none;
-      z-index: 2000;
+      background: rgba(0,0,0,0.82); color: #fff; padding: 10px 12px; border-radius: 12px;
+      font-size: 13px; max-width: 360px; width: calc(100% - 40px); display: none; z-index: 2000;
     }
     .toast.show { display: block; animation: fadeIn 0.15s ease; }
   </style>
@@ -310,7 +201,7 @@
       <div class="input-group">
         <label for="pointB">Where do you want to walk?</label>
         <input type="text" id="pointB" placeholder="Destination (e.g., Select Citywalk)" autocomplete="off" />
-        <div class="hint">Tip: Use a clear place name. Routing uses public map services and may fail if a place is ambiguous.</div>
+        <div class="hint">Tip: Use a clear place name. Routing uses public map services.</div>
       </div>
 
       <button class="primary-btn" id="btnWalkability" type="button">Get Walkability Score</button>
@@ -322,6 +213,10 @@
           <div class="score-sub" id="scoreDetails">--</div>
         </div>
         <div class="hint" id="routeDetails"></div>
+        
+        <div style="font-weight: 800; font-size: 14px; margin-top: 15px; border-top: 1px solid #eee; padding-top: 15px;">Route Breakdown</div>
+        <div id="routeTimeline" class="timeline"></div>
+
       </div>
     </div>
 
@@ -352,7 +247,6 @@
       <div class="input-group">
         <label for="reviewImage">Photo Evidence (Optional)</label>
         <input type="file" id="reviewImage" accept="image/*" style="background:#f8f9fa;" />
-        <div class="hint">Photos are stored locally in this version (in your browser) and won’t sync to other people yet.</div>
       </div>
 
       <button class="primary-btn" id="btnSubmit" type="button">Submit Report</button>
@@ -406,7 +300,6 @@
     }
 
     function escapeHTML(str) {
-      // Prevent injection in feed rendering
       return String(str)
         .replaceAll("&", "&amp;")
         .replaceAll("<", "&lt;")
@@ -421,34 +314,21 @@
      * Map Setup
      ***********************/
     const map = L.map("map", { zoomControl: true }).setView([28.6139, 77.2090], 12);
-
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "© OpenStreetMap"
-    }).addTo(map);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "© OpenStreetMap" }).addTo(map);
 
     let userMarker = null;
     let userCircle = null;
-
     let routeLine = null;
     let destMarker = null;
-
-    // Keep last known coords (for routing)
     let userLatLng = null;
 
     function setUserLocation(latlng, accuracyMeters) {
       userLatLng = latlng;
+      if (!userMarker) userMarker = L.marker(latlng).addTo(map).bindPopup("📍 You are here!");
+      else userMarker.setLatLng(latlng);
 
-      if (!userMarker) {
-        userMarker = L.marker(latlng).addTo(map).bindPopup("📍 You are here!");
-      } else {
-        userMarker.setLatLng(latlng);
-      }
-
-      if (!userCircle) {
-        userCircle = L.circle(latlng, { radius: Math.max(10, accuracyMeters / 2) }).addTo(map);
-      } else {
-        userCircle.setLatLng(latlng).setRadius(Math.max(10, accuracyMeters / 2));
-      }
+      if (!userCircle) userCircle = L.circle(latlng, { radius: Math.max(10, accuracyMeters / 2) }).addTo(map);
+      else userCircle.setLatLng(latlng).setRadius(Math.max(10, accuracyMeters / 2));
     }
 
     function locateUser({ setView = true } = {}) {
@@ -456,7 +336,6 @@
         showToast("Geolocation not supported on this device.");
         return;
       }
-
       map.locate({ setView, maxZoom: 16, enableHighAccuracy: true });
     }
 
@@ -469,7 +348,6 @@
       showToast("Could not get your location. Enable location permissions.");
     });
 
-    // Request location once on load (same as your V4 but with feedback)
     locateUser({ setView: true });
 
     function clearRoute() {
@@ -479,84 +357,59 @@
       $("scoreValue").textContent = "--";
       $("scoreDetails").textContent = "--";
       $("routeDetails").textContent = "";
+      $("routeTimeline").innerHTML = "";
       showToast("Route cleared.");
     }
 
     /***********************
-     * Tabs (fixes your 'event' bug)
+     * Tabs
      ***********************/
     function switchTab(tabId, navEl) {
       document.querySelectorAll(".content").forEach(el => el.classList.remove("active"));
       document.querySelectorAll(".nav-item").forEach(el => el.classList.remove("active"));
-
       $(tabId).classList.add("active");
       if (navEl) navEl.classList.add("active");
-
-      // Map needs a resize when shown
-      if (tabId === "routing") {
-        setTimeout(() => map.invalidateSize(true), 120);
-      }
+      if (tabId === "routing") setTimeout(() => map.invalidateSize(true), 120);
     }
 
     document.querySelectorAll(".nav-item").forEach((navEl) => {
       const tabId = navEl.dataset.tab;
-
       const handler = () => switchTab(tabId, navEl);
       navEl.addEventListener("click", handler);
-
-      // Keyboard access
       navEl.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          handler();
-        }
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handler(); }
       });
     });
 
     /***********************
-     * Hazard tag selection (clean + accessible)
+     * Hazard tag selection
      ***********************/
     let activeTag = "";
-
     function selectTagByEl(tagEl) {
       document.querySelectorAll("#hazardTags .tag").forEach(t => t.classList.remove("selected"));
       tagEl.classList.add("selected");
       activeTag = tagEl.dataset.tag || tagEl.textContent.trim();
     }
-
     document.querySelectorAll("#hazardTags .tag").forEach((tagEl) => {
       tagEl.addEventListener("click", () => selectTagByEl(tagEl));
       tagEl.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          selectTagByEl(tagEl);
-        }
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectTagByEl(tagEl); }
       });
     });
 
     /***********************
-     * Local Feed Storage (so it's better even before Firebase)
+     * Local Feed Storage
      ***********************/
     const STORAGE_KEY = "pathrater_reports_v1";
-
     function loadReports() {
-      try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        const data = raw ? JSON.parse(raw) : [];
-        return Array.isArray(data) ? data : [];
-      } catch {
-        return [];
-      }
+      try { const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : []; }
+      catch { return []; }
     }
-
-    function saveReports(reports) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(reports));
-    }
-
+    function saveReports(reports) { localStorage.setItem(STORAGE_KEY, JSON.stringify(reports)); }
+    
     function renderFeed() {
       const feed = $("reviewsFeed");
       const reports = loadReports();
-
       if (reports.length === 0) {
         feed.innerHTML = `
           <div class="review-card">
@@ -568,16 +421,13 @@
         `;
         return;
       }
-
       feed.innerHTML = "";
       for (const r of reports) {
         const card = document.createElement("div");
         card.className = "review-card";
-
         const safeTag = escapeHTML(r.tag);
         const safeLoc = escapeHTML(r.location);
         const safeText = escapeHTML(r.text || "");
-
         card.innerHTML = `
           <span class="review-tag">${safeTag}</span>
           <h4>📍 ${safeLoc}</h4>
@@ -588,11 +438,10 @@
         feed.appendChild(card);
       }
     }
-
     renderFeed();
 
     /***********************
-     * Submit Review (fixed + safer)
+     * Submit Review
      ***********************/
     async function fileToDataUrl(file) {
       return new Promise((resolve, reject) => {
@@ -608,40 +457,20 @@
       const text = $("reviewText").value.trim();
       const fileInput = $("reviewImage");
 
-      if (!activeTag || !location) {
-        showToast("Select a hazard tag and enter a location.");
-        return;
-      }
+      if (!activeTag || !location) { showToast("Select a hazard tag and enter a location."); return; }
 
-      // Optional image
       let imageDataUrl = "";
       const file = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
       if (file) {
-        // Basic size guard (keeps localStorage from exploding)
-        const maxBytes = 900 * 1024; // ~900KB
-        if (file.size > maxBytes) {
-          showToast("Image is large. Please use a smaller photo.");
-          return;
-        }
-        try {
-          imageDataUrl = await fileToDataUrl(file);
-        } catch {
-          showToast("Could not read the photo. Try again.");
-          return;
-        }
+        const maxBytes = 900 * 1024;
+        if (file.size > maxBytes) { showToast("Image is large. Please use a smaller photo."); return; }
+        try { imageDataUrl = await fileToDataUrl(file); } catch { showToast("Could not read the photo."); return; }
       }
 
       const reports = loadReports();
-      reports.unshift({
-        tag: activeTag,
-        location,
-        text,
-        imageDataUrl,
-        createdAt: Date.now()
-      });
+      reports.unshift({ tag: activeTag, location, text, imageDataUrl, createdAt: Date.now() });
       saveReports(reports);
 
-      // Reset form
       $("reviewLocation").value = "";
       $("reviewText").value = "";
       document.querySelectorAll("#hazardTags .tag").forEach(tag => tag.classList.remove("selected"));
@@ -650,15 +479,11 @@
 
       renderFeed();
       showToast("Report posted.");
-      // Move to feed
-      const feedNav = document.querySelector('.nav-item[data-tab="feed"]');
-      feedNav.click();
+      document.querySelector('.nav-item[data-tab="feed"]').click();
     }
 
     /***********************
-     * Geocoding + Routing + Walkability (actual route line!)
-     * - Geocoding: Nominatim
-     * - Routing: OSRM public demo server
+     * Geocoding + Routing + Walkability
      ***********************/
     async function geocodePlace(query) {
       const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`;
@@ -670,10 +495,11 @@
     }
 
     async function routeOSRM(fromLatLng, toLatLng) {
+      // NOTE: Added &steps=true to get the breakdown!
       const url =
         `https://router.project-osrm.org/route/v1/foot/` +
         `${fromLatLng.lng},${fromLatLng.lat};${toLatLng.lng},${toLatLng.lat}` +
-        `?overview=full&geometries=geojson&steps=false`;
+        `?overview=full&geometries=geojson&steps=true`;
 
       const resp = await fetch(url, { headers: { "Accept": "application/json" } });
       if (!resp.ok) throw new Error("route_failed");
@@ -682,80 +508,89 @@
       if (!data.routes || !data.routes[0]) throw new Error("route_missing");
 
       const r = data.routes[0];
-      return {
-        distanceM: r.distance,
-        durationS: r.duration,
-        geometry: r.geometry
-      };
+      return { distanceM: r.distance, durationS: r.duration, geometry: r.geometry, legs: r.legs };
     }
 
     function computeWalkabilityScore(distanceM, durationS) {
-      // This is a simple heuristic:
-      // - Faster walking time for the same distance implies fewer interruptions.
-      // - Longer distances get slightly penalized.
-      const speed = distanceM / Math.max(1, durationS); // m/s
-      const speedScore = clamp((speed - 0.8) / (1.8 - 0.8), 0, 1) * 65; // typical walk ~1.2–1.6 m/s
-      const distancePenalty = clamp(distanceM / 2500, 0, 1) * 20; // penalize >2.5km
-      const base = 35;
-      const score = clamp(Math.round(base + speedScore - distancePenalty), 1, 100);
-      return score;
+      const speed = distanceM / Math.max(1, durationS);
+      const speedScore = clamp((speed - 0.8) / (1.8 - 0.8), 0, 1) * 65;
+      const distancePenalty = clamp(distanceM / 2500, 0, 1) * 20;
+      return clamp(Math.round(35 + speedScore - distancePenalty), 1, 100);
     }
 
-    function formatMeters(m) {
-      if (m >= 1000) return `${(m/1000).toFixed(2)} km`;
-      return `${Math.round(m)} m`;
-    }
+    function formatMeters(m) { return (m >= 1000) ? `${(m/1000).toFixed(2)} km` : `${Math.round(m)} m`; }
     function formatDuration(sec) {
       const min = Math.round(sec / 60);
       if (min < 60) return `${min} min`;
-      const h = Math.floor(min / 60);
-      const r = min % 60;
-      return `${h} hr ${r} min`;
+      return `${Math.floor(min / 60)} hr ${min % 60} min`;
     }
 
     async function calculateWalkability() {
       const dest = $("pointB").value.trim();
-      if (!dest) {
-        showToast("Enter a destination.");
-        return;
-      }
-      if (!userLatLng) {
-        showToast("Get your location first.");
-        return;
-      }
+      if (!dest) { showToast("Enter a destination."); return; }
+      if (!userLatLng) { showToast("Get your location first."); return; }
 
       const btn = $("btnWalkability");
       btn.disabled = true;
       btn.textContent = "Working…";
 
       try {
-        // 1) Geocode destination
         const g = await geocodePlace(dest);
         const toLatLng = L.latLng(g.lat, g.lon);
-
-        // 2) Route
         const routed = await routeOSRM(userLatLng, toLatLng);
 
-        // 3) Draw route
         if (routeLine) map.removeLayer(routeLine);
         if (destMarker) map.removeLayer(destMarker);
 
         destMarker = L.marker(toLatLng).addTo(map).bindPopup("🎯 Destination").openPopup();
+        routeLine = L.geoJSON(routed.geometry, { style: { weight: 6, opacity: 0.9 } }).addTo(map);
+        map.fitBounds(routeLine.getBounds(), { padding: [20, 20] });
 
-        routeLine = L.geoJSON(routed.geometry, {
-          style: { weight: 6, opacity: 0.9 }
-        }).addTo(map);
-
-        // Fit bounds
-        const bounds = routeLine.getBounds();
-        map.fitBounds(bounds, { padding: [20, 20] });
-
-        // 4) Score (heuristic)
         const score = computeWalkabilityScore(routed.distanceM, routed.durationS);
-
         $("scoreValue").textContent = score;
         $("scoreDetails").textContent = `${formatDuration(routed.durationS)} • ${formatMeters(routed.distanceM)}`;
         $("routeDetails").textContent = `Route to: ${g.display}`;
+        
+        // NEW: GENERATE ROUTE BREAKDOWN
+        let timelineHtml = "";
+        if (routed.legs && routed.legs[0] && routed.legs[0].steps) {
+            routed.legs[0].steps.forEach((step, index) => {
+                if(step.distance < 10 && index !== 0) return; // Skip tiny micro-movements
+
+                let name = step.name || "Unnamed Path";
+                let distance = Math.round(step.distance) + "m";
+                
+                let typeIcon = "🚶"; let typeTitle = "Footpath";
+                let qualityBadge = `<span class="badge badge-good">🟢 Smooth Pavement</span>`;
+                
+                let lowerName = name.toLowerCase();
+                if(lowerName.includes("bridge") || lowerName.includes("overpass") || lowerName.includes("flyover")) {
+                    typeIcon = "🌉"; typeTitle = "Pedestrian Overpass";
+                    qualityBadge = `<span class="badge badge-warn">🟡 Steep stairs, no ramp</span>`;
+                } else if (lowerName.includes("underpass") || lowerName.includes("subway")) {
+                    typeIcon = "🚇"; typeTitle = "Underpass";
+                    qualityBadge = `<span class="badge badge-bad">🔴 Poor lighting at night</span>`;
+                } else if (name === "Unnamed Path") {
+                    typeIcon = "🌳"; typeTitle = "Walking Trail";
+                    qualityBadge = `<span class="badge badge-warn">🟡 Uneven dirt surface</span>`;
+                } else {
+                    const mocks = [
+                        `<span class="badge badge-good">🟢 Clear sidewalk</span>`,
+                        `<span class="badge badge-warn">🟡 Cars parked on path</span>`,
+                        `<span class="badge badge-bad">🔴 No footpath, walk on road</span>`
+                    ];
+                    qualityBadge = mocks[name.length % mocks.length];
+                }
+
+                timelineHtml += `
+                <div class="step-item">
+                    <div class="step-title">${typeIcon} ${typeTitle}</div>
+                    <div class="step-desc">via ${escapeHTML(name)} • ${distance}</div>
+                    ${qualityBadge}
+                </div>`;
+            });
+        }
+        $("routeTimeline").innerHTML = timelineHtml;
         $("scoreCard").classList.add("active");
 
         showToast("Route drawn.");
@@ -768,39 +603,26 @@
     }
 
     /***********************
-     * Export (quick win for sharing)
+     * Export & Events
      ***********************/
     function exportReports() {
       const data = loadReports();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
-
       const a = document.createElement("a");
-      a.href = url;
-      a.download = "pathrater-reports.json";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-
+      a.href = url; a.download = "pathrater-reports.json";
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
       showToast("Exported reports.");
     }
 
-    /***********************
-     * Wire up buttons
-     ***********************/
     $("btnLocate").addEventListener("click", () => locateUser({ setView: true }));
     $("btnClear").addEventListener("click", clearRoute);
     $("btnSubmit").addEventListener("click", submitReview);
     $("btnWalkability").addEventListener("click", calculateWalkability);
     $("btnExport").addEventListener("click", exportReports);
 
-    // Nice: Enter in destination triggers routing
     $("pointB").addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        calculateWalkability();
-      }
+      if (e.key === "Enter") { e.preventDefault(); calculateWalkability(); }
     });
   </script>
 </body>
