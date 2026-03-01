@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
-  <title>PathRater V11.0 - Real Sensors</title>
+  <title>PathRater V13.0 - Shortest Path Routing</title>
   <link rel="manifest" href="./manifest.json">
   <meta name="theme-color" content="#ffffff">
 
@@ -35,8 +35,8 @@
     .floating-panel { position: absolute; bottom: calc(var(--nav-h) + 15px); left: 15px; right: 15px; background: var(--card-bg); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-radius: var(--border-radius); padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); z-index: 1000; border: 1px solid rgba(255,255,255,0.5); overflow: visible; transition: all 0.3s ease;}
     
     .input-group { margin-bottom: 15px; position: relative; }
-    input, textarea { width: 100%; padding: 16px; border: none; border-radius: 14px; font-family: inherit; font-size: 16px; background: rgba(0,0,0,0.05); font-weight: 500;}
-    input:focus { outline: none; background: rgba(0, 122, 255, 0.1); }
+    input, textarea, select { width: 100%; padding: 16px; border: none; border-radius: 14px; font-family: inherit; font-size: 16px; background: rgba(0,0,0,0.05); font-weight: 500; color: var(--text-main); -webkit-appearance: none;}
+    input:focus, select:focus { outline: none; background: rgba(0, 122, 255, 0.1); }
     
     .autocomplete-list { position: absolute; bottom: 100%; left: 0; right: 0; background: rgba(255,255,255,0.95); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); border-radius: 14px; box-shadow: 0 -10px 25px rgba(0,0,0,0.15); margin-bottom: 10px; padding: 0; list-style: none; max-height: 250px; overflow-y: auto; z-index: 2000; display: none; border: 1px solid rgba(0,0,0,0.1);}
     .autocomplete-list li { padding: 14px 16px; border-bottom: 1px solid rgba(0,0,0,0.05); cursor: pointer; font-size: 15px; font-weight: 500; display: flex; align-items: center;}
@@ -45,12 +45,23 @@
     .primary-btn:active { transform: scale(0.97); }
     .btn-stop { background: #ff3b30; box-shadow: 0 8px 20px rgba(255, 59, 48, 0.3); }
 
-    /* Detailed Infrastructure Menu */
-    .score-row { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 15px;}
+    /* Detailed Infrastructure & Score */
+    .score-row { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 5px;}
     .score-big { font-size: 56px; font-weight: 900; color: var(--text-main); line-height: 0.9; letter-spacing: -2px;}
+    .health-stats { display: flex; justify-content: space-between; font-size: 14px; font-weight: 700; color: #555; background: rgba(0,0,0,0.03); padding: 10px 15px; border-radius: 10px; margin-bottom: 15px;}
+    
     .route-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 15px; }
-    .stat-badge { background: rgba(255,255,255,0.8); border: 1px solid rgba(0,0,0,0.1); padding: 8px 10px; border-radius: 10px; font-size: 13px; font-weight: 700; color: #444; display:flex; justify-content: space-between; align-items: center;}
+    .stat-badge { background: rgba(255,255,255,0.8); border: 1px solid rgba(0,0,0,0.1); padding: 8px 10px; border-radius: 10px; font-size: 13px; font-weight: 700; color: #444; display:flex; justify-content: space-between; align-items: center; transition: background 0.2s;}
     .stat-badge span { font-size: 16px; font-weight: 900;}
+    .clickable-badge { cursor: pointer; }
+    .clickable-badge:hover { background: rgba(0,0,0,0.05); }
+    .clickable-badge:active { transform: scale(0.97); }
+
+    /* Expandable Text Route */
+    .btn-toggle-route { background: rgba(0,0,0,0.04); color: var(--text-main); font-weight: 700; font-size: 14px; padding: 12px; width: 100%; border-radius: 10px; border: none; cursor: pointer; margin-bottom: 15px; }
+    #textRouteContainer { display: none; max-height: 180px; overflow-y: auto; background: #fff; padding: 10px; border-radius: 12px; border: 1px solid rgba(0,0,0,0.05); margin-bottom: 15px; }
+    .route-step-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
+    .route-step-row:last-child { border-bottom: none; }
 
     /* Live Walk UI */
     .walk-dashboard { display: none; text-align: center; }
@@ -69,8 +80,6 @@
     .profile-card { background: linear-gradient(135deg, #007aff, #0056b3); color: white; padding: 25px; border-radius: 20px; text-align: center; margin-bottom: 20px; box-shadow: 0 10px 20px rgba(0,122,255,0.3); }
     .points-big { font-size: 48px; font-weight: 900; margin: 10px 0; }
     .settings-box { background: #fff; border-radius: 16px; padding: 18px; margin-bottom: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.03); border: 1px solid rgba(0,0,0,0.05);}
-    .settings-box h4 { margin: 0 0 10px 0; color: #000; font-size: 16px;}
-    .settings-box p { margin: 0; font-size: 14px; color: var(--text-muted); line-height: 1.5; }
 
     .bottom-nav { position: absolute; bottom: 0; width: 100%; background: rgba(255,255,255,0.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); display: flex; border-top: 1px solid rgba(0,0,0,0.1); z-index: 1000; padding-bottom: env(safe-area-inset-bottom); height: calc(var(--nav-h) + env(safe-area-inset-bottom));}
     .nav-item { flex: 1; padding: 10px 0; text-align: center; font-size: 11px; font-weight: 600; color: var(--text-muted); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; transition: 0.2s;}
@@ -87,13 +96,20 @@
 <body>
   <div class="app-container">
     <div class="header">
-      <h2>PathRater <span class="version-badge">V11</span></h2>
+      <h2>PathRater <span class="version-badge">V13</span></h2>
     </div>
 
     <div id="routing" class="content active">
       <div id="map"></div>
 
       <div class="floating-panel" id="setupPanel">
+        <div class="input-group" style="margin-bottom: 10px;">
+           <select id="routePref" style="text-align: center; font-weight: 800;">
+               <option value="shortest">✂️ Shortest Walking Path (Alleys & Cut-throughs)</option>
+               <option value="safest">🛣️ Safest / Main Roads</option>
+           </select>
+        </div>
+
         <div class="input-group">
           <ul class="autocomplete-list" id="autocompleteList"></ul>
           <input type="text" id="pointB" placeholder="Where to?" autocomplete="off" />
@@ -118,13 +134,17 @@
                     <div style="color: var(--text-muted); font-size: 15px; font-weight:600;" id="scoreDistance">--</div>
                 </div>
             </div>
+
+            <div class="health-stats">
+                <div>👟 Approx <span id="statSteps">0</span> Steps</div>
+                <div>🔥 Burn <span id="statCals">0</span> kcal</div>
+            </div>
             
             <div class="route-summary" id="routeSummary">
-                <div class="stat-badge">🚶 Footpaths <span id="statPaths">0</span></div>
-                <div class="stat-badge" style="color:#b06000;">🌉 Bridges <span id="statBridges">0</span></div>
-                <div class="stat-badge" style="color:#007aff;">🚦 Road Crossings <span id="statCross">0</span></div>
-                <div class="stat-badge" style="color:#d93025;">🚇 Underpasses <span id="statUnder">0</span></div>
-            </div>
+                </div>
+
+            <button class="btn-toggle-route" id="btnToggleRoute">🗺️ Show Detailed Route</button>
+            <div id="textRouteContainer"></div>
 
             <button class="primary-btn" id="btnStartWalk">Start Live Hardware Walk</button>
         </div>
@@ -203,6 +223,7 @@
   <script>
     const $ = (id) => document.getElementById(id);
     function showToast(msg) { $("toast").textContent = msg; $("toast").classList.add("show"); setTimeout(() => $("toast").classList.remove("show"), 2500); }
+    function escapeHTML(str) { return String(str).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;"); }
 
     document.querySelectorAll(".nav-item").forEach((nav) => {
       nav.addEventListener("click", () => {
@@ -213,7 +234,6 @@
       });
     });
 
-    // Gamification
     let userStats = JSON.parse(localStorage.getItem("pathrater_stats")) || { points: 0, reports: 0 };
     function updateProfile() {
       $("userPoints").textContent = userStats.points;
@@ -225,12 +245,12 @@
     }
     updateProfile();
 
-    // Map Init
     const map = L.map("map", {zoomControl: false}).setView([28.6139, 77.2090], 13);
     L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png").addTo(map);
     let userMarker, routeLine, destMarker, userLatLng;
+    let interactiveLayerGroup = L.layerGroup().addTo(map); 
+    let featureLocs = { footpaths: [], bridges: [], crossings: [], underpasses: [] };
 
-    // GPS locating function
     function getCurrentLocation() {
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition((pos) => {
@@ -244,7 +264,6 @@
     getCurrentLocation();
     $("btnLocate").addEventListener("click", getCurrentLocation);
 
-    // Autocomplete
     let autocompleteTimeout;
     $("pointB").addEventListener("input", function() {
         clearTimeout(autocompleteTimeout);
@@ -274,7 +293,18 @@
     });
     document.addEventListener("click", (e) => { if(e.target.id !== "pointB") $("autocompleteList").style.display = "none"; });
 
-    // Routing & Infrastructure Parser
+    $("btnToggleRoute").addEventListener("click", () => {
+        const container = $("textRouteContainer");
+        if (container.style.display === "block") {
+            container.style.display = "none";
+            $("btnToggleRoute").textContent = "🗺️ Show Detailed Route";
+        } else {
+            container.style.display = "block";
+            $("btnToggleRoute").textContent = "🗺️ Hide Detailed Route";
+        }
+    });
+
+    // UPDATED ROUTING WITH SHORTEST PATH LOGIC
     $("btnWalkability").addEventListener("click", async () => {
       let dest = $("pointB").value;
       if (!dest || !userLatLng) return showToast("Enter destination & allow GPS.");
@@ -289,43 +319,81 @@
         }
 
         const toLatLng = L.latLng(lat, lon);
-        const rRes = await fetch(`https://router.project-osrm.org/route/v1/foot/${userLatLng.lng},${userLatLng.lat};${toLatLng.lng},${toLatLng.lat}?overview=full&geometries=geojson&steps=true`);
+        
+        // Added alternatives=true to get multiple route options from OSRM
+        const rRes = await fetch(`https://router.project-osrm.org/route/v1/foot/${userLatLng.lng},${userLatLng.lat};${toLatLng.lng},${toLatLng.lat}?overview=full&geometries=geojson&steps=true&alternatives=true`);
         const rData = await rRes.json();
-        const route = rData.routes[0];
+        
+        let routes = rData.routes;
+        
+        // Pick the route based on the new "Route Preference" dropdown
+        const pref = $("routePref").value;
+        if (pref === "shortest") {
+            // Sort by absolute shortest physical distance in meters
+            routes.sort((a, b) => a.distance - b.distance); 
+        } else {
+            // Sort by fastest time (defaults to main roads)
+            routes.sort((a, b) => a.duration - b.duration); 
+        }
+        
+        const route = routes[0]; // Select the winning route
 
         if (routeLine) map.removeLayer(routeLine); if (destMarker) map.removeLayer(destMarker);
+        interactiveLayerGroup.clearLayers();
         destMarker = L.marker(toLatLng).addTo(map);
         routeLine = L.geoJSON(route.geometry, { style: { weight: 7, color: '#007aff', opacity: 0.9 } }).addTo(map);
         map.fitBounds(routeLine.getBounds(), { padding: [50, 50] });
 
-        // Parse Infrastructure & Crossings
+        featureLocs = { footpaths: [], bridges: [], crossings: [], underpasses: [] };
         let stats = { bridges: 0, underpasses: 0, footpaths: 0, crossings: 0 };
+        let textRouteHtml = "";
         
         if (route.legs && route.legs[0].steps) {
-            route.legs[0].steps.forEach((step) => {
+            route.legs[0].steps.forEach((step, i) => {
                 let lower = (step.name || "").toLowerCase();
                 let type = step.maneuver.type;
                 let modifier = step.maneuver.modifier;
+                let coord = [step.maneuver.location[1], step.maneuver.location[0]]; 
+                let icon = "🚶", title = "Paved Path", alertColor = "#333";
 
-                // Detect Road Crossings (turns on streets)
                 if (type === 'turn' || type === 'merge' || lower.includes("cross")) {
                     if (modifier === 'left' || modifier === 'right' || modifier === 'sharp left' || modifier === 'sharp right') {
-                        stats.crossings++;
+                        stats.crossings++; featureLocs.crossings.push(coord);
+                        icon = "🚦"; title = "Road Crossing"; alertColor = "#007aff";
                     }
                 }
 
-                // Detect Physical Infrastructure
-                if (lower.includes("bridge") || lower.includes("flyover")) stats.bridges++;
-                else if (lower.includes("underpass") || lower.includes("subway")) stats.underpasses++;
-                else stats.footpaths++;
+                if (lower.includes("bridge") || lower.includes("flyover")) {
+                    stats.bridges++; featureLocs.bridges.push(coord);
+                    icon = "🌉"; title = "Bridge/Overpass"; alertColor = "#b06000";
+                } else if (lower.includes("underpass") || lower.includes("subway")) {
+                    stats.underpasses++; featureLocs.underpasses.push(coord);
+                    icon = "🚇"; title = "Underpass"; alertColor = "#d93025";
+                } else {
+                    stats.footpaths++; featureLocs.footpaths.push(coord);
+                }
+
+                if (step.distance >= 5 || i === 0) { 
+                    textRouteHtml += `
+                    <div class="route-step-row">
+                        <div style="font-size: 24px;">${icon}</div>
+                        <div>
+                            <div style="font-weight: 800; color: ${alertColor};">${title}</div>
+                            <div style="font-size: 13px; color: #666;">Continue on ${escapeHTML(step.name || "local path")} for ${Math.round(step.distance)}m</div>
+                        </div>
+                    </div>`;
+                }
             });
         }
 
-        // Score Calculation
+        $("textRouteContainer").innerHTML = textRouteHtml;
+        $("textRouteContainer").style.display = "none";
+        $("btnToggleRoute").textContent = "🗺️ Show Detailed Route";
+
         let baseScore = Math.max(10, 100 - (route.distance / 100)); 
-        baseScore -= (stats.bridges * 2); // Bridge penalty
-        baseScore -= (stats.underpasses * 5); // Underpass penalty
-        baseScore -= (stats.crossings * 1); // Crossing penalty (safety/disruption)
+        baseScore -= (stats.bridges * 2); 
+        baseScore -= (stats.underpasses * 5); 
+        baseScore -= (stats.crossings * 1); 
         
         if (baseScore > 98) baseScore = 98;
         if (baseScore < 10) baseScore = 10;
@@ -336,52 +404,72 @@
         $("scoreTime").textContent = `${Math.round(route.duration/60)} min`;
         $("scoreDistance").textContent = `${(route.distance/1000).toFixed(2)} km`;
         
-        // Update Detailed Menu
-        $("statPaths").textContent = stats.footpaths;
-        $("statBridges").textContent = stats.bridges;
-        $("statCross").textContent = stats.crossings;
-        $("statUnder").textContent = stats.underpasses;
+        $("statSteps").textContent = Math.round(route.distance / 0.762).toLocaleString();
+        $("statCals").textContent = Math.round(route.distance * 0.05).toLocaleString();
         
+        $("routeSummary").innerHTML = `
+            <div class="stat-badge clickable-badge" data-type="footpaths">🚶 Footpaths <span>${stats.footpaths}</span></div>
+            <div class="stat-badge clickable-badge" style="color:#b06000;" data-type="bridges">🌉 Bridges <span>${stats.bridges}</span></div>
+            <div class="stat-badge clickable-badge" style="color:#007aff;" data-type="crossings">🚦 Crossings <span>${stats.crossings}</span></div>
+            <div class="stat-badge clickable-badge" style="color:#d93025;" data-type="underpasses">🚇 Underpasses <span>${stats.underpasses}</span></div>
+        `;
+        
+        document.querySelectorAll('.clickable-badge').forEach(badge => {
+            badge.addEventListener('click', function() {
+                const type = this.getAttribute('data-type');
+                interactiveLayerGroup.clearLayers(); 
+                
+                if (featureLocs[type] && featureLocs[type].length > 0) {
+                    let bounds = L.latLngBounds();
+                    let colors = { footpaths: "#333", bridges: "#b06000", crossings: "#007aff", underpasses: "#d93025" };
+                    let fillColor = colors[type];
+
+                    featureLocs[type].forEach(coord => {
+                        let point = L.latLng(coord[0], coord[1]);
+                        L.circleMarker(point, { radius: 8, fillColor: fillColor, color: "#fff", weight: 2, fillOpacity: 0.9 })
+                        .addTo(interactiveLayerGroup).bindPopup(`<b>${type.toUpperCase()}</b><br/>Found here`);
+                        bounds.extend(point);
+                    });
+                    
+                    map.fitBounds(bounds, {padding: [50, 50], maxZoom: 17});
+                    showToast(`Mapped ${featureLocs[type].length} ${type} locations`);
+                } else {
+                    showToast(`No ${type} found on this route.`);
+                }
+            });
+        });
+
         $("setupPanel").style.display = "none";
         $("scorePanel").style.display = "block";
 
-      } catch (e) { showToast("Error routing."); }
+      } catch (e) { showToast("Error routing. Try typing a landmark."); }
       $("btnWalkability").textContent = "Get Route";
     });
 
     $("btnClear").addEventListener("click", () => {
       if(routeLine) map.removeLayer(routeLine); if(destMarker) map.removeLayer(destMarker);
+      interactiveLayerGroup.clearLayers();
       $("scorePanel").style.display = "none"; $("setupPanel").style.display = "block"; $("pointB").value = "";
     });
 
-    // --- REAL SENSOR PEDOMETER & LIVE GPS ---
     let walkTimer, walkSecs = 0, liveSteps = 0, isWalking = false;
-    let lastMag = 0, isPeak = false;
-    let watchId = null;
+    let lastMag = 0, isPeak = false, watchId = null;
 
-    // Sensor Analysis function (Accelerometer)
     function handleMotion(event) {
         if (!isWalking) return;
         let acc = event.accelerationIncludingGravity;
         if (!acc) return;
-        
-        // Calculate vector magnitude (combining X, Y, Z axes)
         let mag = Math.sqrt(acc.x*acc.x + acc.y*acc.y + acc.z*acc.z);
-        
-        // Gravity is ~9.8m/s^2. A footstep spikes it higher.
         let threshold = 11.5; 
         
         if (mag > threshold && !isPeak) {
-            isPeak = true;
-            liveSteps++;
-            $("liveSteps").textContent = liveSteps;
+            isPeak = true; liveSteps++; $("liveSteps").textContent = liveSteps;
         } else if (mag < 10.5) {
-            isPeak = false; // Reset for next step
+            isPeak = false; 
         }
     }
 
     $("btnStartWalk").addEventListener("click", async () => {
-        // Request iOS permission if needed
         if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
             try {
                 const permission = await DeviceMotionEvent.requestPermission();
@@ -395,24 +483,20 @@
         walkSecs = 0; liveSteps = 0; isWalking = true;
         $("liveSteps").textContent = "0"; $("liveTime").textContent = "00:00"; $("liveDist").textContent = "0.00";
 
-        // Start Hardware Listener
         window.addEventListener('devicemotion', handleMotion);
 
-        // Start Live GPS Tracking
         if (navigator.geolocation) {
             watchId = navigator.geolocation.watchPosition((pos) => {
                 let newPos = L.latLng(pos.coords.latitude, pos.coords.longitude);
                 if (userMarker) {
-                    let dist = userLatLng.distanceTo(newPos); // Get physical distance moved in meters
-                    $("liveDist").textContent = (dist / 1000).toFixed(2); // Update UI
+                    let dist = userLatLng.distanceTo(newPos);
+                    $("liveDist").textContent = (dist / 1000).toFixed(2);
                     userMarker.setLatLng(newPos);
                 }
-                userLatLng = newPos;
-                map.setView(userLatLng, 18); // Keep camera centered on you
+                userLatLng = newPos; map.setView(userLatLng, 18);
             }, (err) => { console.warn("GPS Tracking Error"); }, { enableHighAccuracy: true });
         }
 
-        // Timer
         clearInterval(walkTimer);
         walkTimer = setInterval(() => {
             walkSecs++;
@@ -423,8 +507,7 @@
     });
 
     $("btnStopWalk").addEventListener("click", () => {
-        isWalking = false;
-        clearInterval(walkTimer);
+        isWalking = false; clearInterval(walkTimer);
         window.removeEventListener('devicemotion', handleMotion);
         if (watchId) navigator.geolocation.clearWatch(watchId);
 
@@ -432,11 +515,10 @@
         $("routeOverview").style.display = "block";
         showToast(`Walk ended! Logged ${liveSteps} real steps.`);
         
-        userStats.points += 5; updateProfile(); // Reward
+        userStats.points += 5; updateProfile();
         if(routeLine) map.fitBounds(routeLine.getBounds(), { padding: [50, 50] }); 
     });
 
-    // --- HAZARD REPORTING ---
     let activeTag = "";
     document.querySelectorAll(".tag").forEach(tag => { tag.addEventListener("click", () => { document.querySelectorAll(".tag").forEach(t => t.classList.remove("selected")); tag.classList.add("selected"); activeTag = tag.dataset.tag; }); });
 
