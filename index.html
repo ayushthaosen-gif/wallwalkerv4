@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
-  <title>PathRater V10.0 - Live Navigation</title>
+  <title>PathRater V11.0 - Real Sensors</title>
   <link rel="manifest" href="./manifest.json">
   <meta name="theme-color" content="#ffffff">
 
@@ -21,42 +21,36 @@
     
     .app-container { width: 100%; max-width: 414px; height: 100dvh; position: relative; background: #fff; overflow: hidden; display: flex; flex-direction: column;}
     
-    /* Header */
     .header { padding: 15px 20px; background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); position: absolute; top: 0; width: 100%; z-index: 1000; border-bottom: 1px solid rgba(0,0,0,0.05); }
     .header h2 { margin: 0; font-size: 24px; color: #000; font-weight: 800; display: flex; align-items: center; justify-content: space-between;}
     .version-badge { font-size: 11px; background: var(--primary); color: #fff; padding: 4px 10px; border-radius: 12px; font-weight: 800; }
     
-    /* Content Areas */
     .content { display: none; height: 100%; width: 100%; overflow-y: auto; padding-top: 70px; padding-bottom: calc(var(--nav-h) + 20px); }
     .content.active { display: block; animation: fadeUp 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }
     @keyframes fadeUp { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
 
-    /* Map */
     #routing { padding: 0; position: relative; }
     #map { height: 100%; width: 100%; z-index: 1; }
     
-    /* Floating Panels */
     .floating-panel { position: absolute; bottom: calc(var(--nav-h) + 15px); left: 15px; right: 15px; background: var(--card-bg); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-radius: var(--border-radius); padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); z-index: 1000; border: 1px solid rgba(255,255,255,0.5); overflow: visible; transition: all 0.3s ease;}
     
     .input-group { margin-bottom: 15px; position: relative; }
     input, textarea { width: 100%; padding: 16px; border: none; border-radius: 14px; font-family: inherit; font-size: 16px; background: rgba(0,0,0,0.05); font-weight: 500;}
     input:focus { outline: none; background: rgba(0, 122, 255, 0.1); }
     
-    /* FIXED Autocomplete Dropdown */
     .autocomplete-list { position: absolute; bottom: 100%; left: 0; right: 0; background: rgba(255,255,255,0.95); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); border-radius: 14px; box-shadow: 0 -10px 25px rgba(0,0,0,0.15); margin-bottom: 10px; padding: 0; list-style: none; max-height: 250px; overflow-y: auto; z-index: 2000; display: none; border: 1px solid rgba(0,0,0,0.1);}
     .autocomplete-list li { padding: 14px 16px; border-bottom: 1px solid rgba(0,0,0,0.05); cursor: pointer; font-size: 15px; font-weight: 500; display: flex; align-items: center;}
-    .autocomplete-list li:hover { background: rgba(0, 122, 255, 0.1); color: var(--primary); font-weight: 700;}
-
+    
     .primary-btn { background: var(--primary); color: white; border: none; padding: 16px; border-radius: 14px; cursor: pointer; width: 100%; font-weight: 700; font-size: 17px; box-shadow: 0 8px 20px rgba(0, 122, 255, 0.3); transition: transform 0.1s; }
     .primary-btn:active { transform: scale(0.97); }
     .btn-stop { background: #ff3b30; box-shadow: 0 8px 20px rgba(255, 59, 48, 0.3); }
 
-    /* Score UI inside Map Panel */
+    /* Detailed Infrastructure Menu */
     .score-row { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 15px;}
     .score-big { font-size: 56px; font-weight: 900; color: var(--text-main); line-height: 0.9; letter-spacing: -2px;}
-    .health-stats { display: flex; gap: 15px; font-size: 13px; font-weight: 700; color: var(--text-muted); background: rgba(0,0,0,0.03); padding: 10px; border-radius: 10px; justify-content: space-around; margin-bottom: 15px;}
-    .route-summary { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 15px; }
-    .stat-badge { background: rgba(255,255,255,0.8); border: 1px solid rgba(0,0,0,0.1); padding: 6px 10px; border-radius: 8px; font-size: 12px; font-weight: 700; color: #444;}
+    .route-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 15px; }
+    .stat-badge { background: rgba(255,255,255,0.8); border: 1px solid rgba(0,0,0,0.1); padding: 8px 10px; border-radius: 10px; font-size: 13px; font-weight: 700; color: #444; display:flex; justify-content: space-between; align-items: center;}
+    .stat-badge span { font-size: 16px; font-weight: 900;}
 
     /* Live Walk UI */
     .walk-dashboard { display: none; text-align: center; }
@@ -64,23 +58,20 @@
     .walk-metric { font-size: 48px; font-weight: 900; font-variant-numeric: tabular-nums; letter-spacing: -1px;}
     .walk-label { font-size: 12px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;}
 
-    /* Standard Tabs (Feed, Report, Profile) */
+    /* Standard Tabs */
     .page-content { padding: 20px; }
     .tag-container { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 15px; }
     .tag { background: #fff; border: 1px solid #d1d1d6; padding: 10px 14px; border-radius: 20px; font-size: 14px; cursor: pointer; font-weight: 500;}
     .tag.selected { background: var(--primary); border-color: var(--primary); color: #fff; }
-    
     .review-card { background: #fff; padding: 18px; margin-bottom: 15px; border-radius: 16px; box-shadow: 0 2px 10px rgba(0,0,0,0.03); border: 1px solid rgba(0,0,0,0.05);}
     .review-tag { display: inline-block; background: rgba(255, 59, 48, 0.1); color: #ff3b30; padding: 5px 10px; border-radius: 8px; font-size: 12px; font-weight: 800; margin-bottom: 10px; }
     
-    /* Profile gamification */
     .profile-card { background: linear-gradient(135deg, #007aff, #0056b3); color: white; padding: 25px; border-radius: 20px; text-align: center; margin-bottom: 20px; box-shadow: 0 10px 20px rgba(0,122,255,0.3); }
     .points-big { font-size: 48px; font-weight: 900; margin: 10px 0; }
     .settings-box { background: #fff; border-radius: 16px; padding: 18px; margin-bottom: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.03); border: 1px solid rgba(0,0,0,0.05);}
     .settings-box h4 { margin: 0 0 10px 0; color: #000; font-size: 16px;}
     .settings-box p { margin: 0; font-size: 14px; color: var(--text-muted); line-height: 1.5; }
 
-    /* Bottom Nav (4 Items Restored) */
     .bottom-nav { position: absolute; bottom: 0; width: 100%; background: rgba(255,255,255,0.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); display: flex; border-top: 1px solid rgba(0,0,0,0.1); z-index: 1000; padding-bottom: env(safe-area-inset-bottom); height: calc(var(--nav-h) + env(safe-area-inset-bottom));}
     .nav-item { flex: 1; padding: 10px 0; text-align: center; font-size: 11px; font-weight: 600; color: var(--text-muted); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; transition: 0.2s;}
     .nav-item.active { color: var(--primary); }
@@ -96,7 +87,7 @@
 <body>
   <div class="app-container">
     <div class="header">
-      <h2>PathRater <span class="version-badge">V10</span></h2>
+      <h2>PathRater <span class="version-badge">V11</span></h2>
     </div>
 
     <div id="routing" class="content active">
@@ -114,12 +105,12 @@
       </div>
 
       <div class="floating-panel" id="scorePanel" style="display: none;">
-        
         <div id="routeOverview">
             <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
                 <span style="font-size:13px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Walkability Score</span>
                 <button id="btnClear" style="border:none; background:none; color:var(--text-muted); font-weight:bold; cursor:pointer;">✕ Close</button>
             </div>
+            
             <div class="score-row">
                 <div class="score-big"><span id="scoreValue">--</span><span style="font-size: 24px; color:#c7c7cc;">/100</span></div>
                 <div style="text-align: right;">
@@ -129,19 +120,19 @@
             </div>
             
             <div class="route-summary" id="routeSummary">
-                </div>
-
-            <div class="health-stats">
-                <div>👟 <span id="statSteps">--</span> Steps</div>
-                <div>🔥 <span id="statCals">--</span> kcal</div>
+                <div class="stat-badge">🚶 Footpaths <span id="statPaths">0</span></div>
+                <div class="stat-badge" style="color:#b06000;">🌉 Bridges <span id="statBridges">0</span></div>
+                <div class="stat-badge" style="color:#007aff;">🚦 Road Crossings <span id="statCross">0</span></div>
+                <div class="stat-badge" style="color:#d93025;">🚇 Underpasses <span id="statUnder">0</span></div>
             </div>
-            <button class="primary-btn" id="btnStartWalk">Start Live Walk</button>
+
+            <button class="primary-btn" id="btnStartWalk">Start Live Hardware Walk</button>
         </div>
 
         <div class="walk-dashboard" id="walkDashboard">
-            <div class="walk-label" style="color:#ff3b30; margin-bottom:5px;">● SIMULATED NAVIGATION</div>
+            <div class="walk-label" style="color:#ff3b30; margin-bottom:5px;">● LIVE GPS & SENSORS</div>
             <div class="walk-metric" id="liveSteps">0</div>
-            <div class="walk-label" style="margin-bottom:20px;">STEPS TAKEN</div>
+            <div class="walk-label" style="margin-bottom:20px;">REAL STEPS TAKEN</div>
             
             <div style="display:flex; justify-content:space-around; margin-bottom:20px;">
                 <div>
@@ -150,7 +141,7 @@
                 </div>
                 <div>
                     <div class="walk-metric" id="liveDist" style="font-size:28px;">0.00</div>
-                    <div class="walk-label">KM</div>
+                    <div class="walk-label">REAL KM</div>
                 </div>
             </div>
             <button class="primary-btn btn-stop" id="btnStopWalk">End Walk</button>
@@ -169,14 +160,12 @@
       <div class="page-content">
         <h3 style="margin-top:0; font-size:28px; font-weight:800;">Report Hazard</h3>
         <p style="color: var(--text-muted); font-weight:500;">Help the community. Earn +10 points.</p>
-        
         <div class="tag-container" id="hazardTags">
           <div class="tag" data-tag="🚗 Cars on Footpath">🚗 Cars on Path</div>
           <div class="tag" data-tag="🕳️ Broken Pavement">🕳️ Broken Pavement</div>
           <div class="tag" data-tag="🚧 Construction">🚧 Construction</div>
           <div class="tag" data-tag="💡 No Streetlights">💡 No Streetlights</div>
         </div>
-        
         <div class="input-group"><input type="text" id="reviewLocation" placeholder="Specific Location" /></div>
         <div class="input-group"><label style="font-size:12px; font-weight:bold; color:var(--text-muted);">Optional Photo Evidence</label><input type="file" id="reviewImage" accept="image/*" /></div>
         <button class="primary-btn" id="btnSubmit" style="margin-top:10px;">Submit Report</button>
@@ -186,23 +175,15 @@
     <div id="profile" class="content">
       <div class="page-content">
         <h3 style="margin-top:0; font-size:28px; font-weight:800;">Profile</h3>
-        
         <div class="profile-card">
             <div style="font-size:40px; margin-bottom:10px;" id="userBadge">🌱</div>
             <h3 style="margin: 0; font-size: 20px;">Urban Explorer</h3>
             <div class="points-big" id="userPoints">0</div>
             <div style="font-size: 14px; opacity: 0.9;">Civic Points Earned</div>
         </div>
-
-        <div class="settings-box">
-            <h4>📊 Your Impact</h4>
-            <p style="margin-bottom:8px;">🚧 <b>Hazards Reported:</b> <span id="reportCount">0</span></p>
-            <p>🏅 <b>Current Rank:</b> <span id="rankName">Novice Walker</span></p>
-        </div>
-
         <div class="settings-box">
             <h4>🔒 Privacy Policy</h4>
-            <p>We respect your privacy. PathRater does not collect, store, or sell your personal data. Location data is processed locally on your device for routing. Reports are anonymous.</p>
+            <p>We respect your privacy. PathRater does not collect, store, or sell your personal data. Location and pedometer data are processed entirely locally on your device.</p>
         </div>
       </div>
     </div>
@@ -223,7 +204,6 @@
     const $ = (id) => document.getElementById(id);
     function showToast(msg) { $("toast").textContent = msg; $("toast").classList.add("show"); setTimeout(() => $("toast").classList.remove("show"), 2500); }
 
-    // --- NAVIGATION ---
     document.querySelectorAll(".nav-item").forEach((nav) => {
       nav.addEventListener("click", () => {
         document.querySelectorAll(".content").forEach(c => c.classList.remove("active"));
@@ -233,29 +213,38 @@
       });
     });
 
-    // --- GAMIFICATION ---
+    // Gamification
     let userStats = JSON.parse(localStorage.getItem("pathrater_stats")) || { points: 0, reports: 0 };
     function updateProfile() {
-      $("userPoints").textContent = userStats.points; $("reportCount").textContent = userStats.reports;
-      let badge = "🌱", rank = "Novice Walker";
-      if (userStats.points >= 50) { badge = "🔥"; rank = "Street Defender"; }
-      if (userStats.points >= 150) { badge = "👑"; rank = "Urban Legend"; }
-      $("userBadge").textContent = badge; $("rankName").textContent = rank;
+      $("userPoints").textContent = userStats.points;
+      let badge = "🌱";
+      if (userStats.points >= 50) badge = "🔥";
+      if (userStats.points >= 150) badge = "👑";
+      $("userBadge").textContent = badge;
       localStorage.setItem("pathrater_stats", JSON.stringify(userStats));
     }
     updateProfile();
 
-    // --- MAP INIT ---
+    // Map Init
     const map = L.map("map", {zoomControl: false}).setView([28.6139, 77.2090], 13);
     L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png").addTo(map);
     let userMarker, routeLine, destMarker, userLatLng;
-    let navCoordinates = []; // Stores the path points for simulation
 
-    map.locate({ setView: true, maxZoom: 16 });
-    map.on("locationfound", (e) => { userLatLng = e.latlng; if (!userMarker) userMarker = L.marker(userLatLng).addTo(map).bindPopup("You"); else userMarker.setLatLng(userLatLng); });
-    $("btnLocate").addEventListener("click", () => map.locate({ setView: true }));
+    // GPS locating function
+    function getCurrentLocation() {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition((pos) => {
+                userLatLng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+                if (!userMarker) userMarker = L.marker(userLatLng).addTo(map).bindPopup("You");
+                else userMarker.setLatLng(userLatLng);
+                map.setView(userLatLng, 16);
+            }, (err) => showToast("GPS Permission denied."));
+        }
+    }
+    getCurrentLocation();
+    $("btnLocate").addEventListener("click", getCurrentLocation);
 
-    // --- AUTOCOMPLETE FIX ---
+    // Autocomplete
     let autocompleteTimeout;
     $("pointB").addEventListener("input", function() {
         clearTimeout(autocompleteTimeout);
@@ -272,11 +261,8 @@
                         const li = document.createElement("li");
                         li.textContent = place.display_name.split(',').slice(0, 3).join(',');
                         li.onclick = () => { 
-                            $("pointB").value = li.textContent; 
-                            list.style.display = "none"; 
-                            $("pointB").dataset.lat = place.lat; 
-                            $("pointB").dataset.lon = place.lon; 
-                            // Auto-trigger route generation on click
+                            $("pointB").value = li.textContent; list.style.display = "none"; 
+                            $("pointB").dataset.lat = place.lat; $("pointB").dataset.lon = place.lon; 
                             $("btnWalkability").click();
                         };
                         list.appendChild(li);
@@ -288,7 +274,7 @@
     });
     document.addEventListener("click", (e) => { if(e.target.id !== "pointB") $("autocompleteList").style.display = "none"; });
 
-    // --- ROUTING & INFRASTRUCTURE LOGIC ---
+    // Routing & Infrastructure Parser
     $("btnWalkability").addEventListener("click", async () => {
       let dest = $("pointB").value;
       if (!dest || !userLatLng) return showToast("Enter destination & allow GPS.");
@@ -312,30 +298,35 @@
         routeLine = L.geoJSON(route.geometry, { style: { weight: 7, color: '#007aff', opacity: 0.9 } }).addTo(map);
         map.fitBounds(routeLine.getBounds(), { padding: [50, 50] });
 
-        // Save coordinates array for Live Navigation
-        navCoordinates = [];
-        routeLine.getLayers().forEach(layer => {
-            if(layer.getLatLngs) {
-                // Flatten array of coordinates
-                const latLngs = layer.getLatLngs();
-                navCoordinates = Array.isArray(latLngs[0]) ? latLngs.flat() : latLngs;
-            }
-        });
-
-        // Parse Infrastructure & Score
-        let stats = { bridges: 0, underpasses: 0, footpaths: 0 };
+        // Parse Infrastructure & Crossings
+        let stats = { bridges: 0, underpasses: 0, footpaths: 0, crossings: 0 };
+        
         if (route.legs && route.legs[0].steps) {
             route.legs[0].steps.forEach((step) => {
                 let lower = (step.name || "").toLowerCase();
+                let type = step.maneuver.type;
+                let modifier = step.maneuver.modifier;
+
+                // Detect Road Crossings (turns on streets)
+                if (type === 'turn' || type === 'merge' || lower.includes("cross")) {
+                    if (modifier === 'left' || modifier === 'right' || modifier === 'sharp left' || modifier === 'sharp right') {
+                        stats.crossings++;
+                    }
+                }
+
+                // Detect Physical Infrastructure
                 if (lower.includes("bridge") || lower.includes("flyover")) stats.bridges++;
-                else if (lower.includes("underpass")) stats.underpasses++;
+                else if (lower.includes("underpass") || lower.includes("subway")) stats.underpasses++;
                 else stats.footpaths++;
             });
         }
 
+        // Score Calculation
         let baseScore = Math.max(10, 100 - (route.distance / 100)); 
-        baseScore -= (stats.bridges * 2); // Penalty
-        baseScore -= (stats.underpasses * 5); // Penalty
+        baseScore -= (stats.bridges * 2); // Bridge penalty
+        baseScore -= (stats.underpasses * 5); // Underpass penalty
+        baseScore -= (stats.crossings * 1); // Crossing penalty (safety/disruption)
+        
         if (baseScore > 98) baseScore = 98;
         if (baseScore < 10) baseScore = 10;
         
@@ -344,17 +335,13 @@
 
         $("scoreTime").textContent = `${Math.round(route.duration/60)} min`;
         $("scoreDistance").textContent = `${(route.distance/1000).toFixed(2)} km`;
-        $("statSteps").textContent = Math.round(route.distance / 0.762).toLocaleString();
-        $("statCals").textContent = Math.round(route.distance * 0.05).toLocaleString();
         
-        // Render Badges
-        $("routeSummary").innerHTML = `
-            <div class="stat-badge">🚶 ${stats.footpaths} Paths</div>
-            ${stats.bridges > 0 ? `<div class="stat-badge" style="color:#b06000; border-color:#fef7e0;">🌉 ${stats.bridges} Bridges</div>` : ''}
-            ${stats.underpasses > 0 ? `<div class="stat-badge" style="color:#d93025; border-color:#fce8e6;">🚇 ${stats.underpasses} Underpasses</div>` : ''}
-        `;
+        // Update Detailed Menu
+        $("statPaths").textContent = stats.footpaths;
+        $("statBridges").textContent = stats.bridges;
+        $("statCross").textContent = stats.crossings;
+        $("statUnder").textContent = stats.underpasses;
         
-        // Swap panels
         $("setupPanel").style.display = "none";
         $("scorePanel").style.display = "block";
 
@@ -367,50 +354,89 @@
       $("scorePanel").style.display = "none"; $("setupPanel").style.display = "block"; $("pointB").value = "";
     });
 
-    // --- LIVE SIMULATED NAVIGATION ---
-    let walkInterval, walkSecs = 0, currentSteps = 0, currentDist = 0, navIndex = 0;
-    
-    $("btnStartWalk").addEventListener("click", () => {
+    // --- REAL SENSOR PEDOMETER & LIVE GPS ---
+    let walkTimer, walkSecs = 0, liveSteps = 0, isWalking = false;
+    let lastMag = 0, isPeak = false;
+    let watchId = null;
+
+    // Sensor Analysis function (Accelerometer)
+    function handleMotion(event) {
+        if (!isWalking) return;
+        let acc = event.accelerationIncludingGravity;
+        if (!acc) return;
+        
+        // Calculate vector magnitude (combining X, Y, Z axes)
+        let mag = Math.sqrt(acc.x*acc.x + acc.y*acc.y + acc.z*acc.z);
+        
+        // Gravity is ~9.8m/s^2. A footstep spikes it higher.
+        let threshold = 11.5; 
+        
+        if (mag > threshold && !isPeak) {
+            isPeak = true;
+            liveSteps++;
+            $("liveSteps").textContent = liveSteps;
+        } else if (mag < 10.5) {
+            isPeak = false; // Reset for next step
+        }
+    }
+
+    $("btnStartWalk").addEventListener("click", async () => {
+        // Request iOS permission if needed
+        if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+            try {
+                const permission = await DeviceMotionEvent.requestPermission();
+                if (permission !== 'granted') return showToast("Sensor permission denied.");
+            } catch (e) { console.error(e); }
+        }
+
         $("routeOverview").style.display = "none";
         $("walkDashboard").classList.add("active");
         
-        walkSecs = 0; currentSteps = 0; currentDist = 0; navIndex = 0;
+        walkSecs = 0; liveSteps = 0; isWalking = true;
         $("liveSteps").textContent = "0"; $("liveTime").textContent = "00:00"; $("liveDist").textContent = "0.00";
 
-        // Center map & Zoom in
-        map.setView(userLatLng, 18);
+        // Start Hardware Listener
+        window.addEventListener('devicemotion', handleMotion);
 
-        clearInterval(walkInterval);
-        walkInterval = setInterval(() => {
-            walkSecs++; currentSteps += 2; currentDist = (currentSteps * 0.762) / 1000;
-            $("liveSteps").textContent = currentSteps;
-            $("liveDist").textContent = currentDist.toFixed(2);
+        // Start Live GPS Tracking
+        if (navigator.geolocation) {
+            watchId = navigator.geolocation.watchPosition((pos) => {
+                let newPos = L.latLng(pos.coords.latitude, pos.coords.longitude);
+                if (userMarker) {
+                    let dist = userLatLng.distanceTo(newPos); // Get physical distance moved in meters
+                    $("liveDist").textContent = (dist / 1000).toFixed(2); // Update UI
+                    userMarker.setLatLng(newPos);
+                }
+                userLatLng = newPos;
+                map.setView(userLatLng, 18); // Keep camera centered on you
+            }, (err) => { console.warn("GPS Tracking Error"); }, { enableHighAccuracy: true });
+        }
+
+        // Timer
+        clearInterval(walkTimer);
+        walkTimer = setInterval(() => {
+            walkSecs++;
             let m = Math.floor(walkSecs / 60).toString().padStart(2, '0');
             let s = (walkSecs % 60).toString().padStart(2, '0');
             $("liveTime").textContent = `${m}:${s}`;
-
-            // SIMULATE MOVEMENT ALONG THE PATH
-            if (navCoordinates.length > 0 && navIndex < navCoordinates.length) {
-                let nextPos = navCoordinates[navIndex];
-                userMarker.setLatLng(nextPos); // Move Marker
-                map.panTo(nextPos); // Pan camera
-                
-                // Advance index based on simulation speed
-                navIndex += Math.ceil(navCoordinates.length / ($("scoreTime").textContent.split(' ')[0] * 60)); 
-            }
         }, 1000);
     });
 
     $("btnStopWalk").addEventListener("click", () => {
-        clearInterval(walkInterval);
+        isWalking = false;
+        clearInterval(walkTimer);
+        window.removeEventListener('devicemotion', handleMotion);
+        if (watchId) navigator.geolocation.clearWatch(watchId);
+
         $("walkDashboard").classList.remove("active");
         $("routeOverview").style.display = "block";
-        showToast(`Walk ended! You earned +5 points.`);
-        userStats.points += 5; updateProfile(); // Small reward for walking
+        showToast(`Walk ended! Logged ${liveSteps} real steps.`);
+        
+        userStats.points += 5; updateProfile(); // Reward
         if(routeLine) map.fitBounds(routeLine.getBounds(), { padding: [50, 50] }); 
     });
 
-    // --- HAZARD REPORTING & FEED ---
+    // --- HAZARD REPORTING ---
     let activeTag = "";
     document.querySelectorAll(".tag").forEach(tag => { tag.addEventListener("click", () => { document.querySelectorAll(".tag").forEach(t => t.classList.remove("selected")); tag.classList.add("selected"); activeTag = tag.dataset.tag; }); });
 
@@ -429,7 +455,7 @@
       
       userStats.points += 10; userStats.reports += 1; updateProfile();
       renderFeed(); showToast("Report published! +10 Points"); 
-      document.querySelector('[data-tab="profile"]').click(); // Jump to Profile to see points
+      document.querySelector('[data-tab="profile"]').click(); 
     });
     
   </script>
