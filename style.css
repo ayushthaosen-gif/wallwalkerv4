@@ -30,11 +30,11 @@ body, html { margin: 0; padding: 0; height: 100%; width: 100%; font-family: -app
 .version-tag { font-size:10px; background:#e3f2fd; color:#1976d2; padding:3px 8px; border-radius:8px; vertical-align:middle; }
 .env-meters { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
 .env-meters::-webkit-scrollbar { display: none; }
-.env-badge { flex-shrink: 0; padding: 4px 10px; border-radius: 12px; font-size: 10px; font-weight: 800; border: 1px solid var(--border); cursor: pointer; transition: 0.2s; white-space: nowrap; }
+.env-badge { flex-shrink: 0; padding: 6px 10px; border-radius: 12px; font-size: 11px; font-weight: 800; border: 1px solid var(--border); cursor: pointer; transition: 0.2s; white-space: nowrap; }
 .env-badge:active { transform: scale(0.95); }
 .aqi { background: #e3f2fd; color: #1976d2; }
 .temp { background: #fff3e0; color: #f57c00; }
-.lux { background: #f4f4f4; color: #333; }
+.tree-btn { background: #e8f5e9; color: #2e7d32; }
 
 /* Map & Search */
 .map-wrapper { flex: 1; position: relative; overflow: hidden; }
@@ -127,7 +127,7 @@ input:checked + .slider:before { transform: translateX(20px); }
 .modal-overlay.active { display: flex; }
 .modal-content { background: white; width: 90%; max-width: 350px; border-radius: 20px; padding: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
 .modal-content h3 { margin-top: 0; font-weight: 900; }
-.modal-desc { font-size:13px; color:#555; line-height:1.5; }
+.modal-desc { font-size:13px; color:#555; line-height:1.5; margin-bottom:15px; }
 .modal-val { font-size:32px; font-weight:900; margin:10px 0; }
 .close-btn { background: #eee; border: none; padding: 10px; border-radius: 10px; font-weight: bold; width: 100%; margin-top: 15px; cursor: pointer; }
 .obs-btn { display: block; width: 100%; text-align: left; padding: 12px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 10px; background: white; font-weight: bold; font-size: 14px; cursor: pointer; }

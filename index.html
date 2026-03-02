@@ -3,21 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
-    <title>GaitWay V73.0 - Pro</title>
-    
+    <title>GaitWay V74.0 - Precision</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    
     <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
 <div class="app-shell">
     <header class="app-header">
-        <div class="header-brand"><h2 onclick="location.reload()">GAITWAY <span class="version-tag">V73</span></h2></div>
+        <div class="header-brand"><h2 onclick="location.reload()">GAITWAY <span class="version-tag">V74</span></h2></div>
         <div class="env-meters">
-            <div class="env-badge aqi" id="liveAqi" onclick="openModal('aqiModal')">🍃 AQI: --</div>
-            <div class="env-badge temp" id="liveTemp" onclick="openModal('tempModal')">🌡️ Feels --°C</div>
-            <div class="env-badge lux" id="liveLux">💡 Lux: --</div>
+            <div class="env-badge aqi" id="liveAqi" onclick="openModal('aqiModal')">AQI: --</div>
+            <div class="env-badge temp" id="liveTemp" onclick="openModal('tempModal')">Feels --°C</div>
+            <div class="env-badge tree-btn" onclick="toggleTreeCover()">Tree Cover</div>
         </div>
     </header>
     
@@ -55,7 +53,7 @@
                 </div>
                 <div class="route-option transit" onclick="startRouting('transit')">
                     <div>
-                        <div class="route-title txt-transit">🚌 Public Transit (DTC/DIMTS)</div>
+                        <div class="route-title txt-transit">🚌 Public Transit</div>
                         <div class="route-meta" id="compTransitTime">-- min | -- km</div>
                     </div>
                     <div class="txt-right"><div class="route-score txt-transit" id="compTransitScore">--</div></div>
@@ -83,28 +81,30 @@
                     </div>
                 </div>
 
-                <div class="health-metrics">
-                    <span>👟 Approx <b id="valSteps" class="txt-main">0</b> Steps</span>
+                <div class="health-metrics" id="estMetrics">
+                    <span>👟 Est <b id="valSteps" class="txt-main">0</b> Steps</span>
                     <span>|</span>
                     <span>🔥 Burn <b id="valCals" class="txt-transit">0</b> kcal</span>
                 </div>
+                <div class="health-metrics" id="liveMetrics" style="display:none; background:rgba(52, 199, 89, 0.1);">
+                    <span class="txt-tree">🟢 Live Steps: <b id="liveStepCount" style="font-size:16px;">0</b></span>
+                </div>
 
                 <div class="infra-grid" id="infraGridBox">
-                    <div class="stat-card" onclick="markInfra('footpaths')"><label>Footpath</label><b id="cntFoot" class="txt-main">0</b></div>
-                    <div class="stat-card" onclick="markInfra('bridges')"><label>Bridges</label><b id="cntBridge" style="color:#b8860b;">0</b></div>
+                    <div class="stat-card" onclick="markInfra('footpaths')"><label>Footpaths</label><b id="cntFoot" class="txt-main">0</b></div>
                     <div class="stat-card" onclick="markInfra('crossings')"><label>Crossings</label><b id="cntCross" class="txt-primary">0</b></div>
+                    <div class="stat-card" onclick="markInfra('bridges')"><label>Bridges</label><b id="cntBridge" style="color:#b8860b;">0</b></div>
                     <div class="stat-card" onclick="markInfra('underpasses')"><label>Underpass</label><b id="cntUnder" class="txt-safe">0</b></div>
                 </div>
 
                 <div class="itinerary-container" id="itineraryBox"></div>
                 <div class="transit-box" id="transitBox"></div>
 
-                <button class="btn-live-nav" id="btnStartLive" onclick="startLiveNavigation()">Start Live Hardware Walk</button>
-                <button class="btn-live-nav btn-end-nav" id="btnStopLive" onclick="stopLiveNavigation()">Stop Live Navigation</button>
+                <button class="btn-live-nav" id="btnStartLive" onclick="startLiveNavigation()">Start Live Walk</button>
+                <button class="btn-live-nav btn-end-nav" id="btnStopLive" onclick="stopLiveNavigation()">Stop Navigation</button>
 
                 <div class="swipe-tools">
-                    <div class="tool-btn txt-primary" onclick="openModal('gateModal')">📸 Mark Gate/Hazard</div>
-                    <div class="tool-btn txt-tree" onclick="toggleTreeCover()">🌳 Tree Cover</div>
+                    <div class="tool-btn txt-primary" onclick="openModal('gateModal')">📍 Mark Hazard / Gate</div>
                 </div>
             </div>
         </main>
@@ -148,11 +148,53 @@
     </nav>
 </div>
 
-<div class="modal-overlay" id="pathPromptModal"><div class="modal-content b-top-primary"><h3>Verify Surface</h3><p class="modal-desc">Your phone's accelerometer detected a change in vibration. What kind of path are you walking on right now?</p><button class="obs-btn" onclick="submitPathData('Asphalt')">🛣️ Smooth Asphalt</button><button class="obs-btn" onclick="submitPathData('Paver Block')">🧱 Paver Blocks</button><button class="obs-btn" onclick="submitPathData('Broken / Dirt')">🪨 Broken / Dirt Path</button><button class="obs-btn" onclick="submitPathData('Cement')">⬜ Cement Sidewalk</button><button class="close-btn" onclick="closeModal('pathPromptModal')">Ignore</button></div></div>
-<div class="modal-overlay" id="gateModal"><div class="modal-content"><h3>📸 Mark Gate/Hazard</h3><p class="modal-desc">Upload or snap a picture. The AI will compress to WEBP, extract text via OCR, and log the GPS node to the database.</p><input type="file" id="gateImageInput" accept="image/*" capture="environment" style="display:none;" onchange="processGateImage(event)"><button class="btn-live-nav mt-10" onclick="document.getElementById('gateImageInput').click()">Take Picture</button><canvas id="webpCanvas" style="display:none;"></canvas><div id="ocrStatus" class="ocr-status mt-10"></div><button class="close-btn" onclick="closeModal('gateModal')">Cancel</button></div></div>
+<div class="modal-overlay" id="pathPromptModal">
+    <div class="modal-content b-top-primary">
+        <h3>Verify Surface</h3>
+        <p class="modal-desc">Vibration change detected. What kind of path are you walking on right now?</p>
+        <button class="obs-btn" onclick="submitPathData('Asphalt')">🛣️ Smooth Asphalt</button>
+        <button class="obs-btn" onclick="submitPathData('Paver Block')">🧱 Paver Blocks</button>
+        <button class="obs-btn" onclick="submitPathData('Broken / Dirt')">🪨 Broken / Dirt Path</button>
+        <button class="obs-btn" onclick="submitPathData('Cement')">⬜ Cement Sidewalk</button>
+        <button class="close-btn mt-10" onclick="ignorePathPromptForWalk()">Don't ask again for this walk</button>
+    </div>
+</div>
+
+<div class="modal-overlay" id="gateModal">
+    <div class="modal-content">
+        <h3>📍 Mark Hazard</h3>
+        <p class="modal-desc">Drop a GPS pin for an obstacle, or upload a photo to OCR scan a gate sign.</p>
+        
+        <button class="obs-btn" onclick="submitQuickHazard('🚧 Construction')">🚧 Construction</button>
+        <button class="obs-btn" onclick="submitQuickHazard('⛔ Closed Gate')">⛔ Closed Gate</button>
+        <button class="obs-btn" onclick="submitQuickHazard('🚷 No Footpath')">🚷 No Footpath</button>
+        <button class="obs-btn" onclick="submitQuickHazard('🚗 Cars Parked on Path')">🚗 Cars Parked on Path</button>
+        
+        <hr style="border:0; border-top:1px solid #eee; margin: 15px 0;">
+        
+        <input type="file" id="gateImageInput" accept="image/*" capture="environment" style="display:none;" onchange="processGateImage(event)">
+        <button class="btn-live-nav" onclick="document.getElementById('gateImageInput').click()" style="margin-bottom:0;">📸 Scan Gate Sign with OCR</button>
+        <canvas id="webpCanvas" style="display:none;"></canvas>
+        <div id="ocrStatus" class="ocr-status mt-10"></div>
+        
+        <button class="close-btn" onclick="closeModal('gateModal')">Cancel</button>
+    </div>
+</div>
+
 <div class="modal-overlay" id="scoreModal"><div class="modal-content"><h3>Walkability Metrics</h3><p class="modal-desc">Base score is 100, dynamically adjusted.</p><button class="close-btn" onclick="closeModal('scoreModal')">Close</button></div></div>
-<div class="modal-overlay" id="aqiModal"><div class="modal-content"><h3>🍃 Live Air Quality</h3><div class="modal-val txt-primary" id="modalAqiVal">--</div><button class="close-btn" onclick="closeModal('aqiModal')">Close</button></div></div>
-<div class="modal-overlay" id="tempModal"><div class="modal-content"><h3>🌡️ Local Weather</h3><div class="temp-row"><b>Real Temp</b><span id="modalRealTemp" class="txt-main stat-bold">--°C</span></div><div class="temp-row"><b>Feels Like</b><span id="modalFeelsTemp" class="txt-transit stat-bold">--°C</span></div><div class="temp-row no-border"><b>Wind Speed</b><span id="modalWind" class="txt-primary stat-bold">-- km/h</span></div><button class="close-btn mt-20" onclick="closeModal('tempModal')">Close</button></div></div>
+
+<div class="modal-overlay" id="aqiModal"><div class="modal-content"><h3>Live Air Quality</h3><p class="modal-desc">Current US AQI Index. Source: Open-Meteo API.</p><div class="modal-val txt-primary" id="modalAqiVal">--</div><button class="close-btn" onclick="closeModal('aqiModal')">Close</button></div></div>
+
+<div class="modal-overlay" id="tempModal">
+    <div class="modal-content">
+        <h3>Local Weather</h3>
+        <p class="modal-desc" style="font-size:10px;">Source: Open-Meteo API</p>
+        <div class="temp-row"><b>Real Temp</b><span id="modalRealTemp" class="txt-main stat-bold">--°C</span></div>
+        <div class="temp-row"><b>Feels Like</b><span id="modalFeelsTemp" class="txt-transit stat-bold">--°C</span></div>
+        <div class="temp-row no-border"><b>Wind Speed</b><span id="modalWind" class="txt-primary stat-bold">-- km/h</span></div>
+        <button class="close-btn mt-20" onclick="closeModal('tempModal')">Close</button>
+    </div>
+</div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="app.js"></script>
