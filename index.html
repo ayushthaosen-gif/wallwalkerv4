@@ -3,129 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
-    <title>GaitWay V69.0 - True Nav</title>
-
+    <title>GaitWay V73.0 - Pro</title>
+    
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
-    <style>
-        :root {
-            --primary: #007aff; --bg-main: #f2f2f7; --card-bg: rgba(255, 255, 255, 0.98);
-            --text-main: #1c1c1e; --text-muted: #8e8e93; --border: rgba(0,0,0,0.08);
-            --danger: #ff3b30; --transit: #ff9500; --tree: #34c759; --safe: #af52de;
-        }
-
-        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; outline: none; }
-        body, html { margin: 0; padding: 0; height: 100%; width: 100%; font-family: -apple-system, sans-serif; background: var(--bg-main); color: var(--text-main); overflow: hidden; }
-        .app-shell { display: flex; flex-direction: column; height: 100vh; width: 100vw; }
-
-        .tab-content { display: none; height: 100%; width: 100%; flex-direction: column; overflow: hidden; }
-        .tab-content.active { display: flex; animation: fadeIn 0.3s; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-
-        /* HEADER & SENSORS */
-        .app-header { padding: 15px 20px; background: white; border-bottom: 1px solid var(--border); z-index: 2000; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
-        .header-brand h2 { margin: 0; font-size: 20px; font-weight: 900; color: #000; letter-spacing: -1px; }
-        .env-meters { display: flex; gap: 6px; }
-        .env-badge { padding: 4px 10px; border-radius: 12px; font-size: 10px; font-weight: 800; border: 1px solid var(--border); cursor: pointer; transition: 0.2s; }
-        .env-badge:active { transform: scale(0.95); }
-        .aqi { background: #e3f2fd; color: #1976d2; }
-        .temp { background: #fff3e0; color: #f57c00; }
-
-        .map-wrapper { flex: 1; position: relative; overflow: hidden; }
-        #map { height: 100%; width: 100%; z-index: 1; background: #e0e0e0; }
-
-        /* SEARCH */
-        .search-overlay { position: absolute; top: 15px; left: 15px; right: 15px; z-index: 3000; pointer-events: none; }
-        .search-pill { display: flex; flex-direction: column; background: white; padding: 10px; border-radius: 20px; border: 1px solid var(--border); pointer-events: auto; box-shadow: 0 4px 25px rgba(0,0,0,0.08); }
-        .search-input-box { display: flex; align-items: center; padding: 0 5px; }
-        .search-pill input { flex: 1; border: none; background: transparent; font-size: 16px; padding: 8px 0; font-weight: 600; }
-        .suggestion-item { padding:15px; border-bottom:1px solid var(--border); cursor:pointer; display: flex; justify-content: space-between; align-items: center; }
-        .suggestion-dist { font-size: 11px; font-weight: 800; color: var(--primary); background: rgba(0,122,255,0.1); padding: 4px 8px; border-radius: 8px; }
-
-        /* COMPARISON CARD */
-        .comparison-card {
-            position: absolute; bottom: 85px; left: 15px; right: 15px; z-index: 4500;
-            background: var(--card-bg); backdrop-filter: blur(25px); border-radius: 24px;
-            padding: 20px; border: 1px solid var(--border); box-shadow: 0 12px 40px rgba(0,0,0,0.15);
-            display: none; transform: translateY(20px); transition: 0.4s;
-        }
-        .comparison-card.active { display: block; transform: translateY(0); }
-        .route-option { padding: 12px; border: 2px solid var(--border); border-radius: 16px; margin-bottom: 10px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
-        .route-option.shortest { border-color: rgba(0,122,255,0.3); background: rgba(0,122,255,0.02); }
-        .route-option.safest { border-color: rgba(175,82,222,0.3); background: rgba(175,82,222,0.02); }
-        .route-option.transit { border-color: rgba(255,149,0,0.3); background: rgba(255,149,0,0.02); }
-        .route-title { font-size: 14px; font-weight: 900; margin-bottom: 4px; }
-        .route-meta { font-size: 11px; color: var(--text-muted); font-weight: 600; }
-        .route-score { font-size: 20px; font-weight: 900; }
-
-        /* HUD */
-        .nav-hud { 
-            position: absolute; bottom: 85px; left: 15px; right: 15px; z-index: 4000; 
-            background: var(--card-bg); backdrop-filter: blur(25px); border-radius: 28px; 
-            padding: 15px 20px; border: 1px solid var(--border); box-shadow: 0 12px 40px rgba(0,0,0,0.12);
-            display: none; transition: transform 0.4s;
-        }
-        .nav-hud.active { display: block; transform: translateY(0); }
-        .nav-hud.minimized { transform: translateY(calc(100% - 35px)); }
-        
-        .hud-top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-        .drag-handle { width: 40px; height: 5px; background: #d1d1d6; border-radius: 5px; cursor: pointer; }
-        .close-hud-btn { background: #eee; border: none; border-radius: 50%; width: 28px; height: 28px; font-weight: bold; color: #555; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; }
-
-        .hud-header { display: flex; justify-content: space-between; margin-bottom: 5px; align-items: center; }
-        .score-num { font-size: 40px; font-weight: 900; letter-spacing: -1.5px; cursor: pointer; border-bottom: 2px dashed #ccc; }
-        .health-metrics { display: flex; gap: 10px; font-size: 11px; font-weight: 800; color: #555; background: rgba(0,0,0,0.03); padding: 8px 12px; border-radius: 12px; margin-bottom: 12px; justify-content: center;}
-        
-        .infra-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; }
-        .stat-card { background: white; border: 1px solid var(--border); padding: 8px 2px; border-radius: 12px; text-align: center; cursor: pointer; }
-        .stat-card label { display: block; font-size: 8px; font-weight: 900; color: var(--text-muted); text-transform: uppercase; margin-bottom: 2px; }
-        .stat-card b { font-size: 16px; color: var(--text-main); }
-
-        .itinerary-container { max-height: 140px; overflow-y: auto; background: rgba(0,0,0,0.02); border-radius: 14px; padding: 10px; margin-bottom: 15px; border: 1px solid var(--border); }
-        .step-row { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid rgba(0,0,0,0.05); font-size: 12px; align-items: center; cursor: pointer; }
-        .step-width { font-size: 10px; color: #555; font-weight: 800; background: white; padding: 4px 8px; border-radius: 8px; margin-top: 6px; display: inline-block; border: 1px solid var(--border); }
-        .transit-box { display: none; background: #fff; border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-bottom: 15px; max-height: 220px; overflow-y:auto; }
-
-        .btn-live-nav { background: var(--primary); color: white; border: none; width: 100%; padding: 16px; border-radius: 16px; font-size: 16px; font-weight: 900; margin-bottom: 12px; cursor: pointer; box-shadow: 0 4px 15px rgba(0,122,255,0.3); transition: 0.2s; }
-        .btn-end-nav { background: #1c1c1e; color: white; display: none; box-shadow: none; }
-
-        .swipe-tools { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 5px; scroll-snap-type: x mandatory; }
-        .swipe-tools::-webkit-scrollbar { display: none; }
-        .tool-btn { flex: 0 0 auto; scroll-snap-align: start; background: white; border: 1px solid var(--border); padding: 10px 16px; border-radius: 12px; font-weight: 800; font-size: 11px; display: flex; align-items: center; gap: 6px; cursor: pointer; }
-
-        /* COMPASS ICON STYLING */
-        .compass-marker { position: relative; width: 24px; height: 24px; display: flex; justify-content: center; align-items: center; }
-        .compass-dot { width: 16px; height: 16px; background: var(--primary); border: 3px solid white; border-radius: 50%; box-shadow: 0 2px 5px rgba(0,0,0,0.3); z-index: 2; }
-        .compass-cone { position: absolute; top: -12px; width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent; border-bottom: 16px solid rgba(0,122,255,0.6); z-index: 1; }
-
-        /* MODALS */
-        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 6000; display: none; align-items: center; justify-content: center; }
-        .modal-overlay.active { display: flex; }
-        .modal-content { background: white; width: 90%; max-width: 350px; border-radius: 20px; padding: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
-        .modal-content h3 { margin-top: 0; font-weight: 900; }
-        .close-btn { background: #eee; border: none; padding: 10px; border-radius: 10px; font-weight: bold; width: 100%; margin-top: 15px; cursor: pointer; }
-        
-        .bottom-nav { height: 75px; background: white; border-top: 1px solid var(--border); display: flex; z-index: 5000; flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
-        .nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-muted); cursor: pointer; }
-        .nav-item.active { color: var(--primary); }
-        .nav-item label { font-size: 10px; font-weight: 800; margin-top: 4px; }
-        .nav-icon { font-size: 22px; opacity: 0.5; filter: grayscale(100%); }
-        .nav-item.active .nav-icon { opacity: 1; filter: grayscale(0%); transform: scale(1.1); }
-
-        .leaflet-routing-container { display: none !important; }
-        .toast { position: fixed; top: 90px; left: 50%; transform: translateX(-50%); background: #1c1c1e; color: #fff; padding: 12px 24px; border-radius: 24px; font-size: 13px; font-weight: 700; z-index: 7000; opacity: 0; transition: 0.3s; pointer-events: none; }
-    </style>
+    <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
 <div class="app-shell">
     <header class="app-header">
-        <div class="header-brand"><h2 onclick="location.reload()">GAITWAY <span style="font-size:10px; background:#e3f2fd; color:#1976d2; padding:3px 8px; border-radius:8px; vertical-align:middle;">V69</span></h2></div>
+        <div class="header-brand"><h2 onclick="location.reload()">GAITWAY <span class="version-tag">V73</span></h2></div>
         <div class="env-meters">
             <div class="env-badge aqi" id="liveAqi" onclick="openModal('aqiModal')">🍃 AQI: --</div>
             <div class="env-badge temp" id="liveTemp" onclick="openModal('tempModal')">🌡️ Feels --°C</div>
+            <div class="env-badge lux" id="liveLux">💡 Lux: --</div>
         </div>
     </header>
+    
     <div id="toast" class="toast">Action Triggered</div>
 
     <div id="explore-tab" class="tab-content active">
@@ -134,70 +29,71 @@
                 <div class="search-pill" id="searchContainer">
                     <div class="search-input-box">
                         <input type="text" id="destInput" placeholder="Search or Long Press Map..." autocomplete="off">
-                        <button onclick="getCurrentLocation()" style="background:none; border:none; font-size:18px; cursor:pointer;">📍</button>
+                        <button onclick="centerOnUser()" class="btn-locate">📍</button>
                     </div>
                 </div>
-                <div id="results" style="background:white; margin-top:8px; border-radius:18px; display:none; border:1px solid var(--border); pointer-events:auto; overflow:hidden;"></div>
+                <div id="results" class="search-results"></div>
             </div>
 
             <div id="map"></div>
 
             <div id="routeComparisonCard" class="comparison-card">
-                <h3 style="margin: 0 0 15px 0; font-size: 16px; font-weight: 900; text-align: center;">Select Route Profile</h3>
+                <h3 class="card-title">Select Route Profile</h3>
                 <div class="route-option shortest" onclick="startRouting('shortest')">
                     <div>
-                        <div class="route-title" style="color:var(--primary);">✂️ Shortest Path</div>
+                        <div class="route-title txt-primary">✂️ Shortest Path</div>
                         <div class="route-meta" id="compShortTime">-- min | -- km</div>
                     </div>
-                    <div style="text-align:right;"><div class="route-score" style="color:var(--primary);" id="compShortScore">--</div></div>
+                    <div class="txt-right"><div class="route-score txt-primary" id="compShortScore">--</div></div>
                 </div>
                 <div class="route-option safest" onclick="startRouting('safest')">
                     <div>
-                        <div class="route-title" style="color:var(--safe);">🛣️ Safest Path</div>
+                        <div class="route-title txt-safe">🛣️ Safest Path</div>
                         <div class="route-meta" id="compSafeTime">-- min | -- km</div>
                     </div>
-                    <div style="text-align:right;"><div class="route-score" style="color:var(--safe);" id="compSafeScore">--</div></div>
+                    <div class="txt-right"><div class="route-score txt-safe" id="compSafeScore">--</div></div>
                 </div>
                 <div class="route-option transit" onclick="startRouting('transit')">
                     <div>
-                        <div class="route-title" style="color:var(--transit);">🚇 Public Transit</div>
+                        <div class="route-title txt-transit">🚌 Public Transit (DTC/DIMTS)</div>
                         <div class="route-meta" id="compTransitTime">-- min | -- km</div>
                     </div>
-                    <div style="text-align:right;"><div class="route-score" style="color:var(--transit);" id="compTransitScore">--</div></div>
+                    <div class="txt-right"><div class="route-score txt-transit" id="compTransitScore">--</div></div>
                 </div>
             </div>
 
             <div id="auditorHud" class="nav-hud">
                 <div class="hud-top-bar">
-                    <div style="width:28px;"></div> <div class="drag-handle" onclick="toggleMinimize()"></div>
+                    <div class="spacer-28"></div>
+                    <div class="drag-handle" onclick="toggleMinimize()"></div>
                     <button class="close-hud-btn" onclick="clearRoute(true)">✕</button>
                 </div>
                 
                 <div class="hud-header">
                     <div>
-                        <span style="font-size: 9px; font-weight: 800; color: var(--text-muted); text-transform: uppercase;">Walkability Score</span>
-                        <div style="display: flex; align-items: baseline; gap: 4px;">
-                            <span class="score-num" id="walkScore" onclick="openModal('scoreModal')" style="color:var(--danger);">--</span>
-                            <span style="font-size: 14px; font-weight: 800; color: #ccc;">/100</span>
+                        <span class="hud-label">Walkability Score</span>
+                        <div class="score-container">
+                            <span class="score-num txt-danger" id="walkScore" onclick="openModal('scoreModal')">--</span>
+                            <span class="score-base">/100</span>
                         </div>
                     </div>
-                    <div style="text-align: right;">
-                        <b id="valTime" style="font-size: 22px; display:block; color:var(--text-main);">-- min</b>
-                        <span id="valDist" style="font-size: 12px; color: var(--text-muted); font-weight: 700;">-- km</span>
+                    <div class="txt-right">
+                        <b id="valTime" class="val-time">-- min</b>
+                        <span id="valDist" class="val-dist">-- km</span>
                     </div>
                 </div>
 
                 <div class="health-metrics">
-                    <span>👟 Approx <b id="valSteps" style="color:var(--text-main); font-size:14px;">0</b> Steps</span>
+                    <span>👟 Approx <b id="valSteps" class="txt-main">0</b> Steps</span>
                     <span>|</span>
-                    <span>🔥 Burn <b id="valCals" style="color:#ff9500; font-size:14px;">0</b> kcal</span>
+                    <span>🔥 Burn <b id="valCals" class="txt-transit">0</b> kcal</span>
                 </div>
 
                 <div class="infra-grid" id="infraGridBox">
-                    <div class="stat-card" onclick="markInfra('footpaths')"><label>Footpath</label><b id="cntFoot" style="color:var(--text-main);">0</b></div>
+                    <div class="stat-card" onclick="markInfra('footpaths')"><label>Footpath</label><b id="cntFoot" class="txt-main">0</b></div>
                     <div class="stat-card" onclick="markInfra('bridges')"><label>Bridges</label><b id="cntBridge" style="color:#b8860b;">0</b></div>
-                    <div class="stat-card" onclick="markInfra('crossings')"><label>Crossings</label><b id="cntCross" style="color:var(--primary);">0</b></div>
-                    <div class="stat-card" onclick="markInfra('underpasses')"><label>Underpass</label><b id="cntUnder" style="color:var(--safe);">0</b></div>
+                    <div class="stat-card" onclick="markInfra('crossings')"><label>Crossings</label><b id="cntCross" class="txt-primary">0</b></div>
+                    <div class="stat-card" onclick="markInfra('underpasses')"><label>Underpass</label><b id="cntUnder" class="txt-safe">0</b></div>
                 </div>
 
                 <div class="itinerary-container" id="itineraryBox"></div>
@@ -207,31 +103,41 @@
                 <button class="btn-live-nav btn-end-nav" id="btnStopLive" onclick="stopLiveNavigation()">Stop Live Navigation</button>
 
                 <div class="swipe-tools">
-                    <div class="tool-btn" style="color:var(--danger);" onclick="openModal('obstacleModal')">⚠️ Report Obstacle</div>
-                    <div class="tool-btn" style="color:var(--tree);" onclick="toggleTreeCover()">🌳 Toggle Tree Cover</div>
+                    <div class="tool-btn txt-primary" onclick="openModal('gateModal')">📸 Mark Gate/Hazard</div>
+                    <div class="tool-btn txt-tree" onclick="toggleTreeCover()">🌳 Tree Cover</div>
                 </div>
             </div>
         </main>
     </div>
 
-    <div id="intel-tab" class="tab-content" style="padding:20px; background:var(--bg-main); overflow-y:auto;">
-        <h3 style="margin-top:0; font-size:28px; font-weight:900;">Sector Intel</h3>
-        <p style="color:var(--text-muted); font-size:14px;">Live community hazard reports.</p>
-        <div id="intelFeedList">
-            <div style="background:white; padding:16px; border-radius:16px; margin-bottom:12px; border:1px solid var(--border);">
-                <span style="display:inline-block; background:rgba(255,59,48,0.1); color:var(--danger); padding:4px 8px; border-radius:8px; font-size:11px; font-weight:800; margin-bottom:8px;">🚧 Construction</span>
-                <h4 style="margin:0 0 5px 0;">📍 Near Sector 62</h4>
-                <div style="font-size:12px; color:var(--text-muted);">Reported 12 mins ago</div>
-            </div>
-        </div>
+    <div id="intel-tab" class="tab-content intel-tab">
+        <h3 class="tab-title">Sector Intel</h3>
+        <p class="tab-desc">Live community hazard reports.</p>
+        <div id="intelFeedList"></div>
     </div>
-    <div id="vault-tab" class="tab-content" style="padding:20px; background:var(--bg-main); overflow-y:auto;">
-        <h3 style="margin-top:0; font-size:28px; font-weight:900;">Surveyor Vault</h3>
-        <div style="background: linear-gradient(135deg, #007aff, #0056b3); color: white; padding: 30px; border-radius: 20px; text-align: center; margin-bottom: 20px;">
-            <div style="font-size:48px; margin-bottom:10px;">🛡️</div>
-            <h3 style="margin: 0; font-size: 22px;">Eco-Auditor</h3>
-            <div style="font-size: 56px; font-weight: 900; margin: 10px 0;">1,250</div>
-            <div style="font-size: 12px; font-weight:800; opacity: 0.9; text-transform:uppercase;">Civic XP Earned</div>
+
+    <div id="vault-tab" class="tab-content vault-tab">
+        <h3 class="tab-title">Surveyor Vault</h3>
+        <div class="vault-hero">
+            <div class="hero-icon">🛡️</div>
+            <h3 class="hero-title">Eco-Auditor</h3>
+            <div class="hero-xp">1,250</div>
+            <div class="hero-sub">Civic XP Earned</div>
+        </div>
+        
+        <h4 class="section-label">Device Diagnostics</h4>
+        <div class="diagnostics-card">
+            <div class="diag-row"><span>Battery Level</span><span id="vaultBattery" class="txt-tree stat-bold">--%</span></div>
+            <div class="diag-row"><span>Kinetic Pavement AI</span><span class="txt-primary stat-bold" id="kineticStatus">Active</span></div>
+        </div>
+
+        <h4 class="section-label">Preferences</h4>
+        <div class="toggle-switch">
+            <div>
+                <b class="pref-title">Voice Navigation</b><br>
+                <span class="pref-desc">Spoken turn-by-turn routing</span>
+            </div>
+            <label class="switch"><input type="checkbox" id="voiceToggle"><span class="slider"></span></label>
         </div>
     </div>
 
@@ -242,60 +148,11 @@
     </nav>
 </div>
 
-<div class="modal-overlay" id="scoreModal">
-    <div class="modal-content">
-        <h3>Walkability Metrics</h3>
-        <p style="font-size:14px; color:#555; line-height:1.5;">Base score is 100, dynamically adjusted by detected infrastructure:</p>
-        <ul style="font-size:13px; font-weight:bold; color:var(--danger); padding-left:20px; margin-bottom: 20px;">
-            <li>🌉 Bridges: -4 Points each</li>
-            <li>🚇 Underpasses: -6 Points each</li>
-            <li>🚦 Road Crossings: -1 Point each</li>
-            <li>🚶 Transit Base: + Comfort Rating</li>
-        </ul>
-        <button class="close-btn" onclick="closeModal('scoreModal')">Close</button>
-    </div>
-</div>
-
-<div class="modal-overlay" id="obstacleModal">
-    <div class="modal-content">
-        <h3>Report Hazard</h3>
-        <p style="font-size:13px; color:#555;">Select the obstacle at your location:</p>
-        <button class="obs-btn" onclick="submitObstacle('🚧 Construction')">🚧 Construction</button>
-        <button class="obs-btn" onclick="submitObstacle('🚗 Cars on Path')">🚗 Cars on Path</button>
-        <button class="obs-btn" onclick="submitObstacle('🕳️ Broken Pavement')">🕳️ Broken Pavement</button>
-        <button class="obs-btn" onclick="submitObstacle('💡 Poor Lighting')">💡 Poor Lighting</button>
-        <button class="close-btn" onclick="closeModal('obstacleModal')">Cancel</button>
-    </div>
-</div>
-
-<div class="modal-overlay" id="aqiModal">
-    <div class="modal-content">
-        <h3>🍃 Live Air Quality</h3>
-        <p style="font-size:14px; color:#555;">Current US AQI Index retrieved from satellite data.</p>
-        <div style="font-size:32px; font-weight:900; color:var(--primary); margin:10px 0;" id="modalAqiVal">--</div>
-        <p style="font-size:11px; color:#888;">Source: Open-Meteo Environmental API</p>
-        <button class="close-btn" onclick="closeModal('aqiModal')">Close</button>
-    </div>
-</div>
-
-<div class="modal-overlay" id="tempModal">
-    <div class="modal-content">
-        <h3>🌡️ Local Weather</h3>
-        <div style="display:flex; justify-content:space-between; margin-top:15px; border-bottom:1px solid #eee; padding-bottom:10px;">
-            <b style="color:#555;">Real Temp</b>
-            <span id="modalRealTemp" style="font-weight:bold; color:var(--text-main);">--°C</span>
-        </div>
-        <div style="display:flex; justify-content:space-between; margin-top:10px; border-bottom:1px solid #eee; padding-bottom:10px;">
-            <b style="color:#555;">Feels Like</b>
-            <span id="modalFeelsTemp" style="font-weight:bold; color:#f57c00;">--°C</span>
-        </div>
-        <div style="display:flex; justify-content:space-between; margin-top:10px;">
-            <b style="color:#555;">Wind Speed</b>
-            <span id="modalWind" style="font-weight:bold; color:var(--primary);">-- km/h</span>
-        </div>
-        <button class="close-btn" style="margin-top:20px;" onclick="closeModal('tempModal')">Close</button>
-    </div>
-</div>
+<div class="modal-overlay" id="pathPromptModal"><div class="modal-content b-top-primary"><h3>Verify Surface</h3><p class="modal-desc">Your phone's accelerometer detected a change in vibration. What kind of path are you walking on right now?</p><button class="obs-btn" onclick="submitPathData('Asphalt')">🛣️ Smooth Asphalt</button><button class="obs-btn" onclick="submitPathData('Paver Block')">🧱 Paver Blocks</button><button class="obs-btn" onclick="submitPathData('Broken / Dirt')">🪨 Broken / Dirt Path</button><button class="obs-btn" onclick="submitPathData('Cement')">⬜ Cement Sidewalk</button><button class="close-btn" onclick="closeModal('pathPromptModal')">Ignore</button></div></div>
+<div class="modal-overlay" id="gateModal"><div class="modal-content"><h3>📸 Mark Gate/Hazard</h3><p class="modal-desc">Upload or snap a picture. The AI will compress to WEBP, extract text via OCR, and log the GPS node to the database.</p><input type="file" id="gateImageInput" accept="image/*" capture="environment" style="display:none;" onchange="processGateImage(event)"><button class="btn-live-nav mt-10" onclick="document.getElementById('gateImageInput').click()">Take Picture</button><canvas id="webpCanvas" style="display:none;"></canvas><div id="ocrStatus" class="ocr-status mt-10"></div><button class="close-btn" onclick="closeModal('gateModal')">Cancel</button></div></div>
+<div class="modal-overlay" id="scoreModal"><div class="modal-content"><h3>Walkability Metrics</h3><p class="modal-desc">Base score is 100, dynamically adjusted.</p><button class="close-btn" onclick="closeModal('scoreModal')">Close</button></div></div>
+<div class="modal-overlay" id="aqiModal"><div class="modal-content"><h3>🍃 Live Air Quality</h3><div class="modal-val txt-primary" id="modalAqiVal">--</div><button class="close-btn" onclick="closeModal('aqiModal')">Close</button></div></div>
+<div class="modal-overlay" id="tempModal"><div class="modal-content"><h3>🌡️ Local Weather</h3><div class="temp-row"><b>Real Temp</b><span id="modalRealTemp" class="txt-main stat-bold">--°C</span></div><div class="temp-row"><b>Feels Like</b><span id="modalFeelsTemp" class="txt-transit stat-bold">--°C</span></div><div class="temp-row no-border"><b>Wind Speed</b><span id="modalWind" class="txt-primary stat-bold">-- km/h</span></div><button class="close-btn mt-20" onclick="closeModal('tempModal')">Close</button></div></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="app.js"></script>
