@@ -1,545 +1,265 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
-  <title>PathRater V13.0 - Shortest Path Routing</title>
-  <link rel="manifest" href="./manifest.json">
-  <meta name="theme-color" content="#ffffff">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+    <title>GaitWay V67.0 - Auditor</title>
 
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
+    
+    <style>
+        :root {
+            --primary: #007aff; --bg-main: #f2f2f7; --card-bg: rgba(255, 255, 255, 0.98);
+            --text-main: #1c1c1e; --text-muted: #8e8e93; --border: rgba(0,0,0,0.08);
+            --danger: #ff3b30; --transit: #ff9500; --tree: #34c759; --safe: #af52de;
+        }
 
-  <style>
-    :root {
-      --primary: #007aff; --bg-color: #f2f2f7; --card-bg: rgba(255, 255, 255, 0.85);
-      --text-main: #1c1c1e; --text-muted: #8e8e93; --border-radius: 20px;
-      --nav-h: 80px;
-    }
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; } 
-    html, body { height: 100%; overflow: hidden; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif; background-color: var(--bg-color); margin: 0; display: flex; justify-content: center; color: var(--text-main); }
-    
-    .app-container { width: 100%; max-width: 414px; height: 100dvh; position: relative; background: #fff; overflow: hidden; display: flex; flex-direction: column;}
-    
-    .header { padding: 15px 20px; background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); position: absolute; top: 0; width: 100%; z-index: 1000; border-bottom: 1px solid rgba(0,0,0,0.05); }
-    .header h2 { margin: 0; font-size: 24px; color: #000; font-weight: 800; display: flex; align-items: center; justify-content: space-between;}
-    .version-badge { font-size: 11px; background: var(--primary); color: #fff; padding: 4px 10px; border-radius: 12px; font-weight: 800; }
-    
-    .content { display: none; height: 100%; width: 100%; overflow-y: auto; padding-top: 70px; padding-bottom: calc(var(--nav-h) + 20px); }
-    .content.active { display: block; animation: fadeUp 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }
-    @keyframes fadeUp { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; outline: none; }
+        body, html { margin: 0; padding: 0; height: 100%; width: 100%; font-family: -apple-system, sans-serif; background: var(--bg-main); color: var(--text-main); overflow: hidden; }
+        .app-shell { display: flex; flex-direction: column; height: 100vh; width: 100vw; }
 
-    #routing { padding: 0; position: relative; }
-    #map { height: 100%; width: 100%; z-index: 1; }
-    
-    .floating-panel { position: absolute; bottom: calc(var(--nav-h) + 15px); left: 15px; right: 15px; background: var(--card-bg); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-radius: var(--border-radius); padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); z-index: 1000; border: 1px solid rgba(255,255,255,0.5); overflow: visible; transition: all 0.3s ease;}
-    
-    .input-group { margin-bottom: 15px; position: relative; }
-    input, textarea, select { width: 100%; padding: 16px; border: none; border-radius: 14px; font-family: inherit; font-size: 16px; background: rgba(0,0,0,0.05); font-weight: 500; color: var(--text-main); -webkit-appearance: none;}
-    input:focus, select:focus { outline: none; background: rgba(0, 122, 255, 0.1); }
-    
-    .autocomplete-list { position: absolute; bottom: 100%; left: 0; right: 0; background: rgba(255,255,255,0.95); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); border-radius: 14px; box-shadow: 0 -10px 25px rgba(0,0,0,0.15); margin-bottom: 10px; padding: 0; list-style: none; max-height: 250px; overflow-y: auto; z-index: 2000; display: none; border: 1px solid rgba(0,0,0,0.1);}
-    .autocomplete-list li { padding: 14px 16px; border-bottom: 1px solid rgba(0,0,0,0.05); cursor: pointer; font-size: 15px; font-weight: 500; display: flex; align-items: center;}
-    
-    .primary-btn { background: var(--primary); color: white; border: none; padding: 16px; border-radius: 14px; cursor: pointer; width: 100%; font-weight: 700; font-size: 17px; box-shadow: 0 8px 20px rgba(0, 122, 255, 0.3); transition: transform 0.1s; }
-    .primary-btn:active { transform: scale(0.97); }
-    .btn-stop { background: #ff3b30; box-shadow: 0 8px 20px rgba(255, 59, 48, 0.3); }
+        .tab-content { display: none; height: 100%; width: 100%; flex-direction: column; overflow: hidden; }
+        .tab-content.active { display: flex; animation: fadeIn 0.3s; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
-    /* Detailed Infrastructure & Score */
-    .score-row { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 5px;}
-    .score-big { font-size: 56px; font-weight: 900; color: var(--text-main); line-height: 0.9; letter-spacing: -2px;}
-    .health-stats { display: flex; justify-content: space-between; font-size: 14px; font-weight: 700; color: #555; background: rgba(0,0,0,0.03); padding: 10px 15px; border-radius: 10px; margin-bottom: 15px;}
-    
-    .route-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 15px; }
-    .stat-badge { background: rgba(255,255,255,0.8); border: 1px solid rgba(0,0,0,0.1); padding: 8px 10px; border-radius: 10px; font-size: 13px; font-weight: 700; color: #444; display:flex; justify-content: space-between; align-items: center; transition: background 0.2s;}
-    .stat-badge span { font-size: 16px; font-weight: 900;}
-    .clickable-badge { cursor: pointer; }
-    .clickable-badge:hover { background: rgba(0,0,0,0.05); }
-    .clickable-badge:active { transform: scale(0.97); }
+        .app-header { padding: 15px 20px; background: white; border-bottom: 1px solid var(--border); z-index: 2000; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+        .header-brand h2 { margin: 0; font-size: 20px; font-weight: 900; color: #000; letter-spacing: -1px; }
+        .env-meters { display: flex; gap: 6px; }
+        .env-badge { padding: 4px 10px; border-radius: 12px; font-size: 10px; font-weight: 800; border: 1px solid var(--border); transition: 0.3s; }
 
-    /* Expandable Text Route */
-    .btn-toggle-route { background: rgba(0,0,0,0.04); color: var(--text-main); font-weight: 700; font-size: 14px; padding: 12px; width: 100%; border-radius: 10px; border: none; cursor: pointer; margin-bottom: 15px; }
-    #textRouteContainer { display: none; max-height: 180px; overflow-y: auto; background: #fff; padding: 10px; border-radius: 12px; border: 1px solid rgba(0,0,0,0.05); margin-bottom: 15px; }
-    .route-step-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
-    .route-step-row:last-child { border-bottom: none; }
+        .map-wrapper { flex: 1; position: relative; overflow: hidden; }
+        #map { height: 100%; width: 100%; z-index: 1; background: #e0e0e0; }
 
-    /* Live Walk UI */
-    .walk-dashboard { display: none; text-align: center; }
-    .walk-dashboard.active { display: block; }
-    .walk-metric { font-size: 48px; font-weight: 900; font-variant-numeric: tabular-nums; letter-spacing: -1px;}
-    .walk-label { font-size: 12px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;}
+        .search-overlay { position: absolute; top: 15px; left: 15px; right: 15px; z-index: 3000; pointer-events: none; }
+        .search-pill { display: flex; flex-direction: column; background: white; padding: 10px; border-radius: 20px; border: 1px solid var(--border); pointer-events: auto; box-shadow: 0 4px 25px rgba(0,0,0,0.08); }
+        .search-input-box { display: flex; align-items: center; padding: 0 5px; }
+        .search-pill input { flex: 1; border: none; background: transparent; font-size: 16px; padding: 8px 0; font-weight: 600; }
+        .suggestion-item { padding:15px; border-bottom:1px solid var(--border); cursor:pointer; display: flex; justify-content: space-between; align-items: center; }
+        .suggestion-dist { font-size: 11px; font-weight: 800; color: var(--primary); background: rgba(0,122,255,0.1); padding: 4px 8px; border-radius: 8px; }
 
-    /* Standard Tabs */
-    .page-content { padding: 20px; }
-    .tag-container { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 15px; }
-    .tag { background: #fff; border: 1px solid #d1d1d6; padding: 10px 14px; border-radius: 20px; font-size: 14px; cursor: pointer; font-weight: 500;}
-    .tag.selected { background: var(--primary); border-color: var(--primary); color: #fff; }
-    .review-card { background: #fff; padding: 18px; margin-bottom: 15px; border-radius: 16px; box-shadow: 0 2px 10px rgba(0,0,0,0.03); border: 1px solid rgba(0,0,0,0.05);}
-    .review-tag { display: inline-block; background: rgba(255, 59, 48, 0.1); color: #ff3b30; padding: 5px 10px; border-radius: 8px; font-size: 12px; font-weight: 800; margin-bottom: 10px; }
-    
-    .profile-card { background: linear-gradient(135deg, #007aff, #0056b3); color: white; padding: 25px; border-radius: 20px; text-align: center; margin-bottom: 20px; box-shadow: 0 10px 20px rgba(0,122,255,0.3); }
-    .points-big { font-size: 48px; font-weight: 900; margin: 10px 0; }
-    .settings-box { background: #fff; border-radius: 16px; padding: 18px; margin-bottom: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.03); border: 1px solid rgba(0,0,0,0.05);}
+        .comparison-card {
+            position: absolute; bottom: 85px; left: 15px; right: 15px; z-index: 4500;
+            background: var(--card-bg); backdrop-filter: blur(25px); border-radius: 24px;
+            padding: 20px; border: 1px solid var(--border); box-shadow: 0 12px 40px rgba(0,0,0,0.15);
+            display: none; transform: translateY(20px); transition: 0.4s;
+        }
+        .comparison-card.active { display: block; transform: translateY(0); }
+        .route-option { padding: 12px; border: 2px solid var(--border); border-radius: 16px; margin-bottom: 10px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        .route-option.shortest { border-color: rgba(0,122,255,0.3); background: rgba(0,122,255,0.02); }
+        .route-option.safest { border-color: rgba(175,82,222,0.3); background: rgba(175,82,222,0.02); }
+        .route-option.transit { border-color: rgba(255,149,0,0.3); background: rgba(255,149,0,0.02); }
+        .route-title { font-size: 14px; font-weight: 900; margin-bottom: 4px; }
+        .route-meta { font-size: 11px; color: var(--text-muted); font-weight: 600; }
+        .route-score { font-size: 20px; font-weight: 900; }
 
-    .bottom-nav { position: absolute; bottom: 0; width: 100%; background: rgba(255,255,255,0.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); display: flex; border-top: 1px solid rgba(0,0,0,0.1); z-index: 1000; padding-bottom: env(safe-area-inset-bottom); height: calc(var(--nav-h) + env(safe-area-inset-bottom));}
-    .nav-item { flex: 1; padding: 10px 0; text-align: center; font-size: 11px; font-weight: 600; color: var(--text-muted); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; transition: 0.2s;}
-    .nav-item.active { color: var(--primary); }
-    .nav-icon { font-size: 22px; filter: grayscale(100%); opacity: 0.5; transition: 0.2s;}
-    .nav-item.active .nav-icon { filter: grayscale(0%); opacity: 1; transform: scale(1.1);}
+        .nav-hud { 
+            position: absolute; bottom: 85px; left: 15px; right: 15px; z-index: 4000; 
+            background: var(--card-bg); backdrop-filter: blur(25px); border-radius: 28px; 
+            padding: 15px 20px; border: 1px solid var(--border); box-shadow: 0 12px 40px rgba(0,0,0,0.12);
+            display: none; transition: transform 0.4s;
+        }
+        .nav-hud.active { display: block; transform: translateY(0); }
+        .nav-hud.minimized { transform: translateY(calc(100% - 35px)); }
+        .drag-handle { width: 40px; height: 5px; background: #d1d1d6; border-radius: 5px; margin: 0 auto 15px auto; cursor: pointer; }
+        
+        .hud-header { display: flex; justify-content: space-between; margin-bottom: 5px; align-items: center; }
+        .score-num { font-size: 40px; font-weight: 900; letter-spacing: -1.5px; cursor: pointer; border-bottom: 2px dashed #ccc; }
+        .health-metrics { display: flex; gap: 10px; font-size: 11px; font-weight: 800; color: #555; background: rgba(0,0,0,0.03); padding: 8px 12px; border-radius: 12px; margin-bottom: 12px; justify-content: center;}
+        
+        .infra-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; }
+        .stat-card { background: white; border: 1px solid var(--border); padding: 8px 2px; border-radius: 12px; text-align: center; cursor: pointer; transition: 0.2s; }
+        .stat-card:active { transform: scale(0.95); background: #f0f0f0; }
+        .stat-card label { display: block; font-size: 8px; font-weight: 900; color: var(--text-muted); text-transform: uppercase; margin-bottom: 2px; }
+        .stat-card b { font-size: 16px; color: var(--text-main); }
 
-    .toast { position: fixed; top: 90px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: #fff; padding: 12px 24px; border-radius: 30px; font-size: 14px; font-weight: 600; display: none; z-index: 2000; box-shadow: 0 10px 20px rgba(0,0,0,0.2); white-space: nowrap;}
-    .toast.show { display: block; animation: dropDown 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }
-    @keyframes dropDown { from { opacity: 0; transform: translate(-50%, -20px); } to { opacity: 1; transform: translate(-50%, 0); } }
-  </style>
+        .itinerary-container { max-height: 140px; overflow-y: auto; background: rgba(0,0,0,0.02); border-radius: 14px; padding: 10px; margin-bottom: 15px; border: 1px solid var(--border); }
+        .step-row { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid rgba(0,0,0,0.05); font-size: 12px; align-items: center; cursor: pointer; }
+        .step-width { font-size: 10px; color: #555; font-weight: 800; background: white; padding: 4px 8px; border-radius: 8px; margin-top: 6px; display: inline-block; border: 1px solid var(--border); }
+
+        .transit-box { display: none; background: #fff; border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-bottom: 15px; max-height: 220px; overflow-y:auto; }
+
+        .btn-live-nav { background: var(--primary); color: white; border: none; width: 100%; padding: 16px; border-radius: 16px; font-size: 16px; font-weight: 900; margin-bottom: 12px; cursor: pointer; box-shadow: 0 4px 15px rgba(0,122,255,0.3); transition: 0.2s; }
+        .btn-live-nav:active { transform: scale(0.98); }
+        .btn-end-nav { background: #1c1c1e; color: white; display: none; }
+
+        .swipe-tools { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 5px; scroll-snap-type: x mandatory; }
+        .swipe-tools::-webkit-scrollbar { display: none; }
+        .tool-btn { flex: 0 0 auto; scroll-snap-align: start; background: white; border: 1px solid var(--border); padding: 10px 16px; border-radius: 12px; font-weight: 800; font-size: 11px; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 6000; display: none; align-items: center; justify-content: center; }
+        .modal-overlay.active { display: flex; }
+        .modal-content { background: white; width: 90%; max-width: 350px; border-radius: 20px; padding: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
+        .modal-content h3 { margin-top: 0; font-weight: 900; }
+        .close-btn { background: #eee; border: none; padding: 10px; border-radius: 10px; font-weight: bold; width: 100%; margin-top: 15px; cursor: pointer; }
+        .obs-btn { display: block; width: 100%; text-align: left; padding: 12px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 10px; background: white; font-weight: bold; font-size: 14px; cursor: pointer; }
+
+        .bottom-nav { height: 75px; background: white; border-top: 1px solid var(--border); display: flex; z-index: 5000; flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
+        .nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-muted); cursor: pointer; }
+        .nav-item.active { color: var(--primary); }
+        .nav-item label { font-size: 10px; font-weight: 800; margin-top: 4px; }
+        .nav-icon { font-size: 22px; opacity: 0.5; filter: grayscale(100%); }
+        .nav-item.active .nav-icon { opacity: 1; filter: grayscale(0%); transform: scale(1.1); }
+
+        .leaflet-routing-container { display: none !important; }
+        .pulse-marker { border-radius: 50%; border: 2px solid white; animation: pulse-anim 2s infinite; }
+        @keyframes pulse-anim { 0% { box-shadow: 0 0 0 0 rgba(255,59,48, 0.7); } 70% { box-shadow: 0 0 0 15px rgba(255,59,48, 0); } 100% { box-shadow: 0 0 0 0 rgba(255,59,48, 0); } }
+        .toast { position: fixed; top: 90px; left: 50%; transform: translateX(-50%); background: #1c1c1e; color: #fff; padding: 12px 24px; border-radius: 24px; font-size: 13px; font-weight: 700; z-index: 7000; opacity: 0; transition: 0.3s; pointer-events: none; }
+    </style>
 </head>
-
 <body>
-  <div class="app-container">
-    <div class="header">
-      <h2>PathRater <span class="version-badge">V13</span></h2>
-    </div>
 
-    <div id="routing" class="content active">
-      <div id="map"></div>
-
-      <div class="floating-panel" id="setupPanel">
-        <div class="input-group" style="margin-bottom: 10px;">
-           <select id="routePref" style="text-align: center; font-weight: 800;">
-               <option value="shortest">✂️ Shortest Walking Path (Alleys & Cut-throughs)</option>
-               <option value="safest">🛣️ Safest / Main Roads</option>
-           </select>
+<div class="app-shell">
+    <header class="app-header">
+        <div class="header-brand"><h2 onclick="location.reload()">GAITWAY <span style="font-size:10px; background:#e3f2fd; color:#1976d2; padding:3px 8px; border-radius:8px; vertical-align:middle;">V67</span></h2></div>
+        <div class="env-meters">
+            <div class="env-badge aqi" id="liveAqi">🍃 AQI: --</div>
+            <div class="env-badge temp" id="liveTemp">🌡️ Feels --°C</div>
         </div>
+    </header>
+    <div id="toast" class="toast">Action Triggered</div>
 
-        <div class="input-group">
-          <ul class="autocomplete-list" id="autocompleteList"></ul>
-          <input type="text" id="pointB" placeholder="Where to?" autocomplete="off" />
-        </div>
-        <div style="display:flex; gap:10px;">
-          <button class="primary-btn" id="btnWalkability">Get Route</button>
-          <button class="primary-btn" id="btnLocate" style="background:#e5e5ea; color:#000; box-shadow:none; flex: 0 0 50px;">📍</button>
-        </div>
-      </div>
-
-      <div class="floating-panel" id="scorePanel" style="display: none;">
-        <div id="routeOverview">
-            <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
-                <span style="font-size:13px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Walkability Score</span>
-                <button id="btnClear" style="border:none; background:none; color:var(--text-muted); font-weight:bold; cursor:pointer;">✕ Close</button>
+    <div id="explore-tab" class="tab-content active">
+        <main class="map-wrapper">
+            <div class="search-overlay">
+                <div class="search-pill" id="searchContainer">
+                    <div class="search-input-box">
+                        <input type="text" id="destInput" placeholder="Search or Long Press Map..." autocomplete="off">
+                        <button onclick="getCurrentLocation()" style="background:none; border:none; font-size:18px; cursor:pointer;">📍</button>
+                    </div>
+                </div>
+                <div id="results" style="background:white; margin-top:8px; border-radius:18px; display:none; border:1px solid var(--border); pointer-events:auto; overflow:hidden;"></div>
             </div>
-            
-            <div class="score-row">
-                <div class="score-big"><span id="scoreValue">--</span><span style="font-size: 24px; color:#c7c7cc;">/100</span></div>
-                <div style="text-align: right;">
-                    <div style="font-weight: 800; font-size: 22px; color:#000;" id="scoreTime">--</div>
-                    <div style="color: var(--text-muted); font-size: 15px; font-weight:600;" id="scoreDistance">--</div>
+
+            <div id="map"></div>
+
+            <div id="routeComparisonCard" class="comparison-card">
+                <h3 style="margin: 0 0 15px 0; font-size: 16px; font-weight: 900; text-align: center;">Select Route Profile</h3>
+                <div class="route-option shortest" onclick="startRouting('shortest')">
+                    <div>
+                        <div class="route-title" style="color:var(--primary);">✂️ Shortest Path</div>
+                        <div class="route-meta" id="compShortTime">-- min | -- km</div>
+                    </div>
+                    <div style="text-align:right;"><div class="route-score" style="color:var(--primary);" id="compShortScore">--</div></div>
+                </div>
+                <div class="route-option safest" onclick="startRouting('safest')">
+                    <div>
+                        <div class="route-title" style="color:var(--safe);">🛣️ Safest Path</div>
+                        <div class="route-meta" id="compSafeTime">-- min | -- km</div>
+                    </div>
+                    <div style="text-align:right;"><div class="route-score" style="color:var(--safe);" id="compSafeScore">--</div></div>
+                </div>
+                <div class="route-option transit" onclick="startRouting('transit')">
+                    <div>
+                        <div class="route-title" style="color:var(--transit);">🚇 Public Transit</div>
+                        <div class="route-meta" id="compTransitTime">-- min | -- km</div>
+                    </div>
+                    <div style="text-align:right;"><div class="route-score" style="color:var(--transit);" id="compTransitScore">--</div></div>
                 </div>
             </div>
 
-            <div class="health-stats">
-                <div>👟 Approx <span id="statSteps">0</span> Steps</div>
-                <div>🔥 Burn <span id="statCals">0</span> kcal</div>
-            </div>
-            
-            <div class="route-summary" id="routeSummary">
-                </div>
-
-            <button class="btn-toggle-route" id="btnToggleRoute">🗺️ Show Detailed Route</button>
-            <div id="textRouteContainer"></div>
-
-            <button class="primary-btn" id="btnStartWalk">Start Live Hardware Walk</button>
-        </div>
-
-        <div class="walk-dashboard" id="walkDashboard">
-            <div class="walk-label" style="color:#ff3b30; margin-bottom:5px;">● LIVE GPS & SENSORS</div>
-            <div class="walk-metric" id="liveSteps">0</div>
-            <div class="walk-label" style="margin-bottom:20px;">REAL STEPS TAKEN</div>
-            
-            <div style="display:flex; justify-content:space-around; margin-bottom:20px;">
-                <div>
-                    <div class="walk-metric" id="liveTime" style="font-size:28px;">00:00</div>
-                    <div class="walk-label">TIME</div>
-                </div>
-                <div>
-                    <div class="walk-metric" id="liveDist" style="font-size:28px;">0.00</div>
-                    <div class="walk-label">REAL KM</div>
-                </div>
-            </div>
-            <button class="primary-btn btn-stop" id="btnStopWalk">End Walk</button>
-        </div>
-      </div>
-    </div>
-
-    <div id="feed" class="content">
-      <div class="page-content">
-        <h3 style="margin-top:0; font-size:28px; font-weight:800;">Community Feed</h3>
-        <div id="reviewsFeed"></div>
-      </div>
-    </div>
-
-    <div id="reviews" class="content">
-      <div class="page-content">
-        <h3 style="margin-top:0; font-size:28px; font-weight:800;">Report Hazard</h3>
-        <p style="color: var(--text-muted); font-weight:500;">Help the community. Earn +10 points.</p>
-        <div class="tag-container" id="hazardTags">
-          <div class="tag" data-tag="🚗 Cars on Footpath">🚗 Cars on Path</div>
-          <div class="tag" data-tag="🕳️ Broken Pavement">🕳️ Broken Pavement</div>
-          <div class="tag" data-tag="🚧 Construction">🚧 Construction</div>
-          <div class="tag" data-tag="💡 No Streetlights">💡 No Streetlights</div>
-        </div>
-        <div class="input-group"><input type="text" id="reviewLocation" placeholder="Specific Location" /></div>
-        <div class="input-group"><label style="font-size:12px; font-weight:bold; color:var(--text-muted);">Optional Photo Evidence</label><input type="file" id="reviewImage" accept="image/*" /></div>
-        <button class="primary-btn" id="btnSubmit" style="margin-top:10px;">Submit Report</button>
-      </div>
-    </div>
-
-    <div id="profile" class="content">
-      <div class="page-content">
-        <h3 style="margin-top:0; font-size:28px; font-weight:800;">Profile</h3>
-        <div class="profile-card">
-            <div style="font-size:40px; margin-bottom:10px;" id="userBadge">🌱</div>
-            <h3 style="margin: 0; font-size: 20px;">Urban Explorer</h3>
-            <div class="points-big" id="userPoints">0</div>
-            <div style="font-size: 14px; opacity: 0.9;">Civic Points Earned</div>
-        </div>
-        <div class="settings-box">
-            <h4>🔒 Privacy Policy</h4>
-            <p>We respect your privacy. PathRater does not collect, store, or sell your personal data. Location and pedometer data are processed entirely locally on your device.</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="bottom-nav">
-      <div class="nav-item active" data-tab="routing"><span class="nav-icon">🗺️</span><span>Map</span></div>
-      <div class="nav-item" data-tab="feed"><span class="nav-icon">📋</span><span>Feed</span></div>
-      <div class="nav-item" data-tab="reviews"><span class="nav-icon">📸</span><span>Report</span></div>
-      <div class="nav-item" data-tab="profile"><span class="nav-icon">👤</span><span>Profile</span></div>
-    </div>
-    
-    <div class="toast" id="toast"></div>
-  </div>
-
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-
-  <script>
-    const $ = (id) => document.getElementById(id);
-    function showToast(msg) { $("toast").textContent = msg; $("toast").classList.add("show"); setTimeout(() => $("toast").classList.remove("show"), 2500); }
-    function escapeHTML(str) { return String(str).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;"); }
-
-    document.querySelectorAll(".nav-item").forEach((nav) => {
-      nav.addEventListener("click", () => {
-        document.querySelectorAll(".content").forEach(c => c.classList.remove("active"));
-        document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
-        $(nav.dataset.tab).classList.add("active"); nav.classList.add("active");
-        if(nav.dataset.tab === "routing") setTimeout(() => map.invalidateSize(), 100);
-      });
-    });
-
-    let userStats = JSON.parse(localStorage.getItem("pathrater_stats")) || { points: 0, reports: 0 };
-    function updateProfile() {
-      $("userPoints").textContent = userStats.points;
-      let badge = "🌱";
-      if (userStats.points >= 50) badge = "🔥";
-      if (userStats.points >= 150) badge = "👑";
-      $("userBadge").textContent = badge;
-      localStorage.setItem("pathrater_stats", JSON.stringify(userStats));
-    }
-    updateProfile();
-
-    const map = L.map("map", {zoomControl: false}).setView([28.6139, 77.2090], 13);
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png").addTo(map);
-    let userMarker, routeLine, destMarker, userLatLng;
-    let interactiveLayerGroup = L.layerGroup().addTo(map); 
-    let featureLocs = { footpaths: [], bridges: [], crossings: [], underpasses: [] };
-
-    function getCurrentLocation() {
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition((pos) => {
-                userLatLng = L.latLng(pos.coords.latitude, pos.coords.longitude);
-                if (!userMarker) userMarker = L.marker(userLatLng).addTo(map).bindPopup("You");
-                else userMarker.setLatLng(userLatLng);
-                map.setView(userLatLng, 16);
-            }, (err) => showToast("GPS Permission denied."));
-        }
-    }
-    getCurrentLocation();
-    $("btnLocate").addEventListener("click", getCurrentLocation);
-
-    let autocompleteTimeout;
-    $("pointB").addEventListener("input", function() {
-        clearTimeout(autocompleteTimeout);
-        const query = this.value; const list = $("autocompleteList");
-        if (query.length < 3) { list.style.display = "none"; return; }
-        
-        autocompleteTimeout = setTimeout(async () => {
-            try {
-                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=4&q=${encodeURIComponent(query + " Delhi")}`);
-                const data = await res.json();
-                list.innerHTML = "";
-                if (data.length > 0) {
-                    data.forEach(place => {
-                        const li = document.createElement("li");
-                        li.textContent = place.display_name.split(',').slice(0, 3).join(',');
-                        li.onclick = () => { 
-                            $("pointB").value = li.textContent; list.style.display = "none"; 
-                            $("pointB").dataset.lat = place.lat; $("pointB").dataset.lon = place.lon; 
-                            $("btnWalkability").click();
-                        };
-                        list.appendChild(li);
-                    });
-                    list.style.display = "block";
-                }
-            } catch (err) {}
-        }, 400); 
-    });
-    document.addEventListener("click", (e) => { if(e.target.id !== "pointB") $("autocompleteList").style.display = "none"; });
-
-    $("btnToggleRoute").addEventListener("click", () => {
-        const container = $("textRouteContainer");
-        if (container.style.display === "block") {
-            container.style.display = "none";
-            $("btnToggleRoute").textContent = "🗺️ Show Detailed Route";
-        } else {
-            container.style.display = "block";
-            $("btnToggleRoute").textContent = "🗺️ Hide Detailed Route";
-        }
-    });
-
-    // UPDATED ROUTING WITH SHORTEST PATH LOGIC
-    $("btnWalkability").addEventListener("click", async () => {
-      let dest = $("pointB").value;
-      if (!dest || !userLatLng) return showToast("Enter destination & allow GPS.");
-      $("btnWalkability").textContent = "Routing...";
-
-      try {
-        let lat = $("pointB").dataset.lat, lon = $("pointB").dataset.lon;
-        if (!lat) {
-            const gRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(dest)}`);
-            const gData = await gRes.json();
-            lat = gData[0].lat; lon = gData[0].lon;
-        }
-
-        const toLatLng = L.latLng(lat, lon);
-        
-        // Added alternatives=true to get multiple route options from OSRM
-        const rRes = await fetch(`https://router.project-osrm.org/route/v1/foot/${userLatLng.lng},${userLatLng.lat};${toLatLng.lng},${toLatLng.lat}?overview=full&geometries=geojson&steps=true&alternatives=true`);
-        const rData = await rRes.json();
-        
-        let routes = rData.routes;
-        
-        // Pick the route based on the new "Route Preference" dropdown
-        const pref = $("routePref").value;
-        if (pref === "shortest") {
-            // Sort by absolute shortest physical distance in meters
-            routes.sort((a, b) => a.distance - b.distance); 
-        } else {
-            // Sort by fastest time (defaults to main roads)
-            routes.sort((a, b) => a.duration - b.duration); 
-        }
-        
-        const route = routes[0]; // Select the winning route
-
-        if (routeLine) map.removeLayer(routeLine); if (destMarker) map.removeLayer(destMarker);
-        interactiveLayerGroup.clearLayers();
-        destMarker = L.marker(toLatLng).addTo(map);
-        routeLine = L.geoJSON(route.geometry, { style: { weight: 7, color: '#007aff', opacity: 0.9 } }).addTo(map);
-        map.fitBounds(routeLine.getBounds(), { padding: [50, 50] });
-
-        featureLocs = { footpaths: [], bridges: [], crossings: [], underpasses: [] };
-        let stats = { bridges: 0, underpasses: 0, footpaths: 0, crossings: 0 };
-        let textRouteHtml = "";
-        
-        if (route.legs && route.legs[0].steps) {
-            route.legs[0].steps.forEach((step, i) => {
-                let lower = (step.name || "").toLowerCase();
-                let type = step.maneuver.type;
-                let modifier = step.maneuver.modifier;
-                let coord = [step.maneuver.location[1], step.maneuver.location[0]]; 
-                let icon = "🚶", title = "Paved Path", alertColor = "#333";
-
-                if (type === 'turn' || type === 'merge' || lower.includes("cross")) {
-                    if (modifier === 'left' || modifier === 'right' || modifier === 'sharp left' || modifier === 'sharp right') {
-                        stats.crossings++; featureLocs.crossings.push(coord);
-                        icon = "🚦"; title = "Road Crossing"; alertColor = "#007aff";
-                    }
-                }
-
-                if (lower.includes("bridge") || lower.includes("flyover")) {
-                    stats.bridges++; featureLocs.bridges.push(coord);
-                    icon = "🌉"; title = "Bridge/Overpass"; alertColor = "#b06000";
-                } else if (lower.includes("underpass") || lower.includes("subway")) {
-                    stats.underpasses++; featureLocs.underpasses.push(coord);
-                    icon = "🚇"; title = "Underpass"; alertColor = "#d93025";
-                } else {
-                    stats.footpaths++; featureLocs.footpaths.push(coord);
-                }
-
-                if (step.distance >= 5 || i === 0) { 
-                    textRouteHtml += `
-                    <div class="route-step-row">
-                        <div style="font-size: 24px;">${icon}</div>
-                        <div>
-                            <div style="font-weight: 800; color: ${alertColor};">${title}</div>
-                            <div style="font-size: 13px; color: #666;">Continue on ${escapeHTML(step.name || "local path")} for ${Math.round(step.distance)}m</div>
-                        </div>
-                    </div>`;
-                }
-            });
-        }
-
-        $("textRouteContainer").innerHTML = textRouteHtml;
-        $("textRouteContainer").style.display = "none";
-        $("btnToggleRoute").textContent = "🗺️ Show Detailed Route";
-
-        let baseScore = Math.max(10, 100 - (route.distance / 100)); 
-        baseScore -= (stats.bridges * 2); 
-        baseScore -= (stats.underpasses * 5); 
-        baseScore -= (stats.crossings * 1); 
-        
-        if (baseScore > 98) baseScore = 98;
-        if (baseScore < 10) baseScore = 10;
-        
-        $("scoreValue").textContent = Math.round(baseScore);
-        if(baseScore < 50) $("scoreValue").style.color = "#ff3b30"; else $("scoreValue").style.color = "var(--text-main)";
-
-        $("scoreTime").textContent = `${Math.round(route.duration/60)} min`;
-        $("scoreDistance").textContent = `${(route.distance/1000).toFixed(2)} km`;
-        
-        $("statSteps").textContent = Math.round(route.distance / 0.762).toLocaleString();
-        $("statCals").textContent = Math.round(route.distance * 0.05).toLocaleString();
-        
-        $("routeSummary").innerHTML = `
-            <div class="stat-badge clickable-badge" data-type="footpaths">🚶 Footpaths <span>${stats.footpaths}</span></div>
-            <div class="stat-badge clickable-badge" style="color:#b06000;" data-type="bridges">🌉 Bridges <span>${stats.bridges}</span></div>
-            <div class="stat-badge clickable-badge" style="color:#007aff;" data-type="crossings">🚦 Crossings <span>${stats.crossings}</span></div>
-            <div class="stat-badge clickable-badge" style="color:#d93025;" data-type="underpasses">🚇 Underpasses <span>${stats.underpasses}</span></div>
-        `;
-        
-        document.querySelectorAll('.clickable-badge').forEach(badge => {
-            badge.addEventListener('click', function() {
-                const type = this.getAttribute('data-type');
-                interactiveLayerGroup.clearLayers(); 
+            <div id="auditorHud" class="nav-hud">
+                <div class="drag-handle" onclick="toggleMinimize()"></div>
                 
-                if (featureLocs[type] && featureLocs[type].length > 0) {
-                    let bounds = L.latLngBounds();
-                    let colors = { footpaths: "#333", bridges: "#b06000", crossings: "#007aff", underpasses: "#d93025" };
-                    let fillColor = colors[type];
+                <div class="hud-header">
+                    <div>
+                        <span style="font-size: 9px; font-weight: 800; color: var(--text-muted); text-transform: uppercase;">Walkability Score</span>
+                        <div style="display: flex; align-items: baseline; gap: 4px;">
+                            <span class="score-num" id="walkScore" onclick="showScoreModal()" style="color:var(--danger);">--</span>
+                            <span style="font-size: 14px; font-weight: 800; color: #ccc;">/100</span>
+                        </div>
+                    </div>
+                    <div style="text-align: right;">
+                        <b id="valTime" style="font-size: 22px; display:block; color:var(--text-main);">-- min</b>
+                        <span id="valDist" style="font-size: 12px; color: var(--text-muted); font-weight: 700;">-- km</span>
+                    </div>
+                </div>
 
-                    featureLocs[type].forEach(coord => {
-                        let point = L.latLng(coord[0], coord[1]);
-                        L.circleMarker(point, { radius: 8, fillColor: fillColor, color: "#fff", weight: 2, fillOpacity: 0.9 })
-                        .addTo(interactiveLayerGroup).bindPopup(`<b>${type.toUpperCase()}</b><br/>Found here`);
-                        bounds.extend(point);
-                    });
-                    
-                    map.fitBounds(bounds, {padding: [50, 50], maxZoom: 17});
-                    showToast(`Mapped ${featureLocs[type].length} ${type} locations`);
-                } else {
-                    showToast(`No ${type} found on this route.`);
-                }
-            });
-        });
+                <div class="health-metrics">
+                    <span>👟 Approx <b id="valSteps" style="color:var(--text-main); font-size:14px;">0</b> Steps</span>
+                    <span>|</span>
+                    <span>🔥 Burn <b id="valCals" style="color:#ff9500; font-size:14px;">0</b> kcal</span>
+                </div>
 
-        $("setupPanel").style.display = "none";
-        $("scorePanel").style.display = "block";
+                <div class="infra-grid" id="infraGridBox">
+                    <div class="stat-card" onclick="markInfra('footpaths')"><label>Footpath</label><b id="cntFoot" style="color:var(--text-main);">0</b></div>
+                    <div class="stat-card" onclick="markInfra('bridges')"><label>Bridges</label><b id="cntBridge" style="color:#b8860b;">0</b></div>
+                    <div class="stat-card" onclick="markInfra('crossings')"><label>Crossings</label><b id="cntCross" style="color:var(--primary);">0</b></div>
+                    <div class="stat-card" onclick="markInfra('underpasses')"><label>Underpass</label><b id="cntUnder" style="color:var(--safe);">0</b></div>
+                </div>
 
-      } catch (e) { showToast("Error routing. Try typing a landmark."); }
-      $("btnWalkability").textContent = "Get Route";
-    });
+                <div class="itinerary-container" id="itineraryBox"></div>
+                <div class="transit-box" id="transitBox"></div>
 
-    $("btnClear").addEventListener("click", () => {
-      if(routeLine) map.removeLayer(routeLine); if(destMarker) map.removeLayer(destMarker);
-      interactiveLayerGroup.clearLayers();
-      $("scorePanel").style.display = "none"; $("setupPanel").style.display = "block"; $("pointB").value = "";
-    });
+                <button class="btn-live-nav" id="btnStartLive" onclick="startLiveNavigation()">Start Live Hardware Walk</button>
+                <button class="btn-live-nav btn-end-nav" id="btnStopLive" onclick="stopLiveNavigation()">Stop Live Navigation</button>
 
-    let walkTimer, walkSecs = 0, liveSteps = 0, isWalking = false;
-    let lastMag = 0, isPeak = false, watchId = null;
+                <div class="swipe-tools">
+                    <div class="tool-btn" style="color:var(--danger);" onclick="openObstacleModal()">⚠️ Report Obstacle</div>
+                    <div class="tool-btn" style="color:var(--tree);" onclick="toggleTreeCover()">🌳 Toggle Tree Cover</div>
+                    <div class="tool-btn" style="background:#eee; color:#333;" onclick="clearRoute(true)">❌ Clear Map</div>
+                </div>
+            </div>
+        </main>
+    </div>
 
-    function handleMotion(event) {
-        if (!isWalking) return;
-        let acc = event.accelerationIncludingGravity;
-        if (!acc) return;
-        let mag = Math.sqrt(acc.x*acc.x + acc.y*acc.y + acc.z*acc.z);
-        let threshold = 11.5; 
-        
-        if (mag > threshold && !isPeak) {
-            isPeak = true; liveSteps++; $("liveSteps").textContent = liveSteps;
-        } else if (mag < 10.5) {
-            isPeak = false; 
-        }
-    }
-
-    $("btnStartWalk").addEventListener("click", async () => {
-        if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-            try {
-                const permission = await DeviceMotionEvent.requestPermission();
-                if (permission !== 'granted') return showToast("Sensor permission denied.");
-            } catch (e) { console.error(e); }
-        }
-
-        $("routeOverview").style.display = "none";
-        $("walkDashboard").classList.add("active");
-        
-        walkSecs = 0; liveSteps = 0; isWalking = true;
-        $("liveSteps").textContent = "0"; $("liveTime").textContent = "00:00"; $("liveDist").textContent = "0.00";
-
-        window.addEventListener('devicemotion', handleMotion);
-
-        if (navigator.geolocation) {
-            watchId = navigator.geolocation.watchPosition((pos) => {
-                let newPos = L.latLng(pos.coords.latitude, pos.coords.longitude);
-                if (userMarker) {
-                    let dist = userLatLng.distanceTo(newPos);
-                    $("liveDist").textContent = (dist / 1000).toFixed(2);
-                    userMarker.setLatLng(newPos);
-                }
-                userLatLng = newPos; map.setView(userLatLng, 18);
-            }, (err) => { console.warn("GPS Tracking Error"); }, { enableHighAccuracy: true });
-        }
-
-        clearInterval(walkTimer);
-        walkTimer = setInterval(() => {
-            walkSecs++;
-            let m = Math.floor(walkSecs / 60).toString().padStart(2, '0');
-            let s = (walkSecs % 60).toString().padStart(2, '0');
-            $("liveTime").textContent = `${m}:${s}`;
-        }, 1000);
-    });
-
-    $("btnStopWalk").addEventListener("click", () => {
-        isWalking = false; clearInterval(walkTimer);
-        window.removeEventListener('devicemotion', handleMotion);
-        if (watchId) navigator.geolocation.clearWatch(watchId);
-
-        $("walkDashboard").classList.remove("active");
-        $("routeOverview").style.display = "block";
-        showToast(`Walk ended! Logged ${liveSteps} real steps.`);
-        
-        userStats.points += 5; updateProfile();
-        if(routeLine) map.fitBounds(routeLine.getBounds(), { padding: [50, 50] }); 
-    });
-
-    let activeTag = "";
-    document.querySelectorAll(".tag").forEach(tag => { tag.addEventListener("click", () => { document.querySelectorAll(".tag").forEach(t => t.classList.remove("selected")); tag.classList.add("selected"); activeTag = tag.dataset.tag; }); });
-
-    const STORAGE_KEY = "pathrater_reports";
-    function renderFeed() {
-      const reports = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
-      $("reviewsFeed").innerHTML = reports.map(r => `<div class="review-card"><span class="review-tag">${r.tag}</span><h4 style="margin:0 0 5px 0; font-size:18px;">📍 ${r.location}</h4><div style="font-size:13px; color:var(--text-muted); font-weight:600;">Reported recently</div></div>`).join('');
-      if(reports.length === 0) $("reviewsFeed").innerHTML = "<p style='color:var(--text-muted);'>No community reports yet.</p>";
-    }
-    renderFeed();
-
-    $("btnSubmit").addEventListener("click", () => {
-      const loc = $("reviewLocation").value; if (!loc || !activeTag) return showToast("Select tag & enter location.");
-      const reports = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; reports.unshift({ tag: activeTag, location: loc }); localStorage.setItem(STORAGE_KEY, JSON.stringify(reports));
-      $("reviewLocation").value = ""; document.querySelectorAll(".tag").forEach(t => t.classList.remove("selected")); activeTag = "";
-      
-      userStats.points += 10; userStats.reports += 1; updateProfile();
-      renderFeed(); showToast("Report published! +10 Points"); 
-      document.querySelector('[data-tab="profile"]').click(); 
-    });
+    <div id="intel-tab" class="tab-content" style="padding:20px; background:var(--bg-main); overflow-y:auto;">
+        <h3 style="margin-top:0; font-size:28px; font-weight:900;">Sector Intel</h3>
+        <p style="color:var(--text-muted); font-size:14px;">Live community hazard reports.</p>
+        <div id="intelFeedList">
+            <div style="background:white; padding:16px; border-radius:16px; margin-bottom:12px; border:1px solid var(--border);">
+                <span style="display:inline-block; background:rgba(255,59,48,0.1); color:var(--danger); padding:4px 8px; border-radius:8px; font-size:11px; font-weight:800; margin-bottom:8px;">🚧 Construction</span>
+                <h4 style="margin:0 0 5px 0;">📍 Near Sector 62</h4>
+                <div style="font-size:12px; color:var(--text-muted);">Reported 12 mins ago</div>
+            </div>
+        </div>
+    </div>
     
-  </script>
+    <div id="vault-tab" class="tab-content" style="padding:20px; background:var(--bg-main); overflow-y:auto;">
+        <h3 style="margin-top:0; font-size:28px; font-weight:900;">Surveyor Vault</h3>
+        <div style="background: linear-gradient(135deg, #007aff, #0056b3); color: white; padding: 30px; border-radius: 20px; text-align: center; margin-bottom: 20px;">
+            <div style="font-size:48px; margin-bottom:10px;">🛡️</div>
+            <h3 style="margin: 0; font-size: 22px;">Eco-Auditor</h3>
+            <div style="font-size: 56px; font-weight: 900; margin: 10px 0;">1,250</div>
+            <div style="font-size: 12px; font-weight:800; opacity: 0.9; text-transform:uppercase;">Civic XP Earned</div>
+        </div>
+    </div>
+
+    <nav class="bottom-nav">
+        <div class="nav-item active" data-target="explore-tab"><div class="nav-icon">🗺️</div><label>Explore</label></div>
+        <div class="nav-item" data-target="intel-tab"><div class="nav-icon">📋</div><label>Intel</label></div>
+        <div class="nav-item" data-target="vault-tab"><div class="nav-icon">👤</div><label>Vault</label></div>
+    </nav>
+</div>
+
+<div class="modal-overlay" id="scoreModal">
+    <div class="modal-content">
+        <h3>Walkability Metrics</h3>
+        <p style="font-size:14px; color:#555; line-height:1.5;">Base score is 100, dynamically adjusted by detected infrastructure:</p>
+        <ul style="font-size:13px; font-weight:bold; color:var(--danger); padding-left:20px; margin-bottom: 20px;">
+            <li>🌉 Bridges: -4 Points each</li>
+            <li>🚇 Underpasses: -6 Points each</li>
+            <li>🚦 Road Crossings: -1 Point each</li>
+            <li>🚶 Transit Base: + Comfort Rating</li>
+        </ul>
+        <button class="close-btn" onclick="document.getElementById('scoreModal').classList.remove('active')">Close</button>
+    </div>
+</div>
+
+<div class="modal-overlay" id="obstacleModal">
+    <div class="modal-content">
+        <h3>Report Hazard</h3>
+        <p style="font-size:13px; color:#555;">Select the obstacle at your location:</p>
+        <button class="obs-btn" onclick="submitObstacle('🚧 Construction')">🚧 Construction</button>
+        <button class="obs-btn" onclick="submitObstacle('🚗 Cars on Path')">🚗 Cars on Path</button>
+        <button class="obs-btn" onclick="submitObstacle('🕳️ Broken Pavement')">🕳️ Broken Pavement</button>
+        <button class="obs-btn" onclick="submitObstacle('💡 Poor Lighting')">💡 Poor Lighting</button>
+        <button class="close-btn" onclick="document.getElementById('obstacleModal').classList.remove('active')">Cancel</button>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
