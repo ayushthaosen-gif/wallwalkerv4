@@ -3,200 +3,1144 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
-    <title>GaitWay V74.0 - Precision</title>
+    <title>GaitWay — Walk Smart</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;800;900&family=DM+Mono:wght@500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-light: rgba(37,99,235,0.1);
+            --safe: #7c3aed;
+            --safe-light: rgba(124,58,237,0.1);
+            --transit: #d97706;
+            --transit-light: rgba(217,119,6,0.1);
+            --danger: #dc2626;
+            --green: #16a34a;
+            --bg: #f1f5f9;
+            --card: #ffffff;
+            --border: rgba(0,0,0,0.07);
+            --text: #0f172a;
+            --muted: #64748b;
+            --shadow: 0 8px 32px rgba(0,0,0,0.10);
+        }
+
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; outline: none; margin: 0; padding: 0; }
+        body, html { height: 100%; width: 100%; font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
+
+        /* Layout */
+        .shell { display: flex; flex-direction: column; height: 100vh; width: 100vw; }
+        .tab-pane { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+        .tab-pane.active { display: flex; }
+
+        /* Header */
+        header {
+            padding: 12px 16px 10px;
+            background: white;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+            z-index: 2000;
+        }
+        .brand { font-size: 20px; font-weight: 900; letter-spacing: -0.8px; cursor: pointer; }
+        .brand span { color: var(--primary); }
+        .env-row { display: flex; gap: 6px; }
+        .badge {
+            padding: 5px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;
+            border: 1px solid var(--border); cursor: pointer; white-space: nowrap;
+            transition: transform 0.15s;
+        }
+        .badge:active { transform: scale(0.95); }
+        .badge-aqi { background: #eff6ff; color: #1d4ed8; }
+        .badge-temp { background: #fff7ed; color: #c2410c; }
+        .badge-trees { background: #f0fdf4; color: #15803d; }
+
+        /* Map zone */
+        .map-zone { flex: 1; position: relative; overflow: hidden; }
+        #map { height: 100%; width: 100%; z-index: 1; }
+
+        /* Search Panel */
+        .search-wrap {
+            position: absolute; top: 12px; left: 12px; right: 12px; z-index: 3000; pointer-events: none;
+        }
+        .search-box {
+            background: white; border-radius: 16px; border: 1px solid var(--border);
+            box-shadow: var(--shadow); pointer-events: auto; overflow: visible;
+        }
+
+        /* A→B route inputs */
+        .ab-panel { padding: 10px 12px 8px; display: flex; align-items: center; gap: 8px; }
+        .ab-fields { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+        .ab-row { display: flex; align-items: center; gap: 8px; }
+        .ab-dot {
+            width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+        }
+        .dot-a { background: var(--green); border: 2px solid white; box-shadow: 0 0 0 2px var(--green); }
+        .dot-b { background: var(--danger); border: 2px solid white; box-shadow: 0 0 0 2px var(--danger); }
+        .ab-line { width: 2px; height: 14px; background: #e2e8f0; margin-left: 4px; }
+        .ab-input {
+            flex: 1; border: none; background: #f8fafc; border-radius: 10px;
+            font-size: 14px; font-weight: 600; font-family: 'DM Sans', sans-serif;
+            padding: 8px 10px; color: var(--text); min-width: 0;
+            border: 1.5px solid transparent; transition: border-color 0.15s;
+        }
+        .ab-input:focus { background: white; border-color: var(--primary); }
+        .ab-input::placeholder { color: var(--muted); font-weight: 500; }
+        .ab-input.has-val { color: var(--text); }
+        .btn-swap {
+            background: #f1f5f9; border: 1px solid var(--border); border-radius: 10px;
+            width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+            cursor: pointer; font-size: 15px; flex-shrink: 0; transition: background 0.15s;
+        }
+        .btn-swap:hover { background: #e2e8f0; }
+        .btn-locate-a {
+            background: none; border: none; font-size: 16px; cursor: pointer; padding: 4px; flex-shrink: 0;
+        }
+
+        /* Dropdown results */
+        .results-dropdown {
+            display: none; position: absolute; left: 0; right: 0;
+            background: white; border-radius: 14px; border: 1px solid var(--border);
+            box-shadow: var(--shadow); margin-top: 6px; overflow: hidden;
+            max-height: 230px; overflow-y: auto; pointer-events: auto;
+            z-index: 3100;
+        }
+        .results-dropdown.open { display: block; }
+        .result-item {
+            padding: 11px 14px; cursor: pointer; display: flex; justify-content: space-between;
+            align-items: center; border-bottom: 1px solid var(--border); transition: background 0.15s;
+        }
+        .result-item:last-child { border-bottom: none; }
+        .result-item:hover { background: #f8fafc; }
+        .result-name { font-size: 13px; font-weight: 700; }
+        .result-sub { font-size: 10px; color: var(--muted); margin-top: 2px; }
+        .result-dist { font-size: 11px; font-weight: 800; color: var(--primary); background: var(--primary-light); padding: 3px 8px; border-radius: 8px; flex-shrink: 0; }
+        .result-gps { font-size: 11px; font-weight: 800; color: var(--green); background: rgba(22,163,74,0.1); padding: 3px 8px; border-radius: 8px; flex-shrink: 0; }
+
+        /* Route picker card */
+        .route-card {
+            position: absolute; bottom: 78px; left: 12px; right: 12px; z-index: 4500;
+            background: white; border-radius: 20px; padding: 16px;
+            box-shadow: var(--shadow); border: 1px solid var(--border);
+            display: none; animation: slideUp 0.3s ease;
+        }
+        .route-card.active { display: block; }
+        .route-card h3 { font-size: 13px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+        .route-opt {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 12px 14px; border-radius: 12px; border: 1.5px solid var(--border);
+            margin-bottom: 8px; cursor: pointer; transition: all 0.15s;
+        }
+        .route-opt:last-child { margin-bottom: 0; }
+        .route-opt:hover { transform: scale(1.01); }
+        .route-opt.walk { border-color: rgba(37,99,235,0.3); background: rgba(37,99,235,0.03); }
+        .route-opt.safe { border-color: rgba(124,58,237,0.3); background: rgba(124,58,237,0.03); }
+        .route-opt.bus  { border-color: rgba(217,119,6,0.3); background: rgba(217,119,6,0.03); }
+        .opt-label { font-size: 14px; font-weight: 800; }
+        .opt-meta { font-size: 10px; color: var(--muted); font-weight: 600; margin-top: 2px; }
+        .opt-score { font-size: 22px; font-weight: 900; }
+        .c-blue { color: var(--primary); }
+        .c-purple { color: var(--safe); }
+        .c-orange { color: var(--transit); }
+
+        /* HUD */
+        .hud {
+            position: absolute; bottom: 78px; left: 12px; right: 12px; z-index: 4000;
+            background: white; border-radius: 20px; padding: 14px 16px;
+            box-shadow: var(--shadow); border: 1px solid var(--border);
+            display: none; transition: transform 0.35s cubic-bezier(0.4,0,0.2,1);
+        }
+        .hud.active { display: block; }
+        .hud.mini { transform: translateY(calc(100% - 42px)); }
+        .hud-topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .pill-handle { width: 36px; height: 4px; background: #e2e8f0; border-radius: 4px; cursor: pointer; }
+        .btn-close { background: #f1f5f9; border: none; border-radius: 50%; width: 26px; height: 26px; font-weight: 700; color: var(--muted); cursor: pointer; font-size: 11px; }
+        .hud-scores { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; }
+        .score-block { }
+        .score-lbl { font-size: 9px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+        .score-num { font-size: 44px; font-weight: 900; letter-spacing: -2px; line-height: 1; cursor: pointer; }
+        .score-sub { font-size: 14px; font-weight: 700; color: #94a3b8; }
+        .hud-time { font-size: 26px; font-weight: 900; display: block; letter-spacing: -1px; }
+        .hud-dist { font-size: 12px; font-weight: 700; color: var(--muted); }
+        .health-bar {
+            display: flex; gap: 8px; font-size: 11px; font-weight: 700; color: var(--muted);
+            background: #f8fafc; padding: 8px 12px; border-radius: 10px; margin-bottom: 10px;
+            justify-content: center;
+        }
+        .infra-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 10px; }
+        .infra-cell {
+            background: #f8fafc; border: 1px solid var(--border); padding: 7px 3px;
+            border-radius: 10px; text-align: center; cursor: pointer; transition: background 0.15s;
+        }
+        .infra-cell:hover { background: #eff6ff; }
+        .infra-cell label { display: block; font-size: 8px; font-weight: 800; color: var(--muted); text-transform: uppercase; margin-bottom: 2px; cursor: pointer; }
+        .infra-cell b { font-size: 17px; }
+        .steps-box { max-height: 130px; overflow-y: auto; background: #f8fafc; border-radius: 10px; padding: 8px; margin-bottom: 10px; border: 1px solid var(--border); }
+        .step-row { display: flex; gap: 8px; align-items: center; padding: 7px 0; border-bottom: 1px solid rgba(0,0,0,0.04); font-size: 12px; cursor: pointer; }
+        .step-row:last-child { border-bottom: none; }
+        .step-icon { font-size: 16px; flex-shrink: 0; }
+        .step-txt { flex: 1; font-weight: 600; text-transform: capitalize; line-height: 1.3; }
+        .step-m { font-size: 11px; font-weight: 800; color: var(--primary); }
+        .transit-wrap { max-height: 200px; overflow-y: auto; background: #f8fafc; border-radius: 10px; padding: 10px; margin-bottom: 10px; border: 1px solid var(--border); display: none; }
+        .transit-seg { padding: 8px; border-radius: 8px; margin-bottom: 6px; }
+        .transit-seg:last-child { margin-bottom: 0; }
+        .seg-label { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+        .bus-card {
+            display: flex; gap: 10px; align-items: center; background: white;
+            padding: 10px; border-radius: 10px; border: 1px solid var(--border); margin-bottom: 6px;
+        }
+        .bus-icon { font-size: 24px; }
+        .bus-info { flex: 1; }
+        .bus-name { font-size: 13px; font-weight: 800; }
+        .bus-stop { font-size: 10px; color: var(--muted); font-weight: 600; }
+        .bus-eta { text-align: right; font-size: 11px; font-weight: 800; color: var(--danger); }
+        .btn-start {
+            background: var(--primary); color: white; border: none; width: 100%;
+            padding: 14px; border-radius: 14px; font-size: 15px; font-weight: 800;
+            font-family: 'DM Sans', sans-serif; cursor: pointer; margin-bottom: 10px;
+            transition: opacity 0.15s; box-shadow: 0 4px 14px rgba(37,99,235,0.3);
+        }
+        .btn-start:active { opacity: 0.85; }
+        .btn-stop { background: #1e293b; display: none; box-shadow: none; }
+        .live-bar { display: none; background: rgba(22,163,74,0.08); padding: 7px 12px; border-radius: 10px; margin-bottom: 10px; font-size: 12px; font-weight: 700; color: var(--green); justify-content: center; gap: 8px; }
+        .hazard-row { overflow-x: auto; display: flex; gap: 8px; padding-bottom: 2px; }
+        .hazard-row::-webkit-scrollbar { display: none; }
+        .chip { flex-shrink: 0; background: white; border: 1px solid var(--border); padding: 8px 12px; border-radius: 10px; font-size: 11px; font-weight: 700; cursor: pointer; }
+
+        /* Toast */
+        .toast {
+            position: fixed; top: 80px; left: 50%; transform: translateX(-50%);
+            background: #1e293b; color: white; padding: 10px 20px; border-radius: 20px;
+            font-size: 13px; font-weight: 700; z-index: 9000; opacity: 0;
+            transition: opacity 0.25s; pointer-events: none; white-space: nowrap;
+        }
+
+        /* Bottom nav */
+        nav {
+            height: 68px; background: white; border-top: 1px solid var(--border);
+            display: flex; z-index: 5000; flex-shrink: 0;
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        .nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); cursor: pointer; }
+        .nav-item.active { color: var(--primary); }
+        .nav-ico { font-size: 20px; opacity: 0.5; filter: grayscale(1); }
+        .nav-item.active .nav-ico { opacity: 1; filter: none; }
+        .nav-lbl { font-size: 10px; font-weight: 800; margin-top: 3px; }
+
+        /* Intel tab */
+        .intel-pane { padding: 20px; background: var(--bg); overflow-y: auto; }
+        .pane-title { font-size: 26px; font-weight: 900; letter-spacing: -0.5px; margin-bottom: 4px; }
+        .pane-sub { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+        #feed-list .feed-card {
+            background: white; border-radius: 14px; padding: 14px; margin-bottom: 10px;
+            border: 1px solid var(--border);
+        }
+        .feed-tag { display: inline-block; padding: 3px 8px; border-radius: 6px; font-size: 10px; font-weight: 800; margin-bottom: 6px; }
+        .tag-hazard { background: rgba(220,38,38,0.1); color: var(--danger); }
+        .tag-path { background: rgba(37,99,235,0.1); color: var(--primary); }
+        .feed-title { font-size: 13px; font-weight: 700; margin-bottom: 3px; }
+        .feed-meta { font-size: 11px; color: var(--muted); }
+        .empty-state { text-align: center; padding: 40px 20px; color: var(--muted); }
+        .empty-icon { font-size: 48px; margin-bottom: 10px; }
+        .empty-txt { font-size: 14px; font-weight: 600; }
+
+        /* Vault tab */
+        .vault-pane { padding: 20px; background: var(--bg); overflow-y: auto; }
+        .hero-card {
+            background: linear-gradient(135deg, var(--primary) 0%, #1d4ed8 100%);
+            color: white; padding: 28px; border-radius: 20px; text-align: center; margin-bottom: 20px;
+        }
+        .hero-ico { font-size: 44px; margin-bottom: 8px; }
+        .hero-title { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
+        .hero-xp { font-size: 52px; font-weight: 900; letter-spacing: -2px; line-height: 1; }
+        .hero-xplbl { font-size: 11px; font-weight: 700; opacity: 0.8; text-transform: uppercase; letter-spacing: 1px; }
+        .section-title { font-size: 12px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+        .diag-card { background: white; border-radius: 14px; padding: 14px; border: 1px solid var(--border); margin-bottom: 16px; }
+        .diag-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 600; color: var(--muted); }
+        .diag-row:last-child { border-bottom: none; }
+        .diag-val { font-weight: 800; color: var(--text); }
+        .pref-row { display: flex; justify-content: space-between; align-items: center; background: white; border-radius: 14px; padding: 14px; border: 1px solid var(--border); margin-bottom: 8px; }
+        .pref-txt b { font-size: 13px; font-weight: 700; display: block; }
+        .pref-txt span { font-size: 11px; color: var(--muted); }
+        .switch { position: relative; display: inline-block; width: 42px; height: 24px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top:0; left:0; right:0; bottom:0; background: #cbd5e1; transition: 0.3s; border-radius: 24px; }
+        .slider:before { content: ''; position: absolute; height: 18px; width: 18px; left: 3px; bottom: 3px; background: white; transition: 0.3s; border-radius: 50%; }
+        input:checked + .slider { background: var(--primary); }
+        input:checked + .slider:before { transform: translateX(18px); }
+
+        /* Modals */
+        .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 6000; display: none; align-items: flex-end; justify-content: center; backdrop-filter: blur(4px); }
+        .overlay.active { display: flex; }
+        .sheet { background: white; width: 100%; max-width: 500px; border-radius: 24px 24px 0 0; padding: 20px; padding-bottom: calc(20px + env(safe-area-inset-bottom)); animation: sheetUp 0.3s ease; }
+        @keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        .sheet-handle { width: 36px; height: 4px; background: #e2e8f0; border-radius: 4px; margin: 0 auto 16px; }
+        .sheet h3 { font-size: 18px; font-weight: 900; margin-bottom: 4px; }
+        .sheet p { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+        .sheet-val { font-size: 40px; font-weight: 900; color: var(--primary); margin: 10px 0; }
+        .obs-btn {
+            display: block; width: 100%; text-align: left; padding: 12px 14px; margin-bottom: 8px;
+            border: 1.5px solid var(--border); border-radius: 12px; background: white;
+            font-weight: 700; font-size: 14px; cursor: pointer; font-family: 'DM Sans', sans-serif;
+            transition: border-color 0.15s;
+        }
+        .obs-btn:hover { border-color: var(--primary); }
+        .btn-cancel { background: #f1f5f9; border: none; padding: 12px; border-radius: 12px; width: 100%; font-weight: 700; font-size: 14px; cursor: pointer; font-family: 'DM Sans', sans-serif; margin-top: 8px; }
+        .temp-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 14px; font-weight: 600; color: var(--muted); }
+        .temp-row:last-child { border-bottom: none; }
+        .temp-val { font-weight: 800; color: var(--text); }
+        .ocr-status { font-size: 12px; font-weight: 700; color: var(--primary); text-align: center; margin-top: 8px; min-height: 18px; }
+
+        /* Compass marker */
+        .compass-wrap { position: relative; width: 24px; height: 24px; display: flex; justify-content: center; align-items: center; }
+        .compass-dot { width: 16px; height: 16px; background: var(--primary); border: 3px solid white; border-radius: 50%; box-shadow: 0 2px 6px rgba(0,0,0,0.3); z-index: 2; }
+        .compass-cone { position: absolute; top: -10px; width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 14px solid rgba(37,99,235,0.5); z-index: 1; }
+
+        @keyframes slideUp { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(220,38,38,0.4); } 70% { box-shadow: 0 0 0 12px rgba(220,38,38,0); } }
+        .pulse { animation: pulse 2s infinite; }
+
+        /* Leaflet overrides */
+        .leaflet-routing-container { display: none !important; }
+        .leaflet-control-attribution { display: none; }
+    </style>
 </head>
 <body>
+<div class="shell">
 
-<div class="app-shell">
-    <header class="app-header">
-        <div class="header-brand"><h2 onclick="location.reload()">GAITWAY <span class="version-tag">V74</span></h2></div>
-        <div class="env-meters">
-            <div class="env-badge aqi" id="liveAqi" onclick="openModal('aqiModal')">AQI: --</div>
-            <div class="env-badge temp" id="liveTemp" onclick="openModal('tempModal')">Feels --°C</div>
-            <div class="env-badge tree-btn" onclick="toggleTreeCover()">Tree Cover</div>
+    <!-- HEADER -->
+    <header>
+        <div class="brand" onclick="location.reload()">GAIT<span>WAY</span></div>
+        <div class="env-row">
+            <div class="badge badge-aqi" id="badgeAqi" onclick="openSheet('sheetAqi')">AQI —</div>
+            <div class="badge badge-temp" id="badgeTemp" onclick="openSheet('sheetTemp')">— °C</div>
+            <div class="badge badge-trees" onclick="toggleTrees()">🌳</div>
         </div>
     </header>
-    
-    <div id="toast" class="toast">Action Triggered</div>
 
-    <div id="explore-tab" class="tab-content active">
-        <main class="map-wrapper">
-            <div class="search-overlay">
-                <div class="search-pill" id="searchContainer">
-                    <div class="search-input-box">
-                        <input type="text" id="destInput" placeholder="Search or Long Press Map..." autocomplete="off">
-                        <button onclick="centerOnUser()" class="btn-locate">📍</button>
+    <!-- EXPLORE TAB -->
+    <div id="tab-explore" class="tab-pane active">
+        <div class="map-zone">
+            <!-- A→B Search Panel -->
+            <div class="search-wrap">
+                <div class="search-box" id="searchBox">
+                    <div class="ab-panel">
+                        <div class="ab-fields">
+                            <div class="ab-row">
+                                <div class="ab-dot dot-a"></div>
+                                <input type="text" class="ab-input" id="inputFrom" placeholder="From: My Location" autocomplete="off"
+                                    onfocus="onFocusField('from')" oninput="onTypeField('from', this.value)">
+                                <button class="btn-locate-a" onclick="useMyLocation()" title="Use GPS">📍</button>
+                            </div>
+                            <div class="ab-line"></div>
+                            <div class="ab-row">
+                                <div class="ab-dot dot-b"></div>
+                                <input type="text" class="ab-input" id="inputTo" placeholder="To: Search destination…" autocomplete="off"
+                                    onfocus="onFocusField('to')" oninput="onTypeField('to', this.value)">
+                            </div>
+                        </div>
+                        <button class="btn-swap" onclick="swapLocations()" title="Swap A and B">⇅</button>
                     </div>
                 </div>
-                <div id="results" class="search-results"></div>
+                <div class="results-dropdown" id="resultsDropdown"></div>
             </div>
 
             <div id="map"></div>
 
-            <div id="routeComparisonCard" class="comparison-card">
-                <h3 class="card-title">Select Route Profile</h3>
-                <div class="route-option shortest" onclick="startRouting('shortest')">
+            <!-- Route Comparison Card -->
+            <div class="route-card" id="routeCard">
+                <h3>Choose Route</h3>
+                <div class="route-opt walk" onclick="pickRoute('walk')">
                     <div>
-                        <div class="route-title txt-primary">✂️ Shortest Path</div>
-                        <div class="route-meta" id="compShortTime">-- min | -- km</div>
+                        <div class="opt-label c-blue">✂️ Shortest Walk</div>
+                        <div class="opt-meta" id="metaWalk">— min · — km</div>
                     </div>
-                    <div class="txt-right"><div class="route-score txt-primary" id="compShortScore">--</div></div>
+                    <div class="opt-score c-blue" id="scoreWalk">—</div>
                 </div>
-                <div class="route-option safest" onclick="startRouting('safest')">
+                <div class="route-opt safe" onclick="pickRoute('safe')">
                     <div>
-                        <div class="route-title txt-safe">🛣️ Safest Path</div>
-                        <div class="route-meta" id="compSafeTime">-- min | -- km</div>
+                        <div class="opt-label c-purple">🛡️ Safest Walk</div>
+                        <div class="opt-meta" id="metaSafe">— min · — km</div>
                     </div>
-                    <div class="txt-right"><div class="route-score txt-safe" id="compSafeScore">--</div></div>
+                    <div class="opt-score c-purple" id="scoreSafe">—</div>
                 </div>
-                <div class="route-option transit" onclick="startRouting('transit')">
+                <div class="route-opt bus" onclick="pickRoute('bus')">
                     <div>
-                        <div class="route-title txt-transit">🚌 Public Transit</div>
-                        <div class="route-meta" id="compTransitTime">-- min | -- km</div>
+                        <div class="opt-label c-orange">🚌 Public Bus</div>
+                        <div class="opt-meta" id="metaBus">— min · — km</div>
                     </div>
-                    <div class="txt-right"><div class="route-score txt-transit" id="compTransitScore">--</div></div>
+                    <div class="opt-score c-orange" id="scoreBus">—</div>
                 </div>
             </div>
 
-            <div id="auditorHud" class="nav-hud">
-                <div class="hud-top-bar">
-                    <div class="spacer-28"></div>
-                    <div class="drag-handle" onclick="toggleMinimize()"></div>
-                    <button class="close-hud-btn" onclick="clearRoute(true)">✕</button>
+            <!-- Navigation HUD -->
+            <div class="hud" id="hud">
+                <div class="hud-topbar">
+                    <div style="width:26px;"></div>
+                    <div class="pill-handle" onclick="toggleMini()"></div>
+                    <button class="btn-close" onclick="clearAll(true)">✕</button>
                 </div>
-                
-                <div class="hud-header">
-                    <div>
-                        <span class="hud-label">Walkability Score</span>
-                        <div class="score-container">
-                            <span class="score-num txt-danger" id="walkScore" onclick="openModal('scoreModal')">--</span>
-                            <span class="score-base">/100</span>
+                <div class="hud-scores">
+                    <div class="score-block">
+                        <div class="score-lbl">Walkability</div>
+                        <div style="display:flex;align-items:baseline;gap:4px;">
+                            <span class="score-num" id="hudScore" onclick="openSheet('sheetScore')">—</span>
+                            <span class="score-sub">/100</span>
                         </div>
                     </div>
-                    <div class="txt-right">
-                        <b id="valTime" class="val-time">-- min</b>
-                        <span id="valDist" class="val-dist">-- km</span>
+                    <div style="text-align:right;">
+                        <span class="hud-time" id="hudTime">— min</span>
+                        <span class="hud-dist" id="hudDist">— km</span>
                     </div>
                 </div>
-
-                <div class="health-metrics" id="estMetrics">
-                    <span>👟 Est <b id="valSteps" class="txt-main">0</b> Steps</span>
+                <div class="health-bar" id="healthBar">
+                    <span>👟 <b id="hudSteps">0</b> steps</span>
                     <span>|</span>
-                    <span>🔥 Burn <b id="valCals" class="txt-transit">0</b> kcal</span>
+                    <span>🔥 <b id="hudCals">0</b> kcal</span>
                 </div>
-                <div class="health-metrics" id="liveMetrics" style="display:none; background:rgba(52, 199, 89, 0.1);">
-                    <span class="txt-tree">🟢 Live Steps: <b id="liveStepCount" style="font-size:16px;">0</b></span>
+                <div class="live-bar" id="liveBar">
+                    🟢 Live Steps: <b id="liveCount" style="font-size:16px;">0</b>
                 </div>
-
-                <div class="infra-grid" id="infraGridBox">
-                    <div class="stat-card" onclick="markInfra('footpaths')"><label>Footpaths</label><b id="cntFoot" class="txt-main">0</b></div>
-                    <div class="stat-card" onclick="markInfra('crossings')"><label>Crossings</label><b id="cntCross" class="txt-primary">0</b></div>
-                    <div class="stat-card" onclick="markInfra('bridges')"><label>Bridges</label><b id="cntBridge" style="color:#b8860b;">0</b></div>
-                    <div class="stat-card" onclick="markInfra('underpasses')"><label>Underpass</label><b id="cntUnder" class="txt-safe">0</b></div>
+                <div class="infra-grid">
+                    <div class="infra-cell" onclick="zoomInfra('footpaths')"><label>Footpaths</label><b id="cntFoot" class="c-blue">0</b></div>
+                    <div class="infra-cell" onclick="zoomInfra('crossings')"><label>Crossings</label><b id="cntCross" style="color:var(--transit)">0</b></div>
+                    <div class="infra-cell" onclick="zoomInfra('bridges')"><label>Bridges</label><b id="cntBridge" style="color:#92400e">0</b></div>
+                    <div class="infra-cell" onclick="zoomInfra('underpasses')"><label>Underpass</label><b id="cntUnder" class="c-purple">0</b></div>
                 </div>
-
-                <div class="itinerary-container" id="itineraryBox"></div>
-                <div class="transit-box" id="transitBox"></div>
-
-                <button class="btn-live-nav" id="btnStartLive" onclick="startLiveNavigation()">Start Live Walk</button>
-                <button class="btn-live-nav btn-end-nav" id="btnStopLive" onclick="stopLiveNavigation()">Stop Navigation</button>
-
-                <div class="swipe-tools">
-                    <div class="tool-btn txt-primary" onclick="openModal('gateModal')">📍 Mark Hazard / Gate</div>
+                <div class="steps-box" id="stepsBox"></div>
+                <div class="transit-wrap" id="transitWrap"></div>
+                <button class="btn-start" id="btnStart" onclick="startLive()">▶ Start Live Walk</button>
+                <button class="btn-start btn-stop" id="btnStop" onclick="stopLive()">⏹ Stop Navigation</button>
+                <div class="hazard-row">
+                    <div class="chip" onclick="openSheet('sheetHazard')">📍 Mark Hazard</div>
+                    <div class="chip" onclick="openSheet('sheetHazard')">🚧 Construction</div>
+                    <div class="chip" onclick="quickHazard('⛔ Closed Gate')">⛔ Gate</div>
+                    <div class="chip" onclick="quickHazard('🚷 No Footpath')">🚷 No Path</div>
                 </div>
             </div>
-        </main>
+        </div>
     </div>
 
-    <div id="intel-tab" class="tab-content intel-tab">
-        <h3 class="tab-title">Sector Intel</h3>
-        <p class="tab-desc">Live community hazard reports.</p>
-        <div id="intelFeedList"></div>
-    </div>
-
-    <div id="vault-tab" class="tab-content vault-tab">
-        <h3 class="tab-title">Surveyor Vault</h3>
-        <div class="vault-hero">
-            <div class="hero-icon">🛡️</div>
-            <h3 class="hero-title">Eco-Auditor</h3>
-            <div class="hero-xp">1,250</div>
-            <div class="hero-sub">Civic XP Earned</div>
-        </div>
-        
-        <h4 class="section-label">Device Diagnostics</h4>
-        <div class="diagnostics-card">
-            <div class="diag-row"><span>Battery Level</span><span id="vaultBattery" class="txt-tree stat-bold">--%</span></div>
-            <div class="diag-row"><span>Kinetic Pavement AI</span><span class="txt-primary stat-bold" id="kineticStatus">Active</span></div>
-        </div>
-
-        <h4 class="section-label">Preferences</h4>
-        <div class="toggle-switch">
-            <div>
-                <b class="pref-title">Voice Navigation</b><br>
-                <span class="pref-desc">Spoken turn-by-turn routing</span>
+    <!-- INTEL TAB -->
+    <div id="tab-intel" class="tab-pane">
+        <div class="intel-pane">
+            <div class="pane-title">Intel</div>
+            <div class="pane-sub">Community hazard reports near you</div>
+            <div id="feed-list">
+                <div class="empty-state">
+                    <div class="empty-icon">📋</div>
+                    <div class="empty-txt">No reports yet.<br>Mark a hazard on the map to contribute.</div>
+                </div>
             </div>
-            <label class="switch"><input type="checkbox" id="voiceToggle"><span class="slider"></span></label>
         </div>
     </div>
 
-    <nav class="bottom-nav">
-        <div class="nav-item active" data-target="explore-tab"><div class="nav-icon">🗺️</div><label>Explore</label></div>
-        <div class="nav-item" data-target="intel-tab"><div class="nav-icon">📋</div><label>Intel</label></div>
-        <div class="nav-item" data-target="vault-tab"><div class="nav-icon">👤</div><label>Vault</label></div>
+    <!-- VAULT TAB -->
+    <div id="tab-vault" class="tab-pane">
+        <div class="vault-pane">
+            <div class="hero-card">
+                <div class="hero-ico">🛡️</div>
+                <div class="hero-title">Eco-Auditor</div>
+                <div class="hero-xp" id="vaultXp">0</div>
+                <div class="hero-xplbl">Civic XP Earned</div>
+            </div>
+            <div class="section-title">Device</div>
+            <div class="diag-card">
+                <div class="diag-row"><span>Battery</span><span class="diag-val" id="vBattery">—</span></div>
+                <div class="diag-row"><span>GPS Status</span><span class="diag-val" id="vGps" style="color:var(--green)">Acquiring…</span></div>
+                <div class="diag-row"><span>Routes Walked</span><span class="diag-val" id="vRoutes">0</span></div>
+            </div>
+            <div class="section-title">Preferences</div>
+            <div class="pref-row">
+                <div class="pref-txt"><b>Voice Navigation</b><span>Spoken turn-by-turn</span></div>
+                <label class="switch"><input type="checkbox" id="voiceToggle"><span class="slider"></span></label>
+            </div>
+            <div class="pref-row">
+                <div class="pref-txt"><b>Vibration Alerts</b><span>Surface change detection</span></div>
+                <label class="switch"><input type="checkbox" id="vibeToggle" checked><span class="slider"></span></label>
+            </div>
+        </div>
+    </div>
+
+    <!-- BOTTOM NAV -->
+    <nav>
+        <div class="nav-item active" data-tab="tab-explore"><div class="nav-ico">🗺️</div><div class="nav-lbl">Explore</div></div>
+        <div class="nav-item" data-tab="tab-intel"><div class="nav-ico">📋</div><div class="nav-lbl">Intel</div></div>
+        <div class="nav-item" data-tab="tab-vault"><div class="nav-ico">👤</div><div class="nav-lbl">Vault</div></div>
     </nav>
 </div>
 
-<div class="modal-overlay" id="pathPromptModal">
-    <div class="modal-content b-top-primary">
-        <h3>Verify Surface</h3>
-        <p class="modal-desc">Vibration change detected. What kind of path are you walking on right now?</p>
-        <button class="obs-btn" onclick="submitPathData('Asphalt')">🛣️ Smooth Asphalt</button>
-        <button class="obs-btn" onclick="submitPathData('Paver Block')">🧱 Paver Blocks</button>
-        <button class="obs-btn" onclick="submitPathData('Broken / Dirt')">🪨 Broken / Dirt Path</button>
-        <button class="obs-btn" onclick="submitPathData('Cement')">⬜ Cement Sidewalk</button>
-        <button class="close-btn mt-10" onclick="ignorePathPromptForWalk()">Don't ask again for this walk</button>
-    </div>
-</div>
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
 
-<div class="modal-overlay" id="gateModal">
-    <div class="modal-content">
+<!-- SHEETS / MODALS -->
+<div class="overlay" id="sheetHazard">
+    <div class="sheet">
+        <div class="sheet-handle"></div>
         <h3>📍 Mark Hazard</h3>
-        <p class="modal-desc">Drop a GPS pin for an obstacle, or upload a photo to OCR scan a gate sign.</p>
-        
-        <button class="obs-btn" onclick="submitQuickHazard('🚧 Construction')">🚧 Construction</button>
-        <button class="obs-btn" onclick="submitQuickHazard('⛔ Closed Gate')">⛔ Closed Gate</button>
-        <button class="obs-btn" onclick="submitQuickHazard('🚷 No Footpath')">🚷 No Footpath</button>
-        <button class="obs-btn" onclick="submitQuickHazard('🚗 Cars Parked on Path')">🚗 Cars Parked on Path</button>
-        
-        <hr style="border:0; border-top:1px solid #eee; margin: 15px 0;">
-        
-        <input type="file" id="gateImageInput" accept="image/*" capture="environment" style="display:none;" onchange="processGateImage(event)">
-        <button class="btn-live-nav" onclick="document.getElementById('gateImageInput').click()" style="margin-bottom:0;">📸 Scan Gate Sign with OCR</button>
-        <canvas id="webpCanvas" style="display:none;"></canvas>
-        <div id="ocrStatus" class="ocr-status mt-10"></div>
-        
-        <button class="close-btn" onclick="closeModal('gateModal')">Cancel</button>
+        <p>Report an obstacle at your current GPS location.</p>
+        <button class="obs-btn" onclick="quickHazard('🚧 Construction'); closeSheet('sheetHazard')">🚧 Construction Ahead</button>
+        <button class="obs-btn" onclick="quickHazard('⛔ Closed Gate'); closeSheet('sheetHazard')">⛔ Closed Gate</button>
+        <button class="obs-btn" onclick="quickHazard('🚷 No Footpath'); closeSheet('sheetHazard')">🚷 No Footpath Here</button>
+        <button class="obs-btn" onclick="quickHazard('🚗 Parked Cars Blocking Path'); closeSheet('sheetHazard')">🚗 Cars Blocking Path</button>
+        <button class="obs-btn" onclick="quickHazard('💡 Good Lighting'); closeSheet('sheetHazard')">💡 Good Street Lighting</button>
+        <input type="file" id="imgInput" accept="image/*" capture="environment" style="display:none" onchange="processPhoto(event)">
+        <button class="obs-btn" onclick="document.getElementById('imgInput').click()">📸 Photo + AI Tag</button>
+        <div class="ocr-status" id="ocrStatus"></div>
+        <button class="btn-cancel" onclick="closeSheet('sheetHazard')">Cancel</button>
     </div>
 </div>
 
-<div class="modal-overlay" id="scoreModal"><div class="modal-content"><h3>Walkability Metrics</h3><p class="modal-desc">Base score is 100, dynamically adjusted.</p><button class="close-btn" onclick="closeModal('scoreModal')">Close</button></div></div>
+<div class="overlay" id="sheetAqi">
+    <div class="sheet">
+        <div class="sheet-handle"></div>
+        <h3>Air Quality Index</h3>
+        <p>Source: Open-Meteo API (US AQI)</p>
+        <div class="sheet-val" id="aqiVal">—</div>
+        <div style="font-size:13px; color:var(--muted)" id="aqiDesc">Loading…</div>
+        <button class="btn-cancel" onclick="closeSheet('sheetAqi')">Close</button>
+    </div>
+</div>
 
-<div class="modal-overlay" id="aqiModal"><div class="modal-content"><h3>Live Air Quality</h3><p class="modal-desc">Current US AQI Index. Source: Open-Meteo API.</p><div class="modal-val txt-primary" id="modalAqiVal">--</div><button class="close-btn" onclick="closeModal('aqiModal')">Close</button></div></div>
-
-<div class="modal-overlay" id="tempModal">
-    <div class="modal-content">
+<div class="overlay" id="sheetTemp">
+    <div class="sheet">
+        <div class="sheet-handle"></div>
         <h3>Local Weather</h3>
-        <p class="modal-desc" style="font-size:10px;">Source: Open-Meteo API</p>
-        <div class="temp-row"><b>Real Temp</b><span id="modalRealTemp" class="txt-main stat-bold">--°C</span></div>
-        <div class="temp-row"><b>Feels Like</b><span id="modalFeelsTemp" class="txt-transit stat-bold">--°C</span></div>
-        <div class="temp-row no-border"><b>Wind Speed</b><span id="modalWind" class="txt-primary stat-bold">-- km/h</span></div>
-        <button class="close-btn mt-20" onclick="closeModal('tempModal')">Close</button>
+        <p>Source: Open-Meteo API</p>
+        <div class="temp-row"><span>Temperature</span><span class="temp-val" id="tempReal">—</span></div>
+        <div class="temp-row"><span>Feels Like</span><span class="temp-val" id="tempFeels">—</span></div>
+        <div class="temp-row"><span>Wind Speed</span><span class="temp-val" id="tempWind">—</span></div>
+        <div class="temp-row"><span>Humidity</span><span class="temp-val" id="tempHumid">—</span></div>
+        <button class="btn-cancel" onclick="closeSheet('sheetTemp')" style="margin-top:16px">Close</button>
     </div>
 </div>
+
+<div class="overlay" id="sheetScore">
+    <div class="sheet">
+        <div class="sheet-handle"></div>
+        <h3>Walkability Score</h3>
+        <p>Score is 100 by default, penalised for hazards reported along this corridor. Tap infra tiles to see markers.</p>
+        <button class="btn-cancel" onclick="closeSheet('sheetScore')">Close</button>
+    </div>
+</div>
+
+<canvas id="photoCanvas" style="display:none"></canvas>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="app.js"></script>
+<script>
+/* === GAITWAY MVP — A→B routing engine === */
+
+let map, userLoc, userMarker;
+let treeLayer = null;
+let isMini = false, isLive = false;
+let liveSteps = 0, routeCount = 0, totalXp = 0;
+let motionZ = [];
+
+// A→B state
+let originLatLng  = null; // null = use live GPS
+let originName    = '';   // '' = "My Location"
+let destLatLng    = null;
+let destName      = '';
+let activeField   = null; // 'from' or 'to'
+let searchTimer   = null;
+let originMarker  = null;
+
+let routeData = {};
+let infraData = { footpaths:[], crossings:[], bridges:[], underpasses:[] };
+
+const iLayers = L.layerGroup();
+const tLayers = L.layerGroup();
+const sLayer  = L.layerGroup();
+
+// ── INIT ──
+window.onload = () => {
+    setupTabs();
+    setupMap();
+    setupClickOutside();
+    setupBattery();
+};
+
+function setupTabs() {
+    document.querySelectorAll('nav .nav-item').forEach(item => {
+        item.addEventListener('click', () => {
+            document.querySelectorAll('nav .nav-item').forEach(n => n.classList.remove('active'));
+            document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+            item.classList.add('active');
+            document.getElementById(item.dataset.tab).classList.add('active');
+            if (item.dataset.tab === 'tab-explore') map.invalidateSize();
+        });
+    });
+}
+
+function setupMap() {
+    map = L.map('map', { zoomControl:false, attributionControl:false }).setView([28.6139, 77.2090], 13);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png').addTo(map);
+    iLayers.addTo(map); tLayers.addTo(map); sLayer.addTo(map);
+
+    // Long-press/right-click drops a pin into whichever field is active (or destination by default)
+    map.on('contextmenu', async e => {
+        toast('Fetching address…');
+        try {
+            const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${e.latlng.lat}&lon=${e.latlng.lng}`);
+            const d = await r.json();
+            const name = d.display_name ? d.display_name.split(',')[0] : 'Dropped Pin';
+            if (activeField === 'from') {
+                setOrigin(e.latlng.lat, e.latlng.lng, name);
+            } else {
+                setDest(e.latlng.lat, e.latlng.lng, name);
+            }
+        } catch {
+            if (activeField === 'from') setOrigin(e.latlng.lat, e.latlng.lng, 'Dropped Pin');
+            else setDest(e.latlng.lat, e.latlng.lng, 'Dropped Pin');
+        }
+    });
+
+    map.locate({ watch:true, setView:false });
+    map.on('locationfound', e => {
+        userLoc = e.latlng;
+        if (isLive) map.panTo(userLoc);
+        if (!userMarker) {
+            const ico = L.divIcon({ className:'', html:`<div class="compass-wrap" id="cNode"><div class="compass-dot"></div><div class="compass-cone"></div></div>`, iconSize:[24,24], iconAnchor:[12,12] });
+            userMarker = L.marker(userLoc, { icon:ico, zIndexOffset:1000 }).addTo(map);
+        } else { userMarker.setLatLng(userLoc); }
+        document.getElementById('vGps').textContent = 'Active ✓';
+        fetchEnv(userLoc.lat, userLoc.lng);
+    });
+    map.on('locationerror', () => { document.getElementById('vGps').textContent = 'Unavailable'; });
+
+    if (window.DeviceOrientationEvent) {
+        window.addEventListener('deviceorientationabsolute', onOrientation, true);
+        window.addEventListener('deviceorientation', onOrientation, true);
+    }
+}
+
+function setupClickOutside() {
+    document.addEventListener('click', e => {
+        if (!e.target.closest('#searchBox') && !e.target.closest('#resultsDropdown')) {
+            closeDropdown();
+        }
+    });
+}
+
+function onOrientation(e) {
+    const n = document.getElementById('cNode');
+    if (!n) return;
+    const h = e.webkitCompassHeading || Math.abs(e.alpha - 360);
+    if (h) n.style.transform = `rotate(${h}deg)`;
+}
+
+function goToUser() {
+    if (userLoc) map.flyTo(userLoc, 17);
+    else toast('Acquiring GPS…');
+}
+
+// ── ENV ──
+let envFetched = false;
+async function fetchEnv(lat, lng) {
+    if (envFetched) return; envFetched = true;
+    try {
+        const [wr, ar] = await Promise.all([
+            fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,apparent_temperature,wind_speed_10m,relative_humidity_2m`),
+            fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lng}&current=us_aqi`)
+        ]);
+        const wd = await wr.json(), ad = await ar.json();
+        const t = Math.round(wd.current.apparent_temperature);
+        const aqi = ad.current.us_aqi;
+        document.getElementById('badgeTemp').textContent = `${t}°C`;
+        document.getElementById('badgeAqi').textContent  = `AQI ${aqi}`;
+        document.getElementById('tempReal').textContent  = `${Math.round(wd.current.temperature_2m)}°C`;
+        document.getElementById('tempFeels').textContent = `${t}°C`;
+        document.getElementById('tempWind').textContent  = `${wd.current.wind_speed_10m} km/h`;
+        document.getElementById('tempHumid').textContent = `${wd.current.relative_humidity_2m}%`;
+        document.getElementById('aqiVal').textContent    = aqi;
+        document.getElementById('aqiDesc').textContent   = aqiLabel(aqi);
+    } catch(e) { envFetched = false; }
+}
+function aqiLabel(v) {
+    if (v<=50)  return '🟢 Good — Safe to walk outdoors';
+    if (v<=100) return '🟡 Moderate — Acceptable for most';
+    if (v<=150) return '🟠 Unhealthy for Sensitive Groups';
+    if (v<=200) return '🔴 Unhealthy — Limit outdoor activity';
+    return '🟣 Very Unhealthy — Avoid going out';
+}
+
+// ── A→B SEARCH ──
+function onFocusField(field) {
+    activeField = field;
+    // If from field focused and empty, show GPS shortcut
+    if (field === 'from' && !originLatLng) {
+        showGpsOption();
+    }
+}
+
+function onTypeField(field, val) {
+    activeField = field;
+    clearTimeout(searchTimer);
+    const q = val.trim();
+
+    if (field === 'from') {
+        originLatLng = null; // clear fixed origin when typing
+        if (originMarker) { map.removeLayer(originMarker); originMarker = null; }
+    } else {
+        destLatLng = null;
+    }
+    clearRoute(false);
+
+    if (q.length < 3) {
+        if (field === 'from') showGpsOption();
+        else closeDropdown();
+        return;
+    }
+    searchTimer = setTimeout(() => doSearch(q, field), 320);
+}
+
+function showGpsOption() {
+    const dd = document.getElementById('resultsDropdown');
+    dd.innerHTML = `<div class="result-item" onclick="useMyLocation()">
+        <div><div class="result-name">📍 My Current Location</div><div class="result-sub">Use live GPS position</div></div>
+        <div class="result-gps">GPS</div>
+    </div>`;
+    dd.classList.add('open');
+}
+
+async function doSearch(q, field) {
+    try {
+        const refLat = userLoc ? userLoc.lat : 28.6139;
+        const refLng = userLoc ? userLoc.lng : 77.2090;
+        const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&countrycodes=in&limit=5&lat=${refLat}&lon=${refLng}`);
+        const data = await r.json();
+        const dd = document.getElementById('resultsDropdown');
+        if (!data.length) { closeDropdown(); return; }
+
+        // Add GPS shortcut at top for 'from' field
+        let html = '';
+        if (field === 'from') {
+            html += `<div class="result-item" onclick="useMyLocation()">
+                <div><div class="result-name">📍 My Current Location</div><div class="result-sub">Use live GPS position</div></div>
+                <div class="result-gps">GPS</div>
+            </div>`;
+        }
+        html += data.map(item => {
+            const parts = item.display_name.split(',');
+            const ref = userLoc || L.latLng(28.6139, 77.2090);
+            const dist = (L.latLng(item.lat,item.lon).distanceTo(ref)/1000).toFixed(1);
+            const fn = field === 'from'
+                ? `setOrigin(${item.lat},${item.lon},'${parts[0].replace(/'/g,"\\'")}')`
+                : `setDest(${item.lat},${item.lon},'${parts[0].replace(/'/g,"\\'")}')`;
+            return `<div class="result-item" onclick="${fn}">
+                <div><div class="result-name">${parts[0]}</div><div class="result-sub">${parts.slice(1,3).join(', ')}</div></div>
+                <div class="result-dist">${dist} km</div>
+            </div>`;
+        }).join('');
+        dd.innerHTML = html;
+        dd.classList.add('open');
+    } catch(e) {}
+}
+
+function closeDropdown() {
+    document.getElementById('resultsDropdown').classList.remove('open');
+}
+
+// ── LOCATION SETTERS ──
+function useMyLocation() {
+    originLatLng = null; // null = live GPS
+    originName   = '';
+    document.getElementById('inputFrom').value = '';
+    document.getElementById('inputFrom').placeholder = 'From: My Location';
+    if (originMarker) { map.removeLayer(originMarker); originMarker = null; }
+    closeDropdown();
+    tryPrepareComparison();
+}
+
+function setOrigin(lat, lon, name) {
+    originLatLng = L.latLng(lat, lon);
+    originName   = name;
+    document.getElementById('inputFrom').value = name;
+    closeDropdown();
+
+    // Show a green marker for custom origin
+    if (originMarker) map.removeLayer(originMarker);
+    const ico = L.divIcon({ className:'', html:`<div style="background:var(--green);width:14px;height:14px;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>`, iconSize:[14,14], iconAnchor:[7,7] });
+    originMarker = L.marker(originLatLng, { icon:ico }).addTo(map).bindPopup(`<b>From:</b> ${name}`);
+    map.flyTo(originLatLng, 15);
+    tryPrepareComparison();
+}
+
+function setDest(lat, lon, name) {
+    destLatLng = L.latLng(lat, lon);
+    destName   = name;
+    document.getElementById('inputTo').value = name;
+    closeDropdown();
+    tryPrepareComparison();
+}
+
+function swapLocations() {
+    // Swap origin ↔ destination
+    const oldOriginLatLng = originLatLng;
+    const oldOriginName   = originName;
+    const oldDestLatLng   = destLatLng;
+    const oldDestName     = destName;
+
+    // New origin = old dest (if set)
+    if (oldDestLatLng) {
+        setOrigin(oldDestLatLng.lat, oldDestLatLng.lng, oldDestName);
+    } else {
+        useMyLocation();
+    }
+
+    // New dest = old origin (if set), else GPS
+    if (oldOriginLatLng) {
+        setDest(oldOriginLatLng.lat, oldOriginLatLng.lng, oldOriginName);
+    } else {
+        // Old origin was GPS — set dest to user loc if available
+        if (userLoc) {
+            setDest(userLoc.lat, userLoc.lng, 'My Location');
+        } else {
+            destLatLng = null;
+            document.getElementById('inputTo').value = '';
+        }
+    }
+
+    toast('Origin and destination swapped');
+}
+
+function tryPrepareComparison() {
+    // Need both ends resolved
+    const from = originLatLng || userLoc;
+    if (!from || !destLatLng) return;
+    prepareComparison(from, destLatLng);
+}
+
+// ── ROUTE COMPARISON ──
+function prepareComparison(fromLL, toLL) {
+    clearRoute(false);
+    const baseDist = (fromLL.distanceTo(toLL) / 1000) * 1.3;
+    routeData = {
+        walk: { dist: baseDist,        score: Math.max(55, 100 - Math.floor(baseDist*5)) },
+        safe: { dist: baseDist * 1.15, score: Math.min(98, 100 - Math.floor(baseDist*2)) },
+        bus:  { dist: baseDist,        score: 80 }
+    };
+
+    document.getElementById('metaWalk').textContent = `${Math.ceil(routeData.walk.dist*12)} min · ${routeData.walk.dist.toFixed(1)} km`;
+    document.getElementById('scoreWalk').textContent = routeData.walk.score;
+    document.getElementById('metaSafe').textContent  = `${Math.ceil(routeData.safe.dist*13)} min · ${routeData.safe.dist.toFixed(1)} km`;
+    document.getElementById('scoreSafe').textContent = routeData.safe.score;
+    document.getElementById('metaBus').textContent   = `${Math.ceil(routeData.bus.dist*4)+8} min · ${routeData.bus.dist.toFixed(1)} km`;
+    document.getElementById('scoreBus').textContent  = routeData.bus.score;
+
+    // Drop destination pin
+    iLayers.clearLayers();
+    L.marker(toLL).addTo(iLayers).bindPopup(`<b>To:</b> ${destName || 'Destination'}`);
+    map.flyTo(toLL, 14);
+
+    document.getElementById('routeCard').classList.add('active');
+}
+
+async function pickRoute(type) {
+    document.getElementById('routeCard').classList.remove('active');
+    iLayers.clearLayers(); tLayers.clearLayers(); sLayer.clearLayers();
+    if (userMarker) userMarker.addTo(map);
+    if (originMarker) originMarker.addTo(map);
+
+    const from = originLatLng || userLoc;
+    if (!from || !destLatLng) { toast('Set both locations first'); return; }
+
+    toast('Calculating route…');
+    try {
+        const url = `https://routing.openstreetmap.de/routed-foot/route/v1/foot/${from.lng},${from.lat};${destLatLng.lng},${destLatLng.lat}?overview=full&geometries=geojson&steps=true`;
+        const r = await fetch(url);
+        const d = await r.json();
+        showHud(type, d.routes[0], from);
+    } catch(e) { toast('Routing failed. Check connection.'); }
+}
+
+// ── HUD ──
+function showHud(type, route, fromLL) {
+    const hud = document.getElementById('hud');
+    hud.classList.add('active');
+    isMini = false; hud.classList.remove('mini');
+
+    const rd = routeData[type];
+    const steps = route.legs[0].steps;
+    const coords = route.geometry.coordinates.map(c => [c[1], c[0]]);
+    infraData = { footpaths:[], crossings:[], bridges:[], underpasses:[] };
+
+    let stepsHtml = '';
+    steps.forEach((step, i) => {
+        const loc = [step.maneuver.location[1], step.maneuver.location[0]];
+        const road = step.name ? `onto ${step.name}` : 'forward';
+        const dir  = step.maneuver.modifier ? step.maneuver.modifier.replace('-',' ') : '';
+        const act  = step.maneuver.type==='turn' ? `Turn ${dir}` : (i===0 ? 'Start walking' : 'Continue');
+        const instr = `${act} ${road}`.trim();
+        const low = instr.toLowerCase();
+        if (low.includes('bridge')||low.includes('flyover')) infraData.bridges.push(loc);
+        else if (low.includes('underpass')) infraData.underpasses.push(loc);
+        else if (low.includes('cross')||low.includes('intersection')) infraData.crossings.push(loc);
+        else infraData.footpaths.push(loc);
+        const ico = low.includes('left') ? '↖️' : low.includes('right') ? '↗️' : '🚶';
+        stepsHtml += `<div class="step-row" onclick="flyTo(${loc[0]},${loc[1]})">
+            <span class="step-icon">${ico}</span>
+            <span class="step-txt">${instr}</span>
+            <span class="step-m">${Math.round(step.distance)}m</span>
+        </div>`;
+    });
+
+    document.getElementById('stepsBox').innerHTML = stepsHtml;
+    document.getElementById('stepsBox').style.display    = type==='bus' ? 'none' : 'block';
+    document.getElementById('transitWrap').style.display = type==='bus' ? 'block' : 'none';
+
+    document.getElementById('cntFoot').textContent   = infraData.footpaths.length;
+    document.getElementById('cntCross').textContent  = infraData.crossings.length;
+    document.getElementById('cntBridge').textContent = infraData.bridges.length;
+    document.getElementById('cntUnder').textContent  = infraData.underpasses.length;
+
+    document.getElementById('hudScore').textContent = rd.score;
+    document.getElementById('hudScore').style.color = type==='safe' ? 'var(--safe)' : type==='bus' ? 'var(--transit)' : 'var(--primary)';
+
+    if (type === 'bus') {
+        document.getElementById('hudTime').textContent = `${Math.ceil(rd.dist*4)+8} min`;
+        document.getElementById('hudTime').style.color = 'var(--transit)';
+        document.getElementById('hudDist').textContent = `${rd.dist.toFixed(2)} km`;
+        buildBusView(coords, steps, rd.dist);
+    } else {
+        document.getElementById('hudTime').textContent = `${Math.ceil(rd.dist*12)} min`;
+        document.getElementById('hudTime').style.color = 'var(--text)';
+        document.getElementById('hudDist').textContent = `${rd.dist.toFixed(2)} km`;
+    }
+
+    document.getElementById('hudSteps').textContent = Math.round((rd.dist*1000)/0.762).toLocaleString();
+    document.getElementById('hudCals').textContent  = Math.round((rd.dist*1000)*0.05).toLocaleString();
+
+    const color = type==='safe' ? '#7c3aed' : type==='bus' ? '#d97706' : '#2563eb';
+    const dash  = type==='walk' ? '10,8' : '';
+    if (type !== 'bus') {
+        const poly = L.polyline(coords, { color, weight:6, opacity:0.9, dashArray:dash }).addTo(iLayers);
+        // Origin marker
+        const oIco = L.divIcon({ className:'', html:`<div style="background:var(--green);width:14px;height:14px;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,.3);"></div>`, iconSize:[14,14], iconAnchor:[7,7] });
+        L.marker(coords[0], { icon:oIco }).addTo(iLayers).bindPopup(`<b>From:</b> ${originName||'My Location'}`);
+        L.marker(coords[coords.length-1]).addTo(iLayers).bindPopup(`<b>To:</b> ${destName||'Destination'}`);
+        map.fitBounds(poly.getBounds(), { padding:[50,50] });
+    }
+
+    if (document.getElementById('voiceToggle').checked && 'speechSynthesis' in window) {
+        const mode = type==='bus' ? 'public bus' : type==='safe' ? 'safest walking' : 'shortest walking';
+        window.speechSynthesis.speak(new SpeechSynthesisUtterance(`Route: ${mode}. ${Math.ceil(rd.dist*12)} minutes.`));
+    }
+}
+
+function buildBusView(coords, steps, distKm) {
+    const p1 = Math.floor(coords.length * 0.15);
+    const p2 = Math.floor(coords.length * 0.82);
+    const agency = Math.random() > 0.5 ? 'DTC' : 'DIMTS';
+    const routeName = agency==='DTC' ? '10001 (971 DOWN)' : '142 (828A UP)';
+    const clr = agency==='DTC' ? '#16a34a' : '#d97706';
+
+    L.polyline(coords.slice(0,p1),     { color:'#2563eb', weight:5, dashArray:'8,8' }).addTo(tLayers);
+    L.polyline(coords.slice(p1-1,p2+1),{ color:clr,       weight:8, opacity:0.9 }).addTo(tLayers);
+    L.polyline(coords.slice(p2),       { color:'#2563eb', weight:5, dashArray:'8,8' }).addTo(tLayers);
+
+    const sIco = L.divIcon({ className:'', html:'<div style="background:white;border:3px solid #1e293b;border-radius:50%;width:20px;height:20px;text-align:center;font-size:11px;line-height:14px;">🚏</div>', iconSize:[20,20] });
+    L.marker(coords[p1], { icon:sIco }).addTo(sLayer).bindPopup('Board Here');
+    L.marker(coords[p2], { icon:sIco }).addTo(sLayer).bindPopup('Alight Here');
+    map.fitBounds(L.polyline(coords).getBounds(), { padding:[50,50] });
+
+    const oIco = L.divIcon({ className:'', html:`<div style="background:var(--green);width:14px;height:14px;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,.3);"></div>`, iconSize:[14,14], iconAnchor:[7,7] });
+    L.marker(coords[0], { icon:oIco }).addTo(tLayers).bindPopup(`<b>From:</b> ${originName||'My Location'}`);
+    L.marker(coords[coords.length-1]).addTo(tLayers).bindPopup(`<b>To:</b> ${destName||'Destination'}`);
+
+    const eta = Math.floor(Math.random()*8)+5;
+    const nextTime = new Date(Date.now()+eta*60000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    const walkSteps1 = steps.slice(0, Math.floor(steps.length*0.15));
+    const walkSteps2 = steps.slice(Math.floor(steps.length*0.85));
+    const mkSteps = arr => arr.map(s => {
+        const road = s.name ? `onto ${s.name}` : 'forward';
+        const dir  = s.maneuver.modifier ? s.maneuver.modifier.replace('-',' ') : '';
+        const act  = s.maneuver.type==='turn' ? `Turn ${dir}` : 'Continue';
+        return `<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:12px;font-weight:600;text-transform:capitalize;">
+            <span>🚶</span><span style="flex:1">${act} ${road}</span><span style="color:var(--primary);font-weight:800;">${Math.round(s.distance)}m</span>
+        </div>`;
+    }).join('');
+
+    document.getElementById('transitWrap').innerHTML = `
+        <div style="background:var(--primary-light);padding:8px;border-radius:8px;margin-bottom:6px;">
+            <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--primary);margin-bottom:6px;">🚶 Walk to Stop</div>
+            ${mkSteps(walkSteps1)}
+        </div>
+        <div class="bus-card">
+            <div class="bus-icon">🚌</div>
+            <div class="bus-info">
+                <div class="bus-name" style="color:${clr}">${agency} · ${routeName}</div>
+                <div class="bus-stop">Board · Alight near destination</div>
+            </div>
+            <div class="bus-eta">~${eta} min<br><span style="color:var(--muted);font-size:10px">${nextTime}</span></div>
+        </div>
+        <div style="background:var(--primary-light);padding:8px;border-radius:8px;">
+            <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--primary);margin-bottom:6px;">🚶 Walk to Destination</div>
+            ${mkSteps(walkSteps2)}
+        </div>`;
+}
+
+// ── LIVE NAV ──
+function startLive() {
+    const from = originLatLng || userLoc;
+    if (!from) { toast('Awaiting GPS…'); return; }
+    isLive = true; liveSteps = 0;
+    document.getElementById('liveCount').textContent = '0';
+    document.getElementById('healthBar').style.display = 'none';
+    document.getElementById('liveBar').style.display   = 'flex';
+    document.getElementById('btnStart').style.display  = 'none';
+    document.getElementById('btnStop').style.display   = 'block';
+    if (!isMini) toggleMini();
+    map.flyTo(from, 19, { animate:true, duration:1.5 });
+
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+        DeviceMotionEvent.requestPermission()
+            .then(s => { if (s==='granted') window.addEventListener('devicemotion', onMotion, true); })
+            .catch(()=>{});
+    } else { window.addEventListener('devicemotion', onMotion, true); }
+
+    if (document.getElementById('voiceToggle').checked && 'speechSynthesis' in window)
+        window.speechSynthesis.speak(new SpeechSynthesisUtterance('Live navigation started.'));
+    toast('Live navigation active');
+}
+
+function stopLive() {
+    isLive = false;
+    window.removeEventListener('devicemotion', onMotion, true);
+    document.getElementById('healthBar').style.display = 'flex';
+    document.getElementById('liveBar').style.display   = 'none';
+    document.getElementById('btnStart').style.display  = 'block';
+    document.getElementById('btnStop').style.display   = 'none';
+    if (isMini) toggleMini();
+    routeCount++; totalXp += 250;
+    document.getElementById('vRoutes').textContent = routeCount;
+    document.getElementById('vaultXp').textContent  = totalXp.toLocaleString();
+}
+
+function onMotion(e) {
+    if (!isLive) return;
+    const z = e.accelerationIncludingGravity ? e.accelerationIncludingGravity.z : 0;
+    if (z > 11 || z < 8) { liveSteps++; if (liveSteps%10===0) document.getElementById('liveCount').textContent = Math.floor(liveSteps/10); }
+    if (z) motionZ.push(z);
+    if (motionZ.length > 60) { analyzeSurface(motionZ); motionZ = []; }
+}
+
+function analyzeSurface(arr) {
+    if (!document.getElementById('vibeToggle').checked) return;
+    const mean = arr.reduce((a,b)=>a+b,0)/arr.length;
+    const v = arr.reduce((a,b)=>a+Math.pow(b-mean,2),0)/arr.length;
+    toast(`Surface: ${v<2?'Smooth Asphalt':v<4.5?'Cement / Pavers':'Broken / Dirt'}`);
+}
+
+// ── HAZARDS ──
+function quickHazard(type) {
+    const loc = userLoc;
+    if (!loc) { toast('Waiting for GPS…'); return; }
+    closeSheet('sheetHazard');
+    const icon = L.divIcon({ className:'', html:`<div class="pulse" style="background:var(--danger);width:14px;height:14px;border-radius:50%;border:2px solid white;"></div>`, iconSize:[14,14] });
+    L.marker(loc, { icon }).addTo(map).bindPopup(`<b>${type}</b>`).openPopup();
+    addFeedCard(type, loc, 'tag-hazard');
+    totalXp += 50;
+    document.getElementById('vaultXp').textContent = totalXp.toLocaleString();
+    toast(`Hazard logged: ${type}`);
+}
+
+function addFeedCard(label, loc, tagClass) {
+    const feed = document.getElementById('feed-list');
+    feed.querySelector('.empty-state')?.remove();
+    const now = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    const card = document.createElement('div');
+    card.className = 'feed-card';
+    card.innerHTML = `<div class="feed-tag ${tagClass}">${label}</div>
+        <div class="feed-title">📍 ${loc?`${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)}`:'Unknown'}</div>
+        <div class="feed-meta">Submitted ${now} · Thanks!</div>`;
+    feed.insertBefore(card, feed.firstChild);
+}
+
+async function processPhoto(e) {
+    const file = e.target.files[0]; if (!file) return;
+    const st = document.getElementById('ocrStatus');
+    st.textContent = 'Compressing…';
+    const reader = new FileReader();
+    reader.onload = async ev => {
+        const img = new Image();
+        img.onload = async () => {
+            const cv = document.getElementById('photoCanvas');
+            const ctx = cv.getContext('2d');
+            cv.width = 400; cv.height = (img.height/img.width)*400;
+            ctx.drawImage(img,0,0,cv.width,cv.height);
+            const b64 = cv.toDataURL('image/jpeg',0.7).split(',')[1];
+            st.textContent = 'Analysing with AI…';
+            try {
+                const res = await fetch('https://api.anthropic.com/v1/messages', {
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens:100, messages:[{ role:'user', content:[
+                        { type:'image', source:{ type:'base64', media_type:'image/jpeg', data:b64 } },
+                        { type:'text', text:'What walkability hazard is in this image? Reply with ONE short label only (e.g. "Broken footpath", "Construction barrier", "Parked car on path"). 5 words max.' }
+                    ]}]})
+                });
+                const data = await res.json();
+                const label = data.content?.[0]?.text?.trim() || 'Unknown hazard';
+                st.textContent = `✔ ${label}`;
+                setTimeout(() => { quickHazard(`📸 ${label}`); st.textContent=''; closeSheet('sheetHazard'); }, 1500);
+            } catch {
+                st.textContent = 'AI failed — logged as generic';
+                setTimeout(() => { quickHazard('📸 Photo Hazard'); st.textContent=''; closeSheet('sheetHazard'); }, 1200);
+            }
+        };
+        img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+// ── INFRA ──
+function zoomInfra(type) {
+    const arr = infraData[type];
+    if (!arr||!arr.length) { toast(`No ${type} on this route`); return; }
+    const colors = { footpaths:'#2563eb', crossings:'#d97706', bridges:'#92400e', underpasses:'#7c3aed' };
+    arr.forEach(c => L.circleMarker(L.latLng(c[0],c[1]), { radius:10, color:'white', weight:2, fillColor:colors[type], fillOpacity:0.9 }).addTo(iLayers));
+    map.fitBounds(L.latLngBounds(arr.map(c=>L.latLng(c[0],c[1]))), { padding:[50,50], maxZoom:17 });
+}
+
+function flyTo(lat,lng) { map.flyTo([lat,lng],18,{animate:true,duration:1}); }
+
+function clearRoute(clearInputs) {
+    iLayers.clearLayers(); tLayers.clearLayers(); sLayer.clearLayers();
+    document.getElementById('hud').classList.remove('active');
+    document.getElementById('routeCard').classList.remove('active');
+    if (isLive) stopLive();
+    if (userMarker) userMarker.addTo(map);
+    if (originMarker) originMarker.addTo(map);
+    if (clearInputs) {
+        document.getElementById('inputFrom').value = '';
+        document.getElementById('inputTo').value   = '';
+        originLatLng = null; originName = '';
+        destLatLng   = null; destName   = '';
+        if (originMarker) { map.removeLayer(originMarker); originMarker = null; }
+    }
+}
+function clearAll(clearInputs) { clearRoute(clearInputs); }
+
+function toggleMini() { isMini=!isMini; document.getElementById('hud').classList.toggle('mini',isMini); }
+function toggleTrees() {
+    if (treeLayer) { map.removeLayer(treeLayer); treeLayer=null; toast('Tree cover hidden'); }
+    else { treeLayer=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{opacity:0.4}).addTo(map); toast('Tree canopy active'); }
+}
+function toast(msg) {
+    const el=document.getElementById('toast'); el.textContent=msg; el.style.opacity='1';
+    clearTimeout(el._t); el._t=setTimeout(()=>el.style.opacity='0',2800);
+}
+function openSheet(id)  { document.getElementById(id).classList.add('active'); }
+function closeSheet(id) { document.getElementById(id).classList.remove('active'); }
+function setupBattery() {
+    if (navigator.getBattery) navigator.getBattery().then(b=>{
+        const u=()=>document.getElementById('vBattery').textContent=`${Math.round(b.level*100)}%`;
+        u(); b.addEventListener('levelchange',u);
+    });
+}
+</script>
+
 </body>
 </html>

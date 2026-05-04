@@ -1,11 +1,11 @@
 {
-  "name": "PathRater Walkability",
-  "short_name": "PathRater",
-  "description": "Crowdsourced footpath and walkability tracker.",
+  "name": "GaitWay — Walk Smart",
+  "short_name": "GaitWay",
+  "description": "Pedestrian walkability navigator for Indian cities.",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#f4f7f6",
-  "theme_color": "#007bff",
+  "background_color": "#f1f5f9",
+  "theme_color": "#2563eb",
   "icons": [
     {
       "src": "https://cdn-icons-png.flaticon.com/512/3204/3204933.png",
