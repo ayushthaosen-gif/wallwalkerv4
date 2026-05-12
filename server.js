@@ -16,10 +16,13 @@ app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, '../')));
 
 // ── DATABASE ──
-// Uses SESSION POOLER (IPv4 compatible) on port 5432
-// Set DATABASE_URL in Render environment variables
+// Uses individual params to avoid URL-encoding issues with special chars in password
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  host:     process.env.DB_HOST     || 'aws-0-ap-southeast-1.pooler.supabase.com',
+  port:     parseInt(process.env.DB_PORT || '5432'),
+  database: process.env.DB_NAME     || 'postgres',
+  user:     process.env.DB_USER     || 'postgres.rdbxfgqcrdxrruzjjaao',
+  password: process.env.DB_PASSWORD,
   ssl: { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30000,
@@ -191,6 +194,6 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, '../index.html')));
 
 app.listen(PORT, () => {
   console.log(`✅ GaitWay running on port ${PORT}`);
-  console.log(`   DB:  ${process.env.DATABASE_URL ? '✓ configured' : '⚠ DATABASE_URL not set'}`);
+  console.log(`   DB:  ${process.env.DB_PASSWORD ? '✓ configured' : '⚠ DB_PASSWORD not set'}`);
   console.log(`   AI:  ${process.env.ANTHROPIC_API_KEY ? '✓ configured' : '⚠ ANTHROPIC_API_KEY not set'}`);
 });
