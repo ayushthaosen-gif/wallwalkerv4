@@ -1,529 +1,908 @@
-/**
- * GAITWAY V74.1 - LOGIC ENGINE
- * - Restored full Turn-by-Turn Text for Transit Mode.
- * - Accurate Infrastructure Logic (Footpaths, Crossings, Underpasses).
- * - Live Step Counter during Navigation.
- * - Detailed Turn-by-Turn Text with Road Names.
- * - Pre-defined Quick Hazard marking with GPS.
- */
+'use strict';
 
-let map, userLoc, searchTimer;
+// ── API CONFIG ──
+const API = window.location.hostname === 'localhost'
+  ? 'http://localhost:3000'
+  : '';  // Same origin on Render — empty string works
+
+// ── USER SESSION ──
+let userId = localStorage.getItem('gw_user_id');
+if (!userId) {
+  userId = 'u_' + Math.random().toString(36).slice(2,9) + Date.now().toString(36);
+  localStorage.setItem('gw_user_id', userId);
+}
+
+async function initUserSession() {
+  try {
+    const res = await fetch(`${API}/api/users/upsert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: userId, name: localStorage.getItem('gw_user_name') || 'Walker' })
+    });
+    const user = await res.json();
+    document.getElementById('vaultName').textContent = user.name || 'Walker';
+    document.getElementById('vaultXp').textContent   = (user.xp || 0).toLocaleString();
+    document.getElementById('vRoutes') && (document.getElementById('vRoutes').textContent = user.route_count || 0);
+  } catch(e) { console.warn('User session offline'); }
+}
+
+async function loadHazardsFromDB() {
+  if (!userLoc) return;
+  try {
+    const res = await fetch(`${API}/api/hazards?lat=${userLoc.lat}&lng=${userLoc.lng}&radius=10&limit=200`);
+    const hazards = await res.json();
+    if (!Array.isArray(hazards)) return;
+    hazards.forEach(h => {
+      const ico = L.divIcon({ className:'',
+        html:`<div style="background:#dc2626;width:10px;height:10px;border-radius:50%;border:2px solid white;opacity:.7;"></div>`,
+        iconSize:[10,10], iconAnchor:[5,5] });
+      L.marker([h.lat,h.lng],{icon:ico}).addTo(hazardLayer)
+       .bindPopup(`<b>${h.type}</b>${h.surface?'<br>Surface: '+h.surface:''}${h.canopy?'<br>Canopy: '+h.canopy:''}<br><small>${new Date(h.created_at).toLocaleDateString()}</small>`);
+    });
+  } catch(e) {}
+}
+
+async function saveHazardToDB(type, lat, lng, extra={}) {
+  try {
+    await fetch(`${API}/api/hazards`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, lat, lng, user_id: userId, ...extra })
+    });
+  } catch(e) { console.warn('Hazard save failed (offline)'); }
+}
+
+async function saveRouteToDB(routeData) {
+  try {
+    const res = await fetch(`${API}/api/routes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId, ...routeData })
+    });
+    const data = await res.json();
+    // Refresh XP
+    const uRes = await fetch(`${API}/api/users/${userId}`);
+    const user = await uRes.json();
+    document.getElementById('vaultXp').textContent = (user.xp||0).toLocaleString();
+    showToast(`+${routeData.mode==='walk'?250:150} XP earned!`);
+  } catch(e) { console.warn('Route save failed (offline)'); }
+}
+
+// ── STATE ──
+let map, userLoc, userMarker;
+let searchTimerFrom, searchTimerTo;
 let isMinimized = false, treeLayer = null;
-let interactiveLayer = L.layerGroup();
-let transitLayer = L.layerGroup();
-let stationLayer = L.layerGroup(); 
-let routeCoordsData = { footpaths: [], bridges: [], underpasses: [], crossings: [] };
-let activeDestLatLng = null;
+let interactiveLayer, transitLayer, stationLayer, hazardLayer;
+let routeCoordsData = { footpaths:[], bridges:[], underpasses:[], crossings:[] };
+let activeDestLatLng = null, activeOriginLatLng = null;
+let activeOriginName = '', activeDestName = '';
+let originMarker = null;
 let simData = {};
 let isLiveTracking = false;
-let userMarker = null; 
+let currentRouteMode = 'walk';
+let cachedMetroPlan = null;
 
-// Kinetic & Live Nav Variables
-let motionDataZ = [];
-let lastKnownPath = "Unknown";
-let ignorePathPrompt = false;
+// Surface / motion
+let motionDataZ=[], motionDataX=[], motionDataY=[];
+let lastKnownSurface = 'Unknown';
+let surfaceHistory = [];
+let peakTimestamps = [];
 let liveSteps = 0;
+let lastSurfaceResult = null;
 
+// Score
+let walkabilityBase = 100;
+let localHazards = [];
+
+// ── INIT ──
 window.onload = () => {
-    initTabs();
-    initMap();
-    initHardwareSensors();
-    initSearchBox();
+  Env.init();
+  window._onEnvUpdate = updateSurfaceReadout;
+  initTabs();
+  initMap();
+  initSensors();
+  initSearchBoxes();
+  pollBusData();
+  initUserSession();
 };
 
+// ── TABS ──
 function initTabs() {
-    document.querySelectorAll('.bottom-nav .nav-item').forEach(item => {
-        item.addEventListener('click', function() {
-            document.querySelectorAll('.bottom-nav .nav-item').forEach(n => n.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-            this.classList.add('active');
-            document.getElementById(this.dataset.target).classList.add('active');
-            if(this.dataset.target === 'explore-tab') map.invalidateSize();
-        });
+  document.querySelectorAll('.bottom-nav .nav-item').forEach(item => {
+    item.addEventListener('click', function () {
+      document.querySelectorAll('.bottom-nav .nav-item').forEach(n => n.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+      this.classList.add('active');
+      const target = document.getElementById(this.dataset.target);
+      if (target) target.classList.add('active');
+      if (this.dataset.target === 'explore-tab') setTimeout(() => map.invalidateSize(), 100);
+      if (this.dataset.target === 'vault-tab') refreshVaultStats();
     });
+  });
 }
 
+// ── MAP ──
 function initMap() {
-    map = L.map('map', { zoomControl: false, attributionControl: false }).setView([28.6139, 77.2090], 13);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png').addTo(map);
-    interactiveLayer.addTo(map); transitLayer.addTo(map); stationLayer.addTo(map);
+  interactiveLayer = L.layerGroup();
+  transitLayer     = L.layerGroup();
+  stationLayer     = L.layerGroup();
+  hazardLayer      = L.layerGroup();
 
-    map.on('contextmenu', async (e) => {
-        const lat = e.latlng.lat; const lng = e.latlng.lng;
-        showToast("Locating Address...");
-        try {
-            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
-            const data = await res.json();
-            prepareRouteComparison(lat, lng, data.display_name ? data.display_name.split(',')[0] : "Dropped Pin");
-        } catch (err) {
-            prepareRouteComparison(lat, lng, "Dropped Pin Location");
-        }
-    });
+  map = L.map('map', { zoomControl:false, attributionControl:false })
+         .setView([28.6139, 77.2090], 13);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png').addTo(map);
+  interactiveLayer.addTo(map);
+  transitLayer.addTo(map);
+  stationLayer.addTo(map);
+  hazardLayer.addTo(map);
+
+  // Long-press to drop destination
+  map.on('contextmenu', async e => {
+    showToast('Fetching address…');
+    try {
+      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${e.latlng.lat}&lon=${e.latlng.lng}`);
+      const d = await r.json();
+      setDest(e.latlng.lat, e.latlng.lng, d.display_name ? d.display_name.split(',')[0] : 'Dropped Pin');
+    } catch { setDest(e.latlng.lat, e.latlng.lng, 'Dropped Pin'); }
+  });
 }
 
-function initSearchBox() {
-    const input = document.getElementById('destInput');
-    input.addEventListener('input', () => {
-        clearRoute(false); 
-        clearTimeout(searchTimer);
-        if (input.value.length < 3) return document.getElementById('results').style.display='none';
-        searchTimer = setTimeout(() => fetchDest(input.value), 300);
-    });
-    document.addEventListener('click', (e) => {
-        if(!e.target.closest('#searchContainer') && !e.target.closest('#results')) document.getElementById('results').style.display='none';
-    });
-}
+// ── GPS / SENSORS ──
+function initSensors() {
+  // Watch GPS continuously
+  map.locate({ setView: false, watch: true, enableHighAccuracy: true });
 
-// --- UTILS ---
-function showToast(msg) {
-    const t = document.getElementById('toast');
-    t.innerText = msg; t.style.opacity = '1';
-    setTimeout(() => t.style.opacity = '0', 3000);
-}
-function openModal(id) { document.getElementById(id).classList.add('active'); }
-function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+  map.on('locationfound', e => {
+    const firstFix = !userLoc;
+    userLoc = e.latlng;
 
-// --- GPS & SENSORS ---
-function initHardwareSensors() {
-    map.locate({ setView: false, watch: true }); 
-    map.on('locationfound', (e) => {
-        userLoc = e.latlng;
-        if (isLiveTracking) map.panTo(userLoc);
-
-        if (!userMarker) {
-            let compassIcon = L.divIcon({ className: '', html: `<div class="compass-marker" id="userCompassNode"><div class="compass-dot"></div><div class="compass-cone"></div></div>`, iconSize: [24, 24], iconAnchor: [12, 12] });
-            userMarker = L.marker(userLoc, { icon: compassIcon, zIndexOffset: 1000 }).addTo(map);
-        } else {
-            userMarker.setLatLng(userLoc);
-        }
-        fetchLiveEnvData(userLoc.lat, userLoc.lng);
-    });
-
-    if (window.DeviceOrientationEvent) {
-        window.addEventListener('deviceorientationabsolute', handleOrientation, true);
-        window.addEventListener('deviceorientation', handleOrientation, true);
+    // AUTO-FLY to user on first fix (fixes the "locate me" issue)
+    if (firstFix) {
+      map.flyTo(userLoc, 16, { animate: true, duration: 1.2 });
+    } else if (isLiveTracking) {
+      map.panTo(userLoc);
     }
-    if(navigator.getBattery) {
-        navigator.getBattery().then(battery => {
-            document.getElementById('vaultBattery').innerText = `${Math.round(battery.level * 100)}%`;
-            battery.addEventListener('levelchange', () => { document.getElementById('vaultBattery').innerText = `${Math.round(battery.level * 100)}%`; });
-        });
+
+    if (!userMarker) {
+      const ico = L.divIcon({
+        className: '',
+        html: `<div class="compass-marker" id="userCompassNode"><div class="compass-dot"></div><div class="compass-cone"></div></div>`,
+        iconSize: [24,24], iconAnchor: [12,12]
+      });
+      userMarker = L.marker(userLoc, { icon: ico, zIndexOffset: 1000 }).addTo(map);
+    } else {
+      userMarker.setLatLng(userLoc);
     }
+
+    document.getElementById('vGps').textContent = 'Active ✓';
+    fetchLiveEnv(userLoc.lat, userLoc.lng);
+    showNearbyTransit(userLoc.lat, userLoc.lng);
+    if (firstFix) loadHazardsFromDB();
+  });
+
+  map.on('locationerror', e => {
+    document.getElementById('vGps').textContent = 'Unavailable';
+    showToast('GPS unavailable — check browser permissions');
+  });
+
+  if (window.DeviceOrientationEvent) {
+    window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+    window.addEventListener('deviceorientation', handleOrientation, true);
+  }
+  if (navigator.getBattery) {
+    navigator.getBattery().then(b => {
+      const upd = () => document.getElementById('vBattery').textContent = Math.round(b.level*100)+'%';
+      upd(); b.addEventListener('levelchange', upd);
+    });
+  }
 }
 
-function centerOnUser() {
-    if(userLoc) map.flyTo(userLoc, 16);
-    else showToast("Locating...");
+// ── GPS BUTTON — flies to user location ──
+function useMyLocation() {
+  activeOriginLatLng = null;
+  activeOriginName   = '';
+  const inp = document.getElementById('inputFrom');
+  inp.value = ''; inp.placeholder = 'From: My Location';
+  if (originMarker) { map.removeLayer(originMarker); originMarker = null; }
+  closeDropdown();
+  if (userLoc) {
+    map.flyTo(userLoc, 17, { animate: true, duration: 1 });
+  } else {
+    showToast('Acquiring GPS — please wait…');
+    // Try one-shot locate in case watch hasn't fired
+    map.locate({ setView: false, enableHighAccuracy: true });
+  }
+  tryPrepare();
 }
 
 function handleOrientation(e) {
-    let compassNode = document.getElementById('userCompassNode');
-    if (!compassNode) return;
-    let heading = e.webkitCompassHeading || Math.abs(e.alpha - 360); 
-    if (heading) compassNode.style.transform = `rotate(${heading}deg)`;
+  const node = document.getElementById('userCompassNode');
+  if (!node) return;
+  const h = e.webkitCompassHeading || Math.abs(e.alpha - 360);
+  if (h) node.style.transform = `rotate(${h}deg)`;
 }
 
-async function fetchLiveEnvData(lat, lng) {
-    try {
-        const wRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,apparent_temperature,wind_speed_10m`);
-        const wData = await wRes.json();
-        document.getElementById('liveTemp').innerText = `Feels ${Math.round(wData.current.apparent_temperature)}°C`;
-        document.getElementById('modalRealTemp').innerText = `${Math.round(wData.current.temperature_2m)}°C`;
-        document.getElementById('modalFeelsTemp').innerText = `${Math.round(wData.current.apparent_temperature)}°C`;
-        document.getElementById('modalWind').innerText = `${wData.current.wind_speed_10m} km/h`;
-
-        const aqiRes = await fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lng}&current=us_aqi`);
-        const aqiData = await aqiRes.json();
-        document.getElementById('liveAqi').innerText = `AQI: ${aqiData.current.us_aqi}`;
-        document.getElementById('modalAqiVal').innerText = aqiData.current.us_aqi;
-    } catch (e) {}
+// ── ENV DATA ──
+let envFetched = false;
+async function fetchLiveEnv(lat, lng) {
+  if (envFetched) return;
+  envFetched = true;
+  try {
+    const [wRes, aqiRes] = await Promise.all([
+      fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,apparent_temperature,wind_speed_10m,relative_humidity_2m`),
+      fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lng}&current=us_aqi`),
+    ]);
+    const wd = await wRes.json(), ad = await aqiRes.json();
+    const t   = Math.round(wd.current.apparent_temperature);
+    const aqi = ad.current.us_aqi;
+    document.getElementById('badgeTemp').textContent       = `${t}°C`;
+    document.getElementById('badgeAqi').textContent        = `AQI ${aqi}`;
+    document.getElementById('modalRealTemp').textContent   = `${Math.round(wd.current.temperature_2m)}°C`;
+    document.getElementById('modalFeelsTemp').textContent  = `${t}°C`;
+    document.getElementById('modalWind').textContent       = `${wd.current.wind_speed_10m} km/h`;
+    document.getElementById('modalHumid').textContent      = `${wd.current.relative_humidity_2m}%`;
+    document.getElementById('modalAqiVal').textContent     = aqi;
+    document.getElementById('modalAqiDesc').textContent    = aqiDesc(aqi);
+  } catch { envFetched = false; }
+}
+function aqiDesc(v) {
+  if (v<=50) return '🟢 Good — safe to walk';
+  if (v<=100) return '🟡 Moderate — OK for most';
+  if (v<=150) return '🟠 Unhealthy for sensitive groups';
+  if (v<=200) return '🔴 Unhealthy — limit outdoor time';
+  return '🟣 Very unhealthy — stay indoors';
 }
 
-// --- KINETIC PAVEMENT AI & LIVE STEPS ---
+// ── TRANSIT DATA READINESS ──
+function pollBusData() {
+  const check = setInterval(() => {
+    if (typeof BusEngine !== 'undefined' && BusEngine.busDataReady()) {
+      clearInterval(check);
+      console.log(`✅ Bus GTFS: ${Object.keys(BUS_STOPS_V2).length} stops, ${Object.keys(BUS_ROUTES_P1).length} routes`);
+    }
+  }, 300);
+}
+function getNearestBusStops(lat, lng, n=5, km=0.8) {
+  return (typeof BusEngine !== 'undefined' && BusEngine.busDataReady())
+    ? BusEngine.getNearestBusStops(lat, lng, n, km)
+    : [];
+}
+
+// Show bus stops + metro stations near user on map
+function showNearbyTransit(lat, lng) {
+  stationLayer.clearLayers();
+  // Bus stops within 500m
+  getNearestBusStops(lat, lng, 5, 0.5).forEach(s => {
+    const ico = L.divIcon({ className:'',
+      html:`<div style="background:white;border:2px solid #d97706;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;box-shadow:0 2px 6px rgba(0,0,0,.2);">🚏</div>`,
+      iconSize:[18,18], iconAnchor:[9,9] });
+    L.marker([s.lat,s.lng],{icon:ico}).addTo(stationLayer)
+     .bindPopup(`<b>🚏 ${s.name}</b><br><small>${(s.dist*1000).toFixed(0)}m · DTC/DIMTS</small>`);
+  });
+  // Metro stations within 1.5km
+  if (typeof MetroEngine !== 'undefined') {
+    MetroEngine.getNearestMetroStations(lat, lng, 4, 1.5).forEach(s => {
+      const ico = L.divIcon({ className:'',
+        html:`<div style="background:#1565c0;border:2px solid white;border-radius:4px;padding:2px 4px;font-size:9px;font-weight:800;color:white;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.3);">🚇</div>`,
+        iconSize:[null,null] });
+      L.marker([s.lat,s.lng],{icon:ico}).addTo(stationLayer)
+       .bindPopup(`<b>🚇 ${s.name}</b><br><small>${(s.dist*1000).toFixed(0)}m · DMRC</small>`);
+    });
+  }
+}
+
+// ── SURFACE AI + ENV UPDATE ──
 function handleMotion(event) {
-    if (!isLiveTracking) return;
-    let z = event.accelerationIncludingGravity ? event.accelerationIncludingGravity.z : 0;
-    
-    // Simple peak detection for step counting
-    if (z > 12 || z < 7) { 
-        liveSteps++; 
-        document.getElementById('liveStepCount').innerText = Math.floor(liveSteps / 10); 
-    }
+  if (!isLiveTracking) return;
+  const z = event.accelerationIncludingGravity?.z ?? 0;
+  const x = event.accelerationIncludingGravity?.x ?? 0;
+  const y = event.accelerationIncludingGravity?.y ?? 0;
+  const now = Date.now();
 
-    if (z) motionDataZ.push(z);
-    if (motionDataZ.length > 60) {
-        analyzeSurfaceVibration(motionDataZ);
-        motionDataZ = []; 
-    }
-}
+  const lastPeak = peakTimestamps[peakTimestamps.length-1] || 0;
+  if (z > 11 && (now - lastPeak) > 300) {
+    liveSteps++;
+    peakTimestamps.push(now);
+    if (peakTimestamps.length > 10) peakTimestamps.shift();
+    document.getElementById('liveStepCount').textContent = liveSteps;
+    document.getElementById('liveCals').textContent = Math.round(liveSteps * 0.04);
+  }
 
-function analyzeSurfaceVibration(dataArray) {
-    let mean = dataArray.reduce((a, b) => a + b) / dataArray.length;
-    let variance = dataArray.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / dataArray.length;
+  motionDataZ.push(z); motionDataX.push(x); motionDataY.push(y);
 
-    let guessedSurface = "Unknown";
-    if (variance < 2.0) guessedSurface = "Smooth Asphalt";
-    else if (variance >= 2.0 && variance < 4.5) guessedSurface = "Cement / Pavers";
-    else guessedSurface = "Broken / Dirt";
-
-    if (guessedSurface !== lastKnownPath && guessedSurface !== "Unknown") {
-        lastKnownPath = guessedSurface;
-        if(!ignorePathPrompt && isLiveTracking) {
-            openModal('pathPromptModal');
+  if (motionDataZ.length >= 60) {
+    const result = Env.analyzeSurface(motionDataZ, motionDataX, motionDataY);
+    motionDataZ=[]; motionDataX=[]; motionDataY=[];
+    if (result && result.surfaceClass !== 'unknown') {
+      const changed = result.surface !== lastKnownSurface;
+      lastKnownSurface = result.surface;
+      lastSurfaceResult = result;
+      updateSurfaceReadout();
+      if (changed) {
+        showToast(`Surface: ${result.surface} — ${result.footpathLabel}`);
+        if (result.surfaceClass === 'rough') {
+          walkabilityBase = Math.max(30, walkabilityBase - 3);
+          updateHudScore();
         }
-    }
-}
-
-function ignorePathPromptForWalk() {
-    ignorePathPrompt = true;
-    closeModal('pathPromptModal');
-    showToast("Prompts silenced for this walk.");
-}
-
-function submitPathData(pathType) {
-    closeModal('pathPromptModal');
-    const feedList = document.getElementById('intelFeedList');
-    feedList.innerHTML = `
-        <div style="background:white; padding:16px; border-radius:16px; margin-bottom:12px; border:1px solid var(--border);">
-            <span style="display:inline-block; background:rgba(0,122,255,0.1); color:var(--primary); padding:4px 8px; border-radius:8px; font-size:11px; font-weight:800; margin-bottom:8px;">✔ Verified Path</span>
-            <h4 style="margin:0 0 5px 0;">📍 Type: ${pathType}</h4>
-            <div style="font-size:12px; color:var(--text-muted);">Saved to Global DB. Thanks!</div>
-        </div>
-    ` + feedList.innerHTML;
-}
-
-// --- HAZARD MARKING ---
-function submitQuickHazard(type) {
-    if (!userLoc) return showToast("Awaiting GPS...");
-    closeModal('gateModal');
-    
-    L.marker(userLoc, { icon: L.divIcon({ className: 'pulse-marker', html: `<div style="background:#ff3b30;width:14px;height:14px;border-radius:50%;border:2px solid white;"></div>`}) })
-     .addTo(map).bindPopup(`<b>${type}</b>`).openPopup();
-    
-    const feedList = document.getElementById('intelFeedList');
-    feedList.innerHTML = `
-        <div style="background:white; padding:16px; border-radius:16px; margin-bottom:12px; border:1px solid var(--border);">
-            <span style="display:inline-block; background:rgba(255,59,48,0.1); color:var(--danger); padding:4px 8px; border-radius:8px; font-size:11px; font-weight:800; margin-bottom:8px;">${type}</span>
-            <h4 style="margin:0 0 5px 0;">📍 GPS: ${userLoc.lat.toFixed(4)}, ${userLoc.lng.toFixed(4)}</h4>
-            <div style="font-size:12px; color:var(--text-muted);">Uploaded Just Now</div>
-        </div>
-    ` + feedList.innerHTML;
-    showToast(`Hazard logged at current GPS location.`);
-}
-
-function processGateImage(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    const statusTxt = document.getElementById('ocrStatus');
-    statusTxt.innerText = "1. Compressing to WEBP to save data...";
-    
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        const img = new Image();
-        img.onload = function() {
-            const canvas = document.getElementById('webpCanvas');
-            const ctx = canvas.getContext('2d');
-            canvas.width = 400; canvas.height = (img.height / img.width) * 400;
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            setTimeout(() => {
-                statusTxt.innerText = "2. AI Vision OCR Scanning text...";
-                setTimeout(() => {
-                    statusTxt.innerText = "✔ Gate Status: CLOSED. GPS node updated in Database.";
-                    setTimeout(() => {
-                        submitQuickHazard('⛔ Closed Gate (OCR Verified)');
-                        statusTxt.innerText = "";
-                    }, 2000);
-                }, 1500);
-            }, 1000);
+        if ((result.quality === 'Poor' || result.quality === 'Very Poor') &&
+             document.getElementById('surfacePromptToggle')?.checked) {
+          document.getElementById('surfaceModalDesc').textContent =
+            `AI detected: ${result.surface} (${result.footpathLabel}). Width est. ${result.width}. Log it?`;
+          setTimeout(() => openModal('surfaceModal'), 500);
         }
-        img.src = e.target.result;
+      }
     }
-    reader.readAsDataURL(file);
+  }
 }
 
-// --- SEARCH & ROUTING ---
-async function fetchDest(q) {
-    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&countrycodes=in&limit=4`);
-    const data = await res.json();
-    const box = document.getElementById('results');
-    
-    box.innerHTML = data.map(i => {
-        let destLatLng = L.latLng(i.lat, i.lon);
-        let distStr = userLoc ? (userLoc.distanceTo(destLatLng) / 1000).toFixed(1) + " km" : "--";
-        return `
-        <div class="suggestion-item" onclick="prepareRouteComparison(${i.lat}, ${i.lon}, '${i.display_name.split(',')[0].replace("'", "\\'")}')">
-            <div style="flex:1; padding-right:10px;">
-                <b style="font-size:14px; display:block;">${i.display_name.split(',')[0]}</b>
-                <span style="font-size:10px; color:var(--text-muted);">${i.display_name.split(',').slice(1,3).join(',')}</span>
-            </div>
-            <div class="suggestion-dist">${distStr}</div>
-        </div>`;
+function updateSurfaceReadout() {
+  const el = document.getElementById('surfaceReadout');
+  if (!el) return;
+  const lat = userLoc ? userLoc.lat : 28.6139;
+  const lng = userLoc ? userLoc.lng : 77.2090;
+  if (!lastSurfaceResult && !isLiveTracking) {
+    el.innerHTML = '<div class="surface-idle">Start walking to detect surface · canopy · lighting</div>';
+    return;
+  }
+  el.innerHTML = Env.buildSurfaceReadoutHtml(lastSurfaceResult, lat, lng);
+}
+
+function updateHudScore() {
+  const el = document.getElementById('hudScore');
+  const lat = userLoc ? userLoc.lat : 28.6139;
+  const lng = userLoc ? userLoc.lng : 77.2090;
+  const score = Env.computeWalkabilityScore(walkabilityBase, localHazards, lastSurfaceResult, lat, lng);
+  if (el) el.textContent = score;
+}
+
+// ── SEARCH A→B ──
+function initSearchBoxes() {
+  const fromInput = document.getElementById('inputFrom');
+  const toInput   = document.getElementById('inputTo');
+
+  fromInput.addEventListener('input', () => {
+    clearTimeout(searchTimerFrom);
+    const v = fromInput.value.trim();
+    if (v.length < 3) return closeDropdown();
+    searchTimerFrom = setTimeout(() => doSearch(v, 'from'), 320);
+  });
+  fromInput.addEventListener('focus', () => { if (!fromInput.value) showGpsOption(); });
+
+  toInput.addEventListener('input', () => {
+    clearTimeout(searchTimerTo);
+    const v = toInput.value.trim();
+    if (v.length < 3) return closeDropdown();
+    searchTimerTo = setTimeout(() => doSearch(v, 'to'), 320);
+  });
+
+  document.addEventListener('click', e => {
+    if (!e.target.closest('#searchBox') && !e.target.closest('#resultsDropdown')) closeDropdown();
+  });
+}
+
+function showGpsOption() {
+  const dd = document.getElementById('resultsDropdown');
+  dd.innerHTML = `<div class="result-item" onclick="useMyLocation()">
+    <div><div class="result-name">📍 My Current Location</div><div class="result-sub">Use live GPS</div></div>
+    <div class="result-gps">GPS</div></div>`;
+  dd.classList.add('open');
+}
+
+async function doSearch(q, field) {
+  try {
+    const ref = userLoc ? `&lat=${userLoc.lat}&lon=${userLoc.lng}` : '';
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&countrycodes=in&limit=5${ref}`);
+    const data = await r.json();
+    const dd = document.getElementById('resultsDropdown');
+    if (!data.length) { closeDropdown(); return; }
+
+    let html = field === 'from'
+      ? `<div class="result-item" onclick="useMyLocation()"><div><div class="result-name">📍 My Current Location</div><div class="result-sub">Use live GPS</div></div><div class="result-gps">GPS</div></div>`
+      : '';
+    html += data.map(item => {
+      const parts = item.display_name.split(',');
+      const dist  = userLoc ? (L.latLng(item.lat, item.lon).distanceTo(userLoc)/1000).toFixed(1)+' km' : '--';
+      const fn    = field==='from'
+        ? `setOrigin(${item.lat},${item.lon},'${parts[0].replace(/'/g,"\\'")}')`
+        : `setDest(${item.lat},${item.lon},'${parts[0].replace(/'/g,"\\'")}')`;
+      return `<div class="result-item" onclick="${fn}">
+        <div><div class="result-name">${parts[0]}</div><div class="result-sub">${parts.slice(1,3).join(', ')}</div></div>
+        <div class="result-dist">${dist}</div></div>`;
     }).join('');
-    box.style.display = 'block';
+    dd.innerHTML = html; dd.classList.add('open');
+  } catch {}
 }
 
-function prepareRouteComparison(lat, lon, name) {
-    document.getElementById('destInput').value = name;
-    document.getElementById('results').style.display = 'none';
-    activeDestLatLng = L.latLng(lat, lon);
+function closeDropdown() { document.getElementById('resultsDropdown').classList.remove('open'); }
 
-    let baseDistKm = (userLoc.distanceTo(activeDestLatLng) / 1000) * 1.3; 
-    simData = { shortest: { dist: baseDistKm, score: 72 }, safest: { dist: baseDistKm * 1.15, score: 91 }, transit: { dist: baseDistKm, score: 85 } };
-
-    document.getElementById('compShortTime').innerText = `${Math.ceil(simData.shortest.dist*12)} min | ${simData.shortest.dist.toFixed(1)} km`;
-    document.getElementById('compShortScore').innerText = simData.shortest.score;
-    document.getElementById('compSafeTime').innerText = `${Math.ceil(simData.safest.dist*13)} min | ${simData.safest.dist.toFixed(1)} km`;
-    document.getElementById('compSafeScore').innerText = simData.safest.score;
-    document.getElementById('compTransitTime').innerText = `${Math.ceil(simData.transit.dist*4)+10} min | ${simData.transit.dist.toFixed(1)} km`;
-    document.getElementById('compTransitScore').innerText = simData.transit.score;
-
-    document.getElementById('routeComparisonCard').classList.add('active');
-    L.marker(activeDestLatLng).addTo(interactiveLayer);
-    map.flyTo(activeDestLatLng, 15);
+function setOrigin(lat, lon, name) {
+  activeOriginLatLng = L.latLng(lat, lon); activeOriginName = name;
+  document.getElementById('inputFrom').value = name;
+  closeDropdown();
+  if (originMarker) map.removeLayer(originMarker);
+  const ico = L.divIcon({ className:'',
+    html:`<div style="background:#16a34a;width:14px;height:14px;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,.3);"></div>`,
+    iconSize:[14,14], iconAnchor:[7,7] });
+  originMarker = L.marker(activeOriginLatLng,{icon:ico}).addTo(map).bindPopup(`<b>From:</b> ${name}`);
+  map.flyTo(activeOriginLatLng, 14);
+  tryPrepare();
 }
 
-function clearRoute(clearInput = false) {
-    interactiveLayer.clearLayers(); transitLayer.clearLayers(); stationLayer.clearLayers();
-    document.getElementById('auditorHud').classList.remove('active');
-    document.getElementById('routeComparisonCard').classList.remove('active');
-    if(clearInput) document.getElementById('destInput').value = "";
-    stopLiveNavigation();
-    if(userMarker) userMarker.addTo(map); 
+function setDest(lat, lon, name) {
+  activeDestLatLng = L.latLng(lat, lon); activeDestName = name;
+  document.getElementById('inputTo').value = name;
+  closeDropdown(); tryPrepare();
 }
 
-async function startRouting(pref) {
-    document.getElementById('routeComparisonCard').classList.remove('active');
-    interactiveLayer.clearLayers(); transitLayer.clearLayers(); stationLayer.clearLayers();
-    if(userMarker) userMarker.addTo(map); 
-
-    try {
-        const url = `https://routing.openstreetmap.de/routed-foot/route/v1/foot/${userLoc.lng},${userLoc.lat};${activeDestLatLng.lng},${activeDestLatLng.lat}?overview=full&geometries=geojson&steps=true`;
-        const res = await fetch(url);
-        const data = await res.json();
-        
-        let r = data.routes[0];
-        
-        document.getElementById('auditorHud').classList.add('active');
-        isMinimized = false; document.getElementById('auditorHud').classList.remove('minimized');
-        
-        if (pref === 'transit') mapTransitRoute(r, simData.transit.score);
-        else mapWalkingRoute(r, pref);
-
-    } catch (err) { showToast("Routing Error."); }
+function swapLocations() {
+  const oL=activeOriginLatLng, oN=activeOriginName, dL=activeDestLatLng, dN=activeDestName;
+  if (dL) setOrigin(dL.lat, dL.lng, dN); else useMyLocation();
+  if (oL) setDest(oL.lat, oL.lng, oN); else { activeDestLatLng=null; document.getElementById('inputTo').value=''; }
+  showToast('Swapped ↕');
 }
 
-// --- TEXT LOGIC & INFRASTRUCTURE ---
-function mapWalkingRoute(r, pref) {
-    document.getElementById('itineraryBox').style.display = 'block';
-    document.getElementById('infraGridBox').style.display = 'grid';
-    document.getElementById('transitBox').style.display = 'none';
-
-    let leafCoords = r.geometry.coordinates.map(c => [c[1], c[0]]);
-    let lineColor = pref === 'safest' ? '#af52de' : '#007aff';
-    let dash = pref === 'shortest' ? '10,10' : '';
-    let manualLine = L.polyline(leafCoords, { color: lineColor, weight: 6, opacity: 0.9, dashArray: dash }).addTo(interactiveLayer);
-    
-    L.marker(leafCoords[leafCoords.length - 1]).addTo(interactiveLayer).bindPopup("Destination");
-    map.fitBounds(manualLine.getBounds(), { padding: [50, 50] });
-
-    let statsData = simData[pref];
-    document.getElementById('valTime').innerText = Math.ceil(statsData.dist*12) + " min";
-    document.getElementById('valDist').innerText = statsData.dist.toFixed(2) + " km";
-    document.getElementById('walkScore').innerText = statsData.score;
-    document.getElementById('valSteps').innerText = Math.round((statsData.dist * 1000) / 0.762).toLocaleString();
-    document.getElementById('valCals').innerText = Math.round((statsData.dist * 1000) * 0.05).toLocaleString();
-
-    let itinHtml = ""; 
-    routeCoordsData = { footpaths: [], bridges: [], underpasses: [], crossings: [] };
-
-    r.legs[0].steps.forEach((step, i) => {
-        let loc = [step.maneuver.location[1], step.maneuver.location[0]]; 
-        
-        let roadName = step.name ? `onto ${step.name}` : "forward";
-        let direction = step.maneuver.modifier ? step.maneuver.modifier.replace('-', ' ') : "";
-        let action = step.maneuver.type === 'turn' ? `Turn ${direction}` : (i===0 ? "Start walking" : `Continue`);
-        let finalInstruction = `${action} ${roadName}`;
-        let txtLower = (step.maneuver.instruction || "").toLowerCase() + finalInstruction.toLowerCase();
-        
-        let isInfra = false;
-        if (txtLower.includes('bridge') || txtLower.includes('flyover')) { routeCoordsData.bridges.push(loc); isInfra = true; }
-        if (txtLower.includes('underpass')) { routeCoordsData.underpasses.push(loc); isInfra = true; }
-        if (txtLower.includes('cross') || txtLower.includes('intersection')) { routeCoordsData.crossings.push(loc); isInfra = true; }
-        if (!isInfra) routeCoordsData.footpaths.push(loc);
-
-        let icon = txtLower.includes('left') ? '↖️' : txtLower.includes('right') ? '↗️' : '🚶';
-
-        itinHtml += `<div class="step-row" onclick="zoomToStep(${loc[0]}, ${loc[1]})">
-            <div style="font-size:20px;">${icon}</div>
-            <div style="flex:1;"><b class="txt-main" style="font-size:13px; text-transform:capitalize;">${finalInstruction}</b></div>
-            <b class="txt-primary" style="font-size:14px;">${Math.round(step.distance)}m</b></div>`;
-    });
-
-    document.getElementById('itineraryBox').innerHTML = itinHtml;
-    document.getElementById('cntFoot').innerText = routeCoordsData.footpaths.length;
-    document.getElementById('cntBridge').innerText = routeCoordsData.bridges.length;
-    document.getElementById('cntUnder').innerText = routeCoordsData.underpasses.length;
-    document.getElementById('cntCross').innerText = routeCoordsData.crossings.length;
+function tryPrepare() {
+  const from = activeOriginLatLng || userLoc;
+  if (from && activeDestLatLng) prepareComparison(from, activeDestLatLng);
 }
 
-// --- RESTORED TRANSIT ROUTE LOGIC ---
-function mapTransitRoute(r, transitScore) {
-    document.getElementById('itineraryBox').style.display = 'none';
-    document.getElementById('infraGridBox').style.display = 'grid'; 
-    document.getElementById('transitBox').style.display = 'block';
+// ── ROUTE COMPARISON ──
+function prepareComparison(fromLL, toLL) {
+  clearRoute(false);
+  walkabilityBase = 100; cachedMetroPlan = null; window._cachedBusJourney = null;
 
-    let statsData = simData.transit;
-    document.getElementById('valTime').innerText = (Math.ceil(statsData.dist*4)+10) + " min";
-    document.getElementById('valTime').style.color = "var(--transit)";
-    document.getElementById('valDist').innerText = statsData.dist.toFixed(2) + " km";
-    document.getElementById('walkScore').innerText = transitScore;
+  const baseDist  = (fromLL.distanceTo(toLL) / 1000) * 1.3;
+  const hazardPen = localHazards.reduce((a, h) => a + Math.abs(Env.HAZARD_SCORE_MAP[h.type] || 5), 0);
+  const baseScore = Math.max(40, 100 - Math.round(baseDist*6) - hazardPen);
 
-    let leafCoords = r.geometry.coordinates.map(c => [c[1], c[0]]);
-    
-    let p1 = Math.floor(leafCoords.length * 0.15); 
-    let p2 = Math.floor(leafCoords.length * 0.85); 
+  simData = {
+    walk:    { dist: baseDist,       score: baseScore,              mode:'walk' },
+    safe:    { dist: baseDist*1.15,  score: Math.min(98,baseScore+12), mode:'safe' },
+    transit: { dist: baseDist,       score: 80,                     mode:'transit' },
+  };
 
-    let agency = Math.random() > 0.5 ? "DTC" : "DIMTS";
-    let routeName = agency === "DIMTS" ? "Route 142 (828A UP)" : "Route 10001 (971 DOWN)";
-    let busColor = agency === "DTC" ? "#4caf50" : "#ff9500"; 
+  document.getElementById('metaWalk').textContent  = `${Math.ceil(simData.walk.dist*12)} min · ${simData.walk.dist.toFixed(1)} km`;
+  document.getElementById('scoreWalk').textContent = simData.walk.score;
+  document.getElementById('metaSafe').textContent  = `${Math.ceil(simData.safe.dist*13)} min · ${simData.safe.dist.toFixed(1)} km`;
+  document.getElementById('scoreSafe').textContent = simData.safe.score;
 
-    L.polyline(leafCoords.slice(0, p1), { color: '#007aff', weight: 5, dashArray: '8,8' }).addTo(transitLayer);
-    L.polyline(leafCoords.slice(p1 - 1, p2 + 1), { color: busColor, weight: 8, opacity: 0.9 }).addTo(transitLayer);
-    L.polyline(leafCoords.slice(p2), { color: '#007aff', weight: 5, dashArray: '8,8' }).addTo(transitLayer);
+  const busEl    = document.getElementById('nearestBusInfo');
+  const busLabel = document.getElementById('busOptLabel');
 
-    let iconStn = L.divIcon({ className: 'metro-station-icon', html: '🚏', iconSize: [20,20] });
-    L.marker(leafCoords[p1], {icon: iconStn}).addTo(stationLayer).bindPopup("Board Bus");
-    L.marker(leafCoords[p2], {icon: iconStn}).addTo(stationLayer).bindPopup("Alight Bus");
+  // 1. Try metro first
+  if (typeof MetroEngine !== 'undefined' && typeof METRO_DATA !== 'undefined') {
+    const nf = MetroEngine.getNearestMetroStations(fromLL.lat, fromLL.lng, 3, 2.5);
+    const nt = MetroEngine.getNearestMetroStations(toLL.lat, toLL.lng, 3, 2.5);
+    outer: for (const f of nf) {
+      for (const t of nt) {
+        if (f.id === t.id) continue;
+        const plan = MetroEngine.planMetroJourney(f.id, t.id);
+        if (plan) {
+          cachedMetroPlan = { plan, boardStop:f, alightStop:t, walkInKm:f.dist, walkOutKm:t.dist };
+          const totalStops = plan.filter(l=>l.type==='metro').reduce((a,l)=>a+l.numStops,0);
+          const metroMin   = Math.round(f.dist*12) + totalStops*2 + Math.round(t.dist*12) + 4;
+          document.getElementById('metaBus').textContent  = `🚇 ${metroMin} min · ${totalStops} stops`;
+          document.getElementById('scoreBus').textContent = 92;
+          if (busLabel) busLabel.textContent = '🚇 Metro Route';
+          if (busEl) { busEl.innerHTML=`🚉 <b>${f.name}</b> → <b>${t.name}</b>`; busEl.style.display='block'; }
+          break outer;
+        }
+      }
+    }
+  }
 
-    map.fitBounds(L.polyline(leafCoords).getBounds(), { padding: [50, 50] });
-
-    let totalSteps = r.legs[0].steps.length;
-    let walk1Html = "", walk2Html = "";
-    routeCoordsData = { footpaths: [], bridges: [], underpasses: [], crossings: [] };
-
-    r.legs[0].steps.forEach((step, i) => {
-        let loc = [step.maneuver.location[1], step.maneuver.location[0]]; 
-        let roadName = step.name ? `onto ${step.name}` : "forward";
-        let direction = step.maneuver.modifier ? step.maneuver.modifier.replace('-', ' ') : "";
-        let action = step.maneuver.type === 'turn' ? `Turn ${direction}` : (i===0 ? "Start walking" : `Continue`);
-        let finalInstruction = `${action} ${roadName}`;
-        let txtLower = finalInstruction.toLowerCase();
-        
-        let isInfra = false;
-        if (txtLower.includes('bridge') || txtLower.includes('flyover')) { routeCoordsData.bridges.push(loc); isInfra = true; }
-        if (txtLower.includes('underpass')) { routeCoordsData.underpasses.push(loc); isInfra = true; }
-        if (txtLower.includes('cross') || txtLower.includes('intersection')) { routeCoordsData.crossings.push(loc); isInfra = true; }
-        if (!isInfra) routeCoordsData.footpaths.push(loc);
-
-        let icon = txtLower.includes('left') ? '↖️' : txtLower.includes('right') ? '↗️' : '🚶';
-
-        let stepHtml = `<div style="display:flex; gap:10px; padding:8px 0; border-bottom:1px solid #eee;" onclick="zoomToStep(${loc[0]}, ${loc[1]})">
-            <span style="font-size:16px; cursor:pointer;">${icon}</span>
-            <span style="flex:1; font-size:12px; font-weight:600; text-transform:capitalize; cursor:pointer;">${finalInstruction}</span>
-            <span class="txt-primary" style="font-size:12px; font-weight:bold;">${Math.round(step.distance)}m</span></div>`;
-        
-        if (i <= totalSteps * 0.15) walk1Html += stepHtml;
-        if (i >= totalSteps * 0.85) walk2Html += stepHtml;
-    });
-
-    document.getElementById('cntFoot').innerText = routeCoordsData.footpaths.length;
-    document.getElementById('cntBridge').innerText = routeCoordsData.bridges.length;
-    document.getElementById('cntUnder').innerText = routeCoordsData.underpasses.length;
-    document.getElementById('cntCross').innerText = routeCoordsData.crossings.length;
-
-    let now = new Date();
-    let nextArr = new Date(now.getTime() + 8 * 60000); 
-    
-    document.getElementById('transitBox').innerHTML = `
-        <div style="margin-bottom:15px; background: rgba(0,122,255,0.05); padding: 10px; border-radius: 12px; border: 1px solid rgba(0,122,255,0.1);">
-            <div class="txt-primary" style="font-size:12px; font-weight:900; text-transform:uppercase; margin-bottom:5px;">🚶 Walk to Bus Stop</div>
-            ${walk1Html}
-        </div>
-        
-        <div style="background:#f9f9f9; padding:15px; border-radius:12px; border-left: 5px solid ${busColor}; margin-bottom:15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
-            <div style="display:flex; align-items:center; gap:10px;">
-                <div style="font-size:28px;">🚌</div>
-                <div style="flex:1;">
-                    <b style="color:${busColor}; font-size:15px;">${agency} ${routeName}</b><br>
-                    <span style="font-size:11px; font-weight:bold; color:#555;">Status: Waiting for GTFS Live Sync</span>
-                </div>
-                <div class="txt-right">
-                    <div class="txt-danger" style="font-weight:800; font-size:12px; animation: pulse-text 1.5s infinite;">Arrival: 8 mins</div>
-                    <div style="font-size:10px; color:#555; font-weight:bold;">Next: ${nextArr.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
-                </div>
-            </div>
-        </div>
-
-        <div style="background: rgba(0,122,255,0.05); padding: 10px; border-radius: 12px; border: 1px solid rgba(0,122,255,0.1);">
-            <div class="txt-primary" style="font-size:12px; font-weight:900; text-transform:uppercase; margin-bottom:5px;">🚶 Walk to Destination</div>
-            ${walk2Html}
-        </div>
-    `;
-}
-
-function startLiveNavigation() {
-    if (!userLoc) return showToast("Awaiting GPS Signal...");
-    
-    document.getElementById('estMetrics').style.display = 'none';
-    document.getElementById('liveMetrics').style.display = 'flex';
-    liveSteps = 0; document.getElementById('liveStepCount').innerText = "0";
-
-    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-        DeviceMotionEvent.requestPermission().then(res => { if (res === 'granted') window.addEventListener('devicemotion', handleMotion, true); }).catch(console.error);
+  // 2. Try real bus
+  if (!cachedMetroPlan) {
+    if (typeof BusEngine !== 'undefined' && BusEngine.busDataReady()) {
+      const bj = BusEngine.findBusRoutes(fromLL.lat, fromLL.lng, toLL.lat, toLL.lng);
+      if (bj && bj.type === 'direct') {
+        const opt = bj.options[0];
+        const approxMin = Math.round(bj.walkInKm*12) + opt.numStops*2 + Math.round(bj.walkOutKm*12) + 6;
+        document.getElementById('metaBus').textContent  = `🚌 ${approxMin} min · ${opt.numStops} stops`;
+        document.getElementById('scoreBus').textContent = 78;
+        if (busLabel) busLabel.textContent = '🚌 Real Bus Route';
+        if (busEl) { busEl.innerHTML=`🚌 <b>${opt.routeName}</b> · Board: ${opt.boardStop.name}`; busEl.style.display='block'; }
+        window._cachedBusJourney = bj;
+      } else {
+        document.getElementById('metaBus').textContent  = `${Math.ceil(simData.transit.dist*4)+8} min · ${simData.transit.dist.toFixed(1)} km`;
+        document.getElementById('scoreBus').textContent = simData.transit.score;
+        if (busLabel) busLabel.textContent = '🚌 Public Bus';
+        const s = getNearestBusStops(fromLL.lat, fromLL.lng, 1, 1.0);
+        if (busEl && s.length) { busEl.textContent=`🚏 Nearest stop: ${s[0].name} (${(s[0].dist*1000).toFixed(0)}m)`; busEl.style.display='block'; }
+      }
     } else {
-        window.addEventListener('devicemotion', handleMotion, true);
+      document.getElementById('metaBus').textContent  = `${Math.ceil(simData.transit.dist*4)+8} min · ${simData.transit.dist.toFixed(1)} km`;
+      document.getElementById('scoreBus').textContent = simData.transit.score;
+      if (busLabel) busLabel.textContent = '🚌 Public Bus';
     }
+  }
 
-    isLiveTracking = true; ignorePathPrompt = false;
-    map.flyTo(userLoc, 19, { animate: true, duration: 1.5 });
-    document.getElementById('btnStartLive').style.display = 'none'; document.getElementById('btnStopLive').style.display = 'block';
-    if (!isMinimized) toggleMinimize();
-    
-    if (document.getElementById('voiceToggle').checked && 'speechSynthesis' in window) {
-        window.speechSynthesis.speak(new SpeechSynthesisUtterance("Live navigation started. Follow the compass."));
-    }
+  interactiveLayer.clearLayers();
+  L.marker(toLL).addTo(interactiveLayer).bindPopup(`<b>To:</b> ${activeDestName}`);
+  map.flyTo(toLL, 14);
+  document.getElementById('routeCard').classList.add('active');
 }
 
-function stopLiveNavigation() {
-    isLiveTracking = false;
-    window.removeEventListener('devicemotion', handleMotion, true);
-    
-    document.getElementById('estMetrics').style.display = 'flex';
-    document.getElementById('liveMetrics').style.display = 'none';
-
-    document.getElementById('btnStartLive').style.display = 'block'; document.getElementById('btnStopLive').style.display = 'none';
-    if (isMinimized) toggleMinimize();
-    if (interactiveLayer.getLayers().length > 1) { 
-        let routeBounds = L.latLngBounds();
-        interactiveLayer.eachLayer(layer => { if (layer.getBounds) routeBounds.extend(layer.getBounds()); });
-        map.fitBounds(routeBounds, { padding: [50, 50] });
-    }
+// ── ROUTING ──
+async function pickRoute(type) {
+  document.getElementById('routeCard').classList.remove('active');
+  interactiveLayer.clearLayers(); transitLayer.clearLayers();
+  currentRouteMode = type;
+  const from = activeOriginLatLng || userLoc;
+  if (!from || !activeDestLatLng) { showToast('Set both locations first'); return; }
+  showToast('Calculating route…');
+  try {
+    const url = `https://routing.openstreetmap.de/routed-foot/route/v1/foot/${from.lng},${from.lat};${activeDestLatLng.lng},${activeDestLatLng.lat}?overview=full&geometries=geojson&steps=true`;
+    const res = await fetch(url);
+    const d   = await res.json();
+    showHud(type, d.routes[0], from);
+  } catch { showToast('Routing failed — check connection'); }
 }
 
-function zoomToStep(lat, lng) { map.flyTo([lat, lng], 18, { animate: true, duration: 1 }); }
-function markInfra(type) {
-    interactiveLayer.eachLayer(l => { if(l.options && l.options.className === 'pulse-marker') interactiveLayer.removeLayer(l); });
-    
-    if (!routeCoordsData[type] || routeCoordsData[type].length === 0) {
-        let displayType = type.charAt(0).toUpperCase() + type.slice(1);
-        return showToast(`No ${displayType} on this route.`);
-    }
+// ── HUD ──
+function showHud(type, route, fromLL) {
+  const hud = document.getElementById('hud');
+  hud.classList.add('active'); isMinimized = false; hud.classList.remove('mini');
 
-    let bounds = L.latLngBounds();
-    let colors = { footpaths: '#333', bridges: '#b8860b', underpasses: '#af52de', crossings: '#ff9500' };
-    routeCoordsData[type].forEach(coord => {
-        let p = L.latLng(coord[0], coord[1]);
-        L.circleMarker(p, { radius: 10, className: 'pulse-marker', color: '#fff', weight: 2, fillColor: colors[type], fillOpacity: 0.9 }).addTo(interactiveLayer);
-        bounds.extend(p);
+  const rd     = simData[type] || simData.walk;
+  const steps  = route.legs[0].steps;
+  const coords = route.geometry.coordinates.map(c => [c[1], c[0]]);
+  routeCoordsData = { footpaths:[], bridges:[], underpasses:[], crossings:[] };
+  let itinHtml = '';
+
+  steps.forEach((step, i) => {
+    const loc  = [step.maneuver.location[1], step.maneuver.location[0]];
+    const road = step.name ? `onto ${step.name}` : 'forward';
+    const dir  = step.maneuver.modifier ? step.maneuver.modifier.replace('-',' ') : '';
+    const act  = step.maneuver.type==='turn' ? `Turn ${dir}` : (i===0 ? 'Start walking' : 'Continue');
+    const instr = `${act} ${road}`.trim();
+    const low   = instr.toLowerCase();
+
+    // Enrich with footpath type from Env
+    const enriched = Env.enrichStep(instr, null);
+
+    let classKey = 'footpaths';
+    if      (low.includes('bridge')||low.includes('flyover')) { routeCoordsData.bridges.push(loc);    classKey='bridges'; }
+    else if (low.includes('underpass'))                        { routeCoordsData.underpasses.push(loc); classKey='underpasses'; }
+    else if (low.includes('cross')||low.includes('intersection')){ routeCoordsData.crossings.push(loc); classKey='crossings'; }
+    else                                                        routeCoordsData.footpaths.push(loc);
+
+    itinHtml += `<div class="step-row" onclick="zoomToStep(${loc[0]},${loc[1]})">
+      <span class="step-icon">${enriched.emoji}</span>
+      <span class="step-txt">${instr}</span>
+      <span class="step-m">${Math.round(step.distance)}m</span></div>`;
+  });
+
+  document.getElementById('cntFoot').textContent   = routeCoordsData.footpaths.length;
+  document.getElementById('cntCross').textContent  = routeCoordsData.crossings.length;
+  document.getElementById('cntBridge').textContent = routeCoordsData.bridges.length;
+  document.getElementById('cntUnder').textContent  = routeCoordsData.underpasses.length;
+
+  walkabilityBase = rd.score;
+  updateHudScore();
+  document.getElementById('hudScore').style.color =
+    type==='safe' ? 'var(--safe)' : type==='transit' ? 'var(--transit)' : 'var(--primary)';
+
+  const estSteps = Math.round((rd.dist*1000)/0.762);
+  const estCals  = Math.round((rd.dist*1000)*0.05);
+
+  if (type==='transit') {
+    document.getElementById('hudTime').textContent = `${Math.ceil(rd.dist*4)+8} min`;
+    document.getElementById('hudTime').style.color = 'var(--transit)';
+  } else {
+    document.getElementById('hudTime').textContent = `${Math.ceil(rd.dist*12)} min`;
+    document.getElementById('hudTime').style.color = 'var(--text)';
+  }
+  document.getElementById('hudDist').textContent  = `${rd.dist.toFixed(2)} km`;
+  document.getElementById('hudSteps').textContent = estSteps.toLocaleString();
+  document.getElementById('hudCals').textContent  = estCals.toLocaleString();
+
+  const stepsBox    = document.getElementById('stepsBox');
+  const transitWrap = document.getElementById('transitWrap');
+  if (type !== 'transit') {
+    stepsBox.innerHTML = itinHtml; stepsBox.style.display='block'; transitWrap.style.display='none';
+  } else {
+    stepsBox.style.display='none'; transitWrap.style.display='block';
+    buildTransitView(coords, steps, rd);
+  }
+
+  if (type !== 'transit') {
+    const color = type==='safe' ? '#7c3aed' : '#2563eb';
+    const dash  = type==='walk' ? '10,8' : '';
+    const poly  = L.polyline(coords, { color, weight:6, opacity:.9, dashArray:dash }).addTo(interactiveLayer);
+    const oIco  = L.divIcon({ className:'',
+      html:`<div style="background:#16a34a;width:14px;height:14px;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,.3);"></div>`,
+      iconSize:[14,14], iconAnchor:[7,7] });
+    L.marker(coords[0],{icon:oIco}).addTo(interactiveLayer).bindPopup(`<b>From:</b> ${activeOriginName||'My Location'}`);
+    L.marker(coords[coords.length-1]).addTo(interactiveLayer).bindPopup(`<b>To:</b> ${activeDestName}`);
+    map.fitBounds(poly.getBounds(), { padding:[50,50] });
+  }
+
+  updateSurfaceReadout();
+  if (document.getElementById('voiceToggle')?.checked && 'speechSynthesis' in window) {
+    const label = type==='transit' ? 'transit route' : type==='safe' ? 'safest walk' : 'shortest walk';
+    speechSynthesis.speak(new SpeechSynthesisUtterance(`Route: ${label}. ${Math.ceil(rd.dist*12)} minutes.`));
+  }
+}
+
+// ── TRANSIT VIEW ──
+function buildTransitView(coords, steps, rd) {
+  const tw = document.getElementById('transitWrap');
+  const n  = steps.length;
+
+  const mkS = list => list.map(s => {
+    const road = s.name ? `onto ${s.name}` : 'forward';
+    const dir  = s.maneuver.modifier ? s.maneuver.modifier.replace('-',' ') : '';
+    const act  = s.maneuver.type==='turn' ? `Turn ${dir}` : 'Continue';
+    return `<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,.04);font-size:11px;font-weight:600;">
+      <span>🚶</span><span style="flex:1;text-transform:capitalize;">${act} ${road}</span>
+      <span style="color:#2563eb;font-weight:800;">${Math.round(s.distance)}m</span></div>`;
+  }).join('');
+
+  // ── METRO ──
+  if (cachedMetroPlan) {
+    const { plan, boardStop, alightStop, walkInKm, walkOutKm } = cachedMetroPlan;
+    const { html:metroHtml, approxMin, totalMetroStops } =
+      MetroEngine.buildMetroHudHtml(plan, activeOriginName, activeDestName, walkInKm, walkOutKm);
+
+    const p1 = Math.max(1, Math.min(Math.floor(coords.length*(walkInKm/(rd.dist+.01))), coords.length-2));
+    const p2 = Math.max(p1+1, Math.min(Math.floor(coords.length*(1-walkOutKm/(rd.dist+.01))), coords.length-1));
+
+    L.polyline(coords.slice(0,p1), { color:'#2563eb', weight:5, dashArray:'8,8' }).addTo(transitLayer);
+    L.polyline(coords.slice(p2),   { color:'#2563eb', weight:5, dashArray:'8,8' }).addTo(transitLayer);
+    MetroEngine.drawMetroRoute(plan, transitLayer);
+
+    const mkStn = (ll, label, c) => {
+      const ico = L.divIcon({ className:'', iconSize:[null,null],
+        html:`<div style="background:${c};border:2px solid white;border-radius:4px;padding:2px 5px;font-size:10px;font-weight:800;color:white;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.3);">${label}</div>` });
+      return L.marker(ll, { icon:ico });
+    };
+    mkStn([boardStop.lat,boardStop.lng], `🚇 ${boardStop.name}`, '#1565c0').addTo(stationLayer);
+    mkStn([alightStop.lat,alightStop.lng], `🚇 ${alightStop.name}`, '#8e24aa').addTo(stationLayer);
+    map.fitBounds(L.latLngBounds([...coords,[boardStop.lat,boardStop.lng],[alightStop.lat,alightStop.lng]]), { padding:[50,50] });
+    document.getElementById('hudTime').textContent = `${approxMin} min`;
+
+    tw.innerHTML = `
+      <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;margin-bottom:8px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Metro (${(walkInKm*1000).toFixed(0)}m)</div>
+        ${mkS(steps.slice(0,Math.max(1,Math.floor(n*.15))))}
+      </div>
+      <div style="background:#e8f0fe;padding:12px;border-radius:10px;border-left:4px solid #1565c0;margin-bottom:8px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#1565c0;margin-bottom:8px;">🚇 Delhi Metro · ${totalMetroStops} stops · ~${approxMin} min</div>
+        ${metroHtml}
+      </div>
+      <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Destination (${(walkOutKm*1000).toFixed(0)}m)</div>
+        ${mkS(steps.slice(Math.floor(n*.85)))}
+      </div>`;
+    return;
+  }
+
+  // ── BUS ──
+  const p1 = Math.floor(coords.length*.15);
+  const p2 = Math.floor(coords.length*.82);
+  L.polyline(coords.slice(0,p1),  { color:'#2563eb', weight:5, dashArray:'8,8' }).addTo(transitLayer);
+  L.polyline(coords.slice(p2),    { color:'#2563eb', weight:5, dashArray:'8,8' }).addTo(transitLayer);
+  map.fitBounds(L.polyline(coords).getBounds(), { padding:[50,50] });
+
+  const busJourney = window._cachedBusJourney;
+  let busCardHtml = '';
+
+  if (busJourney && busJourney.type === 'direct') {
+    const built = BusEngine.buildBusHudHtml(busJourney);
+    busCardHtml = built.html;
+    L.polyline(coords.slice(Math.max(0,p1-1),p2+1), { color:built.agencyColor, weight:8, opacity:.9 }).addTo(transitLayer);
+    const mkLbl = (ll, label, c) => {
+      const ico = L.divIcon({ className:'', iconSize:[null,null],
+        html:`<div style="background:${c};border:2px solid white;border-radius:6px;padding:2px 6px;font-size:9px;font-weight:800;color:white;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,.3);">${label}</div>` });
+      return L.marker(ll, { icon:ico });
+    };
+    if (built.boardStop?.lat) mkLbl([built.boardStop.lat,built.boardStop.lng], `🚏 ${built.boardStop.name}`, built.agencyColor).addTo(stationLayer);
+    if (built.alightStop?.lat) mkLbl([built.alightStop.lat,built.alightStop.lng], `🚏 ${built.alightStop.name}`, '#475569').addTo(stationLayer);
+    document.getElementById('hudTime').textContent = `${built.approxMin} min`;
+  } else {
+    const eta  = Math.floor(Math.random()*8)+4;
+    const next = new Date(Date.now()+eta*60000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    const ns   = getNearestBusStops(coords[p1][0], coords[p1][1], 1, 0.8);
+    const sn   = ns.length ? ns[0].name : 'Nearest Bus Stop';
+    L.polyline(coords.slice(Math.max(0,p1-1),p2+1), { color:'#d97706', weight:8, opacity:.9 }).addTo(transitLayer);
+    busCardHtml = `<div style="background:white;padding:12px;border-radius:10px;border:1px solid #e2e8f0;margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:24px;">🚌</span>
+        <div style="flex:1;"><div style="font-size:13px;font-weight:800;color:#d97706;">DTC / DIMTS Bus</div><div style="font-size:10px;color:#64748b;">Board near: ${sn}</div></div>
+        <div style="text-align:right;"><div style="font-size:12px;font-weight:800;color:#dc2626;">~${eta} min</div><div style="font-size:10px;color:#64748b;">Next: ${next}</div></div>
+      </div></div>`;
+  }
+
+  tw.innerHTML = `
+    <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;margin-bottom:8px;">
+      <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Stop</div>
+      ${mkS(steps.slice(0,Math.max(1,Math.floor(n*.15))))}
+    </div>
+    ${busCardHtml}
+    <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;">
+      <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Destination</div>
+      ${mkS(steps.slice(Math.floor(n*.85)))}
+    </div>`;
+}
+
+// ── LIVE NAV ──
+function startLive() {
+  const from = activeOriginLatLng || userLoc;
+  if (!from) { showToast('Awaiting GPS…'); return; }
+  isLiveTracking=true; liveSteps=0; peakTimestamps=[];
+  motionDataZ=[]; motionDataX=[]; motionDataY=[];
+  document.getElementById('healthBar').style.display='none';
+  document.getElementById('liveBar').style.display='flex';
+  document.getElementById('btnStart').style.display='none';
+  document.getElementById('btnStop').style.display='block';
+  if (!isMinimized) toggleMini();
+  map.flyTo(from, 19, { animate:true, duration:1.5 });
+  if (typeof DeviceMotionEvent!=='undefined' && typeof DeviceMotionEvent.requestPermission==='function') {
+    DeviceMotionEvent.requestPermission().then(s => { if(s==='granted') window.addEventListener('devicemotion',handleMotion,true); }).catch(()=>{});
+  } else {
+    window.addEventListener('devicemotion', handleMotion, true);
+  }
+  if (document.getElementById('voiceToggle')?.checked && 'speechSynthesis' in window)
+    speechSynthesis.speak(new SpeechSynthesisUtterance('Live navigation started.'));
+  showToast('Live navigation active');
+}
+
+function stopLive() {
+  isLiveTracking=false;
+  window.removeEventListener('devicemotion', handleMotion, true);
+  document.getElementById('healthBar').style.display='flex';
+  document.getElementById('liveBar').style.display='none';
+  document.getElementById('btnStart').style.display='block';
+  document.getElementById('btnStop').style.display='none';
+  if (isMinimized) toggleMini();
+  const finalSteps = liveSteps;
+  const finalCals  = Math.round(liveSteps * 0.04);
+  showToast(`Walk done! ${finalSteps} steps · ${finalCals} kcal`);
+  const vSteps = document.getElementById('vLifetimeSteps');
+  if (vSteps) vSteps.textContent = (parseInt(vSteps.textContent.replace(/,/g,'')||0)+finalSteps).toLocaleString();
+  // Save completed route to DB
+  const rd = simData[currentRouteMode] || simData.walk;
+  if (rd && activeDestLatLng) {
+    const from = activeOriginLatLng || userLoc;
+    saveRouteToDB({
+      from_name:    activeOriginName || 'My Location',
+      to_name:      activeDestName   || 'Destination',
+      from_lat:     from?.lat, from_lng: from?.lng,
+      to_lat:       activeDestLatLng.lat, to_lng: activeDestLatLng.lng,
+      mode:         currentRouteMode,
+      dist_km:      parseFloat(rd.dist.toFixed(2)),
+      duration_min: Math.ceil(rd.dist * 12),
+      steps:        finalSteps || Math.round((rd.dist*1000)/0.762),
+      calories:     finalCals  || Math.round((rd.dist*1000)*0.05),
+      walk_score:   parseInt(document.getElementById('hudScore').textContent) || rd.score,
+      surface_log:  { history: surfaceHistory.slice(-3).map(s=>({surface:s.surface,width:s.width})) },
     });
-    map.fitBounds(bounds, { padding: [50, 50], maxZoom: 17 });
+  }
 }
-function toggleMinimize() {
-    const hud = document.getElementById('auditorHud');
-    isMinimized = !isMinimized;
-    if(isMinimized) hud.classList.add('minimized'); else hud.classList.remove('minimized');
+
+// ── HAZARD MARKING ──
+function quickHazard(type) {
+  const loc = userLoc;
+  if (!loc) { showToast('Waiting for GPS…'); return; }
+  closeModal('hazardModal');
+  const ico = L.divIcon({ className:'',
+    html:`<div style="background:#dc2626;width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 0 0 4px rgba(220,38,38,.3);"></div>`,
+    iconSize:[14,14], iconAnchor:[7,7] });
+  L.marker(loc,{icon:ico}).addTo(hazardLayer).bindPopup(`<b>${type}</b>`).openPopup();
+  localHazards.push({ type, lat:loc.lat, lng:loc.lng, ts:Date.now() });
+  Env.addEnvironmentReport(type, loc.lat, loc.lng);
+  updateHudScore();
+  addIntelCard(type, loc.lat, loc.lng);
+  showToast(`Logged: ${type}`);
+  refreshVaultStats();
+  // Save to DB with environment context
+  saveHazardToDB(type, loc.lat, loc.lng, {
+    surface:        lastSurfaceResult?.surface || null,
+    canopy:         Env.getCanopy(),
+    lighting:       Env.getLighting(),
+    footpath_type:  lastSurfaceResult?.footpathType || null,
+    footpath_width: lastSurfaceResult?.width || null,
+  });
 }
-function toggleTreeCover() {
-    if(treeLayer) { map.removeLayer(treeLayer); treeLayer = null; showToast("Tree Cover Hidden"); } 
-    else { treeLayer = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { opacity: 0.4 }).addTo(map); showToast("Tree Canopy Active"); }
+
+function addIntelCard(type, lat, lng) {
+  const list = document.getElementById('intelFeedList');
+  if (!list) return;
+  // Remove empty state if present
+  const empty = list.querySelector('.empty-state');
+  if (empty) empty.remove();
+  const card = document.createElement('div');
+  card.style.cssText = 'background:white;border-radius:14px;padding:14px;margin-bottom:10px;border:1px solid rgba(0,0,0,.07);';
+  card.innerHTML = `
+    <span style="display:inline-block;background:rgba(220,38,38,.1);color:#dc2626;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:800;margin-bottom:6px;">${type}</span>
+    <div style="font-size:13px;font-weight:700;">📍 ${lat.toFixed(4)}, ${lng.toFixed(4)}</div>
+    <div style="font-size:11px;color:#64748b;margin-top:2px;">Just now · You</div>`;
+  list.prepend(card);
 }
+
+// ── PHOTO + AI ──
+async function processPhoto(event) {
+  const file = event.target.files[0]; if (!file) return;
+  const st = document.getElementById('ocrStatus');
+  st.textContent = 'Compressing…';
+  const reader = new FileReader();
+  reader.onload = async ev => {
+    const img = new Image();
+    img.onload = async () => {
+      const cv=document.getElementById('photoCanvas'), ctx=cv.getContext('2d');
+      cv.width=400; cv.height=(img.height/img.width)*400;
+      ctx.drawImage(img,0,0,cv.width,cv.height);
+      const b64 = cv.toDataURL('image/jpeg',.7).split(',')[1];
+      st.textContent = 'AI analysing…';
+      try {
+        const res  = await fetch('/api/vision',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image_b64:b64})});
+        const data = await res.json();
+        const label = data.label || 'Unknown hazard';
+        st.textContent = `✔ ${label}`;
+        setTimeout(() => { quickHazard(`📸 ${label}`); st.textContent=''; closeModal('hazardModal'); }, 1500);
+      } catch {
+        st.textContent = 'AI unavailable';
+        setTimeout(() => { quickHazard('📸 Photo Hazard'); st.textContent=''; closeModal('hazardModal'); }, 1200);
+      }
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function confirmSurface(action) {
+  closeModal('surfaceModal');
+  if (action === 'log') quickHazard(`🪨 ${lastKnownSurface} (AI detected)`);
+  else showToast('Surface noted — not logged');
+}
+
+// ── INFRA / MAP ──
+function zoomInfra(type) {
+  const arr = routeCoordsData[type];
+  if (!arr || !arr.length) { showToast(`No ${type} on this route`); return; }
+  const colors = { footpaths:'#2563eb', crossings:'#d97706', bridges:'#92400e', underpasses:'#7c3aed' };
+  arr.forEach(c => L.circleMarker(L.latLng(c[0],c[1]), { radius:10, color:'white', weight:2, fillColor:colors[type], fillOpacity:.9 }).addTo(interactiveLayer));
+  map.fitBounds(L.latLngBounds(arr.map(c=>L.latLng(c[0],c[1]))), { padding:[50,50], maxZoom:17 });
+}
+function zoomToStep(lat, lng) { map.flyTo([lat,lng], 18, { animate:true, duration:1 }); }
+
+function clearRoute(clearInputs) {
+  interactiveLayer.clearLayers(); transitLayer.clearLayers();
+  document.getElementById('hud').classList.remove('active');
+  document.getElementById('routeCard').classList.remove('active');
+  if (isLiveTracking) stopLive();
+  if (userMarker) userMarker.addTo(map);
+  if (originMarker) originMarker.addTo(map);
+  if (clearInputs) {
+    document.getElementById('inputFrom').value=''; document.getElementById('inputTo').value='';
+    activeOriginLatLng=null; activeOriginName=''; activeDestLatLng=null; activeDestName='';
+    if (originMarker) { map.removeLayer(originMarker); originMarker=null; }
+    document.getElementById('nearestBusInfo').style.display='none';
+    cachedMetroPlan=null; window._cachedBusJourney=null;
+  }
+}
+
+function toggleMini() {
+  isMinimized = !isMinimized;
+  document.getElementById('hud').classList.toggle('mini', isMinimized);
+}
+
+function toggleTrees() {
+  if (treeLayer) { map.removeLayer(treeLayer); treeLayer=null; showToast('Tree cover hidden'); }
+  else { treeLayer=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{opacity:.4}).addTo(map); showToast('Tree canopy layer active'); }
+}
+
+function refreshVaultStats() {
+  const el = document.getElementById('vHazards');
+  if (el) el.textContent = localHazards.length;
+}
+
+// ── UTILS ──
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent=msg; t.style.opacity='1';
+  clearTimeout(t._t); t._t=setTimeout(()=>t.style.opacity='0', 3000);
+}
+function openModal(id)  { document.getElementById(id)?.classList.add('active'); }
+function closeModal(id) { document.getElementById(id)?.classList.remove('active'); }

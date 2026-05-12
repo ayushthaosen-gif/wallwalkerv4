@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: gaitway-api
+    env: node
+    region: singapore
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+    autoDeploy: true
