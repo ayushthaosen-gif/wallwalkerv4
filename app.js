@@ -555,7 +555,9 @@ function initMap() {
 
   map = L.map('map', { zoomControl:false, attributionControl:false })
          .setView([28.6139, 77.2090], 13);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png').addTo(map);
+  // OSM standard tiles — clean, no Transitous/transit plugin that causes
+  // "No schedule loaded" popups on bus stop icons in the Voyager style
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
   interactiveLayer.addTo(map);
   transitLayer.addTo(map);
   stationLayer.addTo(map);
@@ -585,6 +587,13 @@ function initMap() {
       const d = await r.json();
       setDest(e.latlng.lat, e.latlng.lng, d.display_name ? d.display_name.split(',')[0] : 'Dropped Pin');
     } catch { setDest(e.latlng.lat, e.latlng.lng, 'Dropped Pin'); }
+  });
+
+  // Tap map → show POI action sheet (Navigate here / Set as start)
+  map.on('click', e => {
+    // Ignore clicks on markers / popups
+    if (e.originalEvent._handled) return;
+    showPoiSheet(e.latlng.lat, e.latlng.lng, null);
   });
 }
 
@@ -726,12 +735,18 @@ function refreshTransitOnView(lat, lng, zoom) {
         html:`<div style="background:white;border:2px solid #d97706;border-radius:50%;width:${zoom>=16?22:18}px;height:${zoom>=16?22:18}px;display:flex;align-items:center;justify-content:center;font-size:11px;box-shadow:0 2px 6px rgba(0,0,0,.25);">🚏</div>`,
         iconSize:[20,20], iconAnchor:[10,10] });
       const marker = L.marker([s.lat,s.lng],{icon:ico}).addTo(stationLayer);
-      // Immediate content — no "tap again" needed
+      // Initial popup — no "tap again" needed
       marker.bindPopup(`<div style="min-width:160px;"><b>🚏 ${s.name}</b><br><small style="color:#2563eb;font-weight:600;">⏳ Loading schedule…</small></div>`, {maxWidth:320});
+      marker.on('click', e => { e.originalEvent._handled = true; });
       marker.on('popupopen', async () => {
-        // getStopTimings waits up to 8s for data — popup auto-updates when ready
-        const html = await BusEngine.buildStopInfoHtml(s.id, s.name, 'bus');
-        if (marker.isPopupOpen()) marker.getPopup().setContent(html).update();
+        const schedHtml = await BusEngine.buildStopInfoHtml(s.id, s.name, 'bus');
+        const navBtn = `<div style="margin-top:10px;display:flex;gap:6px;">
+          <button onclick="poiNavigateTo(${s.lat},${s.lng},'${s.name.replace(/'/g,"\\'")}');map.closePopup();"
+            style="flex:1;background:#2563eb;color:white;border:none;border-radius:8px;padding:7px 10px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;">🧭 Navigate Here</button>
+          <button onclick="poiSetFrom(${s.lat},${s.lng},'${s.name.replace(/'/g,"\\'")}');map.closePopup();"
+            style="flex:1;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:#475569;">📍 Set Start</button>
+        </div>`;
+        if (marker.isPopupOpen()) marker.getPopup().setContent(schedHtml + navBtn).update();
       });
     });
   }
@@ -749,9 +764,16 @@ function refreshTransitOnView(lat, lng, zoom) {
         iconSize:[null,null] });
       const marker = L.marker([s.lat,s.lng],{icon:ico}).addTo(stationLayer);
       marker.bindPopup(`<div style="min-width:160px;"><b>🚇 ${s.name}</b><br><small style="color:#2563eb;font-weight:600;">⏳ Loading schedule…</small></div>`, {maxWidth:320});
+      marker.on('click', e => { e.originalEvent._handled = true; });
       marker.on('popupopen', async () => {
-        const html = await MetroEngine.buildMetroStopInfoHtml(s.id, s.name);
-        if (marker.isPopupOpen()) marker.getPopup().setContent(html).update();
+        const schedHtml = await MetroEngine.buildMetroStopInfoHtml(s.id, s.name);
+        const navBtn = `<div style="margin-top:10px;display:flex;gap:6px;">
+          <button onclick="poiNavigateTo(${s.lat},${s.lng},'${s.name.replace(/'/g,"\\'")}');map.closePopup();"
+            style="flex:1;background:#1565c0;color:white;border:none;border-radius:8px;padding:7px 10px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;">🧭 Navigate Here</button>
+          <button onclick="poiSetFrom(${s.lat},${s.lng},'${s.name.replace(/'/g,"\\'")}');map.closePopup();"
+            style="flex:1;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:#475569;">📍 Set Start</button>
+        </div>`;
+        if (marker.isPopupOpen()) marker.getPopup().setContent(schedHtml + navBtn).update();
       });
     });
   }
@@ -1448,6 +1470,69 @@ function toggleTrees() {
 function refreshVaultStats() {
   const el = document.getElementById('vHazards');
   if (el) el.textContent = localHazards.length;
+}
+
+// ── POI MAP TAP SHEET ──
+let _poiLat = null, _poiLng = null, _poiName = '';
+
+async function showPoiSheet(lat, lng, knownName) {
+  _poiLat = lat; _poiLng = lng; _poiName = knownName || '';
+  document.getElementById('poiSheetName').textContent    = knownName || '📍 Fetching place…';
+  document.getElementById('poiSheetAddr').textContent    = '';
+  document.getElementById('poiSheetCoords').textContent  = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  openModal('poiModal');
+  if (!knownName) {
+    try {
+      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
+      const d = await r.json();
+      if (!document.getElementById('poiModal')?.classList.contains('active')) return;
+      const parts = (d.display_name || '').split(',');
+      _poiName = d.name || parts[0] || 'Dropped Pin';
+      document.getElementById('poiSheetName').textContent = _poiName;
+      document.getElementById('poiSheetAddr').textContent = parts.slice(1,3).join(', ').trim();
+    } catch {
+      _poiName = 'Dropped Pin';
+      document.getElementById('poiSheetName').textContent = '📍 Dropped Pin';
+    }
+  }
+}
+
+// Called from inline onclick in popup buttons and from sheet buttons
+function poiNavigateTo(lat, lng, name) {
+  if (lat != null) { _poiLat = lat; _poiLng = lng; _poiName = name || ''; }
+  closeModal('poiModal');
+  if (_poiLat == null) return;
+  setDest(_poiLat, _poiLng, _poiName || 'Selected Location');
+  // Switch back to Explore tab if in another tab
+  document.querySelectorAll('.bottom-nav .nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  const exploreNav = document.querySelector('[data-target="explore-tab"]');
+  const exploreTab = document.getElementById('explore-tab');
+  if (exploreNav) exploreNav.classList.add('active');
+  if (exploreTab) { exploreTab.classList.add('active'); setTimeout(() => map.invalidateSize(), 100); }
+  tryPrepare();
+}
+
+function poiSetFrom(lat, lng, name) {
+  if (lat != null) { _poiLat = lat; _poiLng = lng; _poiName = name || ''; }
+  closeModal('poiModal');
+  if (_poiLat == null) return;
+  setOrigin(_poiLat, _poiLng, _poiName || 'Selected Location');
+}
+
+function poiReportHazard() {
+  closeModal('poiModal');
+  if (_poiLat == null) { showToast('No location selected'); return; }
+  // Temporarily shift userLoc to the tapped point for hazard reporting
+  const saved = userLoc;
+  userLoc = L.latLng(_poiLat, _poiLng);
+  openModal('hazardModal');
+  const obs = new MutationObserver(() => {
+    if (!document.getElementById('hazardModal')?.classList.contains('active')) {
+      userLoc = saved; obs.disconnect();
+    }
+  });
+  obs.observe(document.getElementById('hazardModal'), { attributes:true, attributeFilter:['class'] });
 }
 
 // ── UTILS ──
