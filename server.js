@@ -196,4 +196,6 @@ app.listen(PORT, () => {
   console.log(`✅ GaitWay running on port ${PORT}`);
   console.log(`   DB:  ${process.env.DB_PASSWORD ? '✓ configured' : '⚠ DB_PASSWORD not set'}`);
   console.log(`   AI:  ${process.env.ANTHROPIC_API_KEY ? '✓ configured' : '⚠ ANTHROPIC_API_KEY not set'}`);
+  console.log('Static serving from:', __dirname);
+  console.log('index.html exists:', require('fs').existsSync(path.join(__dirname, 'index.html')));
 });
