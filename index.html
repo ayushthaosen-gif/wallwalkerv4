@@ -269,6 +269,15 @@
 <script src="bus_stop_routes.js" async></script>
 <script src="bus_routes_p1.js" async></script>
 <script src="metro_data.js" async></script>
+<!-- Transit timing data (loaded async, merged by transit_loader.js) -->
+<script src="stop_timings_p1.js" async></script>
+<script src="stop_timings_p2.js" async></script>
+<script src="stop_timings_p3.js" async></script>
+<script src="stop_timings_p4.js" async></script>
+<script src="route_schedules.js" async></script>
+<script src="metro_schedules.js" async></script>
+<script src="metro_stop_times.js" async></script>
+<script src="transit_loader.js" defer></script>
 <script src="bus_engine.js"></script>
 <script src="metro_engine.js"></script>
 <script src="environment.js"></script>
@@ -294,5 +303,32 @@
   }
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
+
+<!-- LOGIN MODAL -->
+<div class="overlay active" id="loginModal" style="z-index:9999;">
+  <div class="sheet" style="max-height:70vh;">
+    <div class="sheet-handle"></div>
+    <div id="loginStep1">
+      <h3>🚶 Welcome to GaitWay</h3>
+      <p>Enter your email to get a login code. No password needed.</p>
+      <input type="email" id="loginEmail" placeholder="your@email.com"
+        style="width:100%;padding:14px;border-radius:12px;border:1.5px solid #e2e8f0;font-size:16px;font-family:inherit;margin-bottom:10px;box-sizing:border-box;">
+      <input type="text" id="loginName" placeholder="Your name (new users)"
+        style="width:100%;padding:14px;border-radius:12px;border:1.5px solid #e2e8f0;font-size:16px;font-family:inherit;margin-bottom:16px;box-sizing:border-box;">
+      <button onclick="requestOTP()" class="btn-start" style="margin:0;">Send Login Code →</button>
+      <button onclick="continueAsGuest()" class="btn-cancel" style="margin-top:10px;">Continue as Guest</button>
+      <div id="loginError" style="color:#dc2626;font-size:12px;font-weight:700;text-align:center;margin-top:8px;"></div>
+    </div>
+    <div id="loginStep2" style="display:none;">
+      <h3>📬 Check your email</h3>
+      <p id="loginStep2Desc">Enter the 6-digit code sent to your email.</p>
+      <input type="number" id="loginOTP" placeholder="000000" maxlength="6"
+        style="width:100%;padding:14px;border-radius:12px;border:1.5px solid #e2e8f0;font-size:28px;font-weight:900;letter-spacing:8px;text-align:center;font-family:inherit;margin-bottom:16px;box-sizing:border-box;">
+      <button onclick="verifyOTP()" class="btn-start" style="margin:0;">Verify & Login →</button>
+      <button onclick="document.getElementById('loginStep1').style.display='block';document.getElementById('loginStep2').style.display='none';" class="btn-cancel" style="margin-top:10px;">← Back</button>
+      <div id="otpError" style="color:#dc2626;font-size:12px;font-weight:700;text-align:center;margin-top:8px;"></div>
+    </div>
+  </div>
+</div>
 </body>
 </html>

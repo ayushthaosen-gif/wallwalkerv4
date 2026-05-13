@@ -363,24 +363,36 @@ app.listen(PORT, () => {
 
 // ════════════════════════════════════════════
 // TRANSIT — Stop info, timings, next buses
-// Data loaded from JSON files at startup
+// Data served as static JS files (stop_timings_p1-4.js etc.)
+// Transit timing lookups happen client-side via window.BUS_STOP_TIMES
+// Server just provides the /api/transit/stop/:id endpoint as a pass-through
 // ════════════════════════════════════════════
 const fs = require('fs');
 
-let BUS_STOP_TIMES    = {};  // {stop_id: {route_id: [HH:MM,...]}}
-let BUS_ROUTE_SCHED   = {};  // {route_id: {n, a, t:[HH:MM,...]}}
-let METRO_STOP_TIMES  = {};  // {stop_id: {route_id: [HH:MM,...]}}
-let METRO_SCHED       = {};  // {route_id: {n, color, t:[HH:MM,...]}}
+// Load transit data from static JS files at startup for server-side use
+let BUS_STOP_TIMES   = {};
+let BUS_ROUTE_SCHED  = {};
+let METRO_STOP_TIMES = {};
+let METRO_SCHED      = {};
 
 function loadTransitData() {
   try {
-    BUS_STOP_TIMES   = JSON.parse(fs.readFileSync(path.join(__dirname, 'stop_timings.json'),    'utf8'));
-    BUS_ROUTE_SCHED  = JSON.parse(fs.readFileSync(path.join(__dirname, 'route_schedules.json'), 'utf8'));
-    METRO_STOP_TIMES = JSON.parse(fs.readFileSync(path.join(__dirname, 'metro_stop_times.json'),'utf8'));
-    METRO_SCHED      = JSON.parse(fs.readFileSync(path.join(__dirname, 'metro_schedules.json'), 'utf8'));
-    console.log(`✅ Transit data loaded: ${Object.keys(BUS_STOP_TIMES).length} bus stops, ${Object.keys(METRO_STOP_TIMES).length} metro stops`);
+    // Load JSON versions if they exist (optional — static JS files are the primary delivery)
+    const tryLoad = (file) => {
+      const p = path.join(__dirname, file);
+      if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8'));
+      return null;
+    };
+    BUS_STOP_TIMES   = tryLoad('stop_timings.json')    || {};
+    BUS_ROUTE_SCHED  = tryLoad('route_schedules.json') || {};
+    METRO_STOP_TIMES = tryLoad('metro_stop_times.json')|| {};
+    METRO_SCHED      = tryLoad('metro_schedules.json') || {};
+    const bCount = Object.keys(BUS_STOP_TIMES).length;
+    const mCount = Object.keys(METRO_STOP_TIMES).length;
+    if (bCount) console.log(`✅ Transit data loaded server-side: ${bCount} bus stops, ${mCount} metro stops`);
+    else        console.log('ℹ Transit data served client-side via static JS chunks');
   } catch(e) {
-    console.warn('⚠ Transit JSON files not found — run data builder first:', e.message);
+    console.warn('Transit data load error:', e.message);
   }
 }
 loadTransitData();
