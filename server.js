@@ -21,13 +21,16 @@ const pool = new Pool({
   host:     process.env.DB_HOST     || 'aws-0-ap-southeast-1.pooler.supabase.com',
   port:     parseInt(process.env.DB_PORT || '5432'),
   database: process.env.DB_NAME     || 'postgres',
-  user:     process.env.DB_USER     || 'postgres.rdbxfgqcrdxrruzjjaao',
+  user:     process.env.DB_USER     || 'postgres',
+  // NOTE: DB_USER env var must be set to just "postgres" in Render dashboard
   password: process.env.DB_PASSWORD,
   ssl: { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
 });
+
+console.log('Serving index.html from:', path.join(__dirname, 'index.html'));
 
 pool.query('SELECT NOW()')
   .then(r => console.log('✅ DB connected at', r.rows[0].now))
@@ -190,7 +193,7 @@ app.get('/api/stats', async (req, res) => {
 });
 
 // ── CATCH-ALL ──
-app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html'), err => { if(err) res.status(404).send('index.html not found at: ' + __dirname); }));
+app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
 app.listen(PORT, () => {
   console.log(`✅ GaitWay running on port ${PORT}`);
