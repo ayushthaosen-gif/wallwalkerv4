@@ -16,18 +16,10 @@ app.use(express.json({ limit: '5mb' }));
 app.use(express.static(__dirname));
 
 // ── DATABASE ──
-// Uses individual params to avoid URL-encoding issues with special chars in password
 const pool = new Pool({
-  host:     process.env.DB_HOST     || 'aws-0-ap-southeast-1.pooler.supabase.com',
-  port:     parseInt(process.env.DB_PORT || '5432'),
-  database: process.env.DB_NAME     || 'postgres',
-  user:     process.env.DB_USER     || 'postgres',
-  // NOTE: DB_USER env var must be set to just "postgres" in Render dashboard
-  password: process.env.DB_PASSWORD,
+  connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
-  max: 10,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000,
+  max: 5, idleTimeoutMillis: 30000, connectionTimeoutMillis: 15000,
 });
 
 console.log('Serving index.html from:', path.join(__dirname, 'index.html'));
