@@ -92,7 +92,7 @@ async function sendOTP(email, otp) {
 // AUTH — Passwordless OTP
 // ════════════════════════════════════════════
 
-// Step 1: Request OTP
+// Step 1: Request OTP — does NOT need DB, just in-memory store
 app.post('/api/auth/request-otp', async (req, res) => {
   const { email } = req.body;
   if (!email || !email.includes('@'))
@@ -101,12 +101,17 @@ app.post('/api/auth/request-otp', async (req, res) => {
   const otp       = generateOTP();
   const emailHash = hashEmail(email);
   otpStore.set(emailHash, { otp, expires: Date.now() + 600000 });
-  await sendOTP(email.trim().toLowerCase(), otp);
+
+  try {
+    await sendOTP(email.trim().toLowerCase(), otp);
+  } catch(e) {
+    console.error('Email send error:', e.message);
+    // Still return ok — OTP is stored, user can check logs in dev mode
+  }
 
   res.json({
     ok: true,
     message: 'Check your email for a 6-digit code.',
-    // Return OTP in non-production so you can test without SendGrid
     ...(process.env.NODE_ENV !== 'production' && { dev_otp: otp }),
   });
 });
@@ -133,33 +138,31 @@ app.post('/api/auth/verify-otp', async (req, res) => {
 
   const userId = 'u_' + emailHash;
   try {
-    await pool.query(
-      `INSERT INTO users (id, name) VALUES ($1, $2)
-       ON CONFLICT (id) DO UPDATE SET
-         name = CASE WHEN $2 IS NOT NULL AND $2 != '' THEN $2 ELSE users.name END,
-         updated_at = NOW()`,
-      [userId, name?.trim() || 'Walker']
-    );
-    // Check if user existed before this login
-    const existed = await pool.query(`SELECT id FROM users WHERE id=$1`, [userId]);
-    const isNewUser = existed.rows.length === 0;
+    // Check if user existed BEFORE upsert (determines isNewUser)
+    const existing = await pool.query(`SELECT id FROM users WHERE id=$1`, [userId]);
+    const isNewUser = existing.rows.length === 0;
 
+    // Single upsert — no duplicate
     await pool.query(
       `INSERT INTO users (id, name) VALUES ($1, $2)
        ON CONFLICT (id) DO UPDATE SET
-         name = CASE WHEN $2 IS NOT NULL AND $2 != '' THEN $2 ELSE users.name END,
+         name = CASE WHEN $2 IS NOT NULL AND $2 != '' AND $2 != 'Walker'
+                     THEN $2 ELSE users.name END,
          updated_at = NOW()`,
       [userId, name?.trim() || 'Walker']
     );
+
     const { rows } = await pool.query(
       `SELECT id,name,xp,route_count,hazard_count,created_at FROM users WHERE id=$1`,
       [userId]
     );
-    // Return email hint (first 2 chars + domain) for display — never full email
     const parts     = email.split('@');
     const emailHint = parts[0].slice(0,2) + '***@' + parts[1];
     res.json({ ok: true, user: { ...rows[0], email_hint: emailHint }, token: makeToken(userId), userId, isNewUser });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    console.error('verify-otp DB error:', e.message);
+    res.status(500).json({ error: 'Database error — please try again' });
+  }
 });
 
 // ════════════════════════════════════════════
