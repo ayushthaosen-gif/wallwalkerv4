@@ -526,6 +526,7 @@ window.onload = () => {
   initSensors();
   initSearchBoxes();
   pollBusData();
+  pollWmataData();
   initUserSession();
   initPWA();
   checkInstallState();
@@ -568,11 +569,18 @@ function initMap() {
     transitRefreshTimer = setTimeout(() => {
       const center = map.getCenter();
       const zoom   = map.getZoom();
-      // Only show stops when zoomed in enough (avoid cluttering at zoom < 14)
-      if (zoom >= 14) {
+      if (zoom >= 13) {
         refreshTransitOnView(center.lat, center.lng, zoom);
+        // WMATA DC transit
+        if (typeof WmataEngine !== 'undefined' && WmataEngine.wmataDataReady()) {
+          WmataEngine.refreshWmataOnView(center.lat, center.lng, zoom, stationLayer);
+        }
       } else {
         stationLayer.clearLayers();
+        // Always redraw metro lines at low zoom
+        if (typeof WmataEngine !== 'undefined' && WmataEngine.wmataDataReady()) {
+          WmataEngine.drawWmataMetroLines(stationLayer);
+        }
       }
     }, 400);
   });
@@ -703,6 +711,21 @@ function pollBusData() {
     }
   }, 300);
 }
+
+function pollWmataData() {
+  const check = setInterval(() => {
+    if (typeof WmataEngine !== 'undefined' && WmataEngine.wmataDataReady()) {
+      clearInterval(check);
+      console.log(`✅ WMATA: ${Object.keys(WMATA_STATIONS).length} stations, ${Object.keys(WMATA_BUS_STOPS).length} bus stops`);
+      // Draw metro lines immediately once data is ready
+      WmataEngine.drawWmataMetroLines(stationLayer);
+      // If GPS already fixed, show nearby WMATA stops
+      if (userLoc) {
+        WmataEngine.refreshWmataOnView(userLoc.lat, userLoc.lng, map.getZoom() || 14, stationLayer);
+      }
+    }
+  }, 300);
+}
 function getNearestBusStops(lat, lng, n=5, km=0.8) {
   return (typeof BusEngine !== 'undefined' && BusEngine.busDataReady())
     ? BusEngine.getNearestBusStops(lat, lng, n, km)
@@ -759,7 +782,11 @@ function refreshTransitOnView(lat, lng, zoom) {
 
 // Show transit near GPS location (called on first fix)
 function showNearbyTransit(lat, lng) {
-  refreshTransitOnView(lat, lng, map.getZoom() || 15);
+  const zoom = map.getZoom() || 15;
+  refreshTransitOnView(lat, lng, zoom);
+  if (typeof WmataEngine !== 'undefined' && WmataEngine.wmataDataReady()) {
+    WmataEngine.refreshWmataOnView(lat, lng, zoom, stationLayer);
+  }
 }
 
 // ── SURFACE AI + ENV UPDATE ──
@@ -948,7 +975,7 @@ function prepareComparison(fromLL, toLL) {
   const busEl    = document.getElementById('nearestBusInfo');
   const busLabel = document.getElementById('busOptLabel');
 
-  // ── METRO ──
+  // ── METRO (Delhi DMRC) ──
   let metroFound = false;
   if (isModeEnabled('metro') && typeof MetroEngine !== 'undefined' && typeof METRO_DATA !== 'undefined') {
     const nf = MetroEngine.getNearestMetroStations(fromLL.lat, fromLL.lng, 3, 2.5);
@@ -971,11 +998,29 @@ function prepareComparison(fromLL, toLL) {
         }
       }
     }
-  } else {
-    document.getElementById('opt-metro').style.display = 'none';
   }
 
-  // ── BUS ──
+  // ── METRO (WMATA DC) — fallback when Delhi metro finds nothing ──
+  if (!metroFound && isModeEnabled('metro') &&
+      typeof WmataEngine !== 'undefined' && WmataEngine.wmataDataReady()) {
+    const wPlan = WmataEngine.planWmataMetroJourney(fromLL.lat, fromLL.lng, toLL.lat, toLL.lng);
+    if (wPlan) {
+      window._cachedWmataPlan = wPlan;
+      const approxMin = Math.round(wPlan.walkInKm*12) + 8 + Math.round(wPlan.walkOutKm*12);
+      simData.transit.score = 92; simData.transit.metroMin = approxMin;
+      document.getElementById('opt-metro').style.display = 'flex';
+      document.getElementById('metaMetro').textContent   = `🚇 ${approxMin} min · WMATA ${wPlan.line.toUpperCase()} Line · walk ${(wPlan.walkInKm*1000).toFixed(0)}m`;
+      document.getElementById('scoreMetro').textContent  = 92;
+      if (busEl) { busEl.innerHTML=`🚇 WMATA: <b>${wPlan.board.name}</b> → <b>${wPlan.alight.name}</b>`; busEl.style.display='block'; }
+      metroFound = true;
+    } else {
+      window._cachedWmataPlan = null;
+    }
+  }
+
+  if (!metroFound) document.getElementById('opt-metro').style.display = 'none';
+
+  // ── BUS (Delhi DTC) ──
   let busFound = false;
   if (isModeEnabled('bus') && typeof BusEngine !== 'undefined' && BusEngine.busDataReady()) {
     const bj = BusEngine.findBusRoutes(fromLL.lat, fromLL.lng, toLL.lat, toLL.lng);
@@ -995,7 +1040,30 @@ function prepareComparison(fromLL, toLL) {
       document.getElementById('scoreBus').textContent   = simData.transit.score;
       if (busLabel) busLabel.textContent = '🚌 Bus';
     }
-  } else {
+  }
+
+  // ── BUS (WMATA DC) — fallback ──
+  if (!busFound && isModeEnabled('bus') &&
+      typeof WmataEngine !== 'undefined' && WmataEngine.wmataRoutesReady()) {
+    const wBus = WmataEngine.findWmataBusRoute(fromLL.lat, fromLL.lng, toLL.lat, toLL.lng);
+    if (wBus && wBus.type === 'direct') {
+      const opt = wBus.options[0];
+      const approxMin = Math.round(wBus.walkInKm*12) + 15 + Math.round(wBus.walkOutKm*12);
+      document.getElementById('opt-bus').style.display  = 'flex';
+      document.getElementById('metaBus').textContent    = `🚌 ${opt.routeId} · ~${approxMin} min · WMATA`;
+      document.getElementById('scoreBus').textContent   = 78;
+      if (busLabel) busLabel.textContent = `🚌 ${opt.routeId}`;
+      if (!metroFound && busEl) { busEl.innerHTML=`🚌 WMATA <b>${opt.routeId}</b> · Board: ${opt.boardStop.name}`; busEl.style.display='block'; }
+      window._cachedWmataBus = wBus;
+      busFound = true;
+    } else {
+      document.getElementById('opt-bus').style.display = isModeEnabled('bus') ? 'flex' : 'none';
+      if (isModeEnabled('bus')) {
+        document.getElementById('metaBus').textContent  = `🚌 ${Math.ceil(simData.transit.dist*4)+8} min`;
+        document.getElementById('scoreBus').textContent = simData.transit.score;
+      }
+    }
+  } else if (!busFound) {
     document.getElementById('opt-bus').style.display = isModeEnabled('bus') ? 'flex' : 'none';
     if (isModeEnabled('bus')) {
       document.getElementById('metaBus').textContent  = `🚌 ${Math.ceil(simData.transit.dist*4)+8} min`;
@@ -1051,7 +1119,8 @@ function prepareComparison(fromLL, toLL) {
 async function pickRoute(type) {
   document.getElementById('routeCard').classList.remove('active');
   interactiveLayer.clearLayers(); transitLayer.clearLayers();
-  currentRouteMode = type;
+  // multimodal uses transit routing under the hood
+  currentRouteMode = type === 'multimodal' ? 'transit' : type;
   const from = activeOriginLatLng || userLoc;
   if (!from || !activeDestLatLng) { showToast('Set both locations first'); return; }
   showToast('Calculating route…');
@@ -1110,15 +1179,14 @@ function showHud(type, route, fromLL) {
   updateHudScore();
   document.getElementById('hudScore').style.color =
     type==='safe'        ? 'var(--safe)'    :
-    (type==='transit'||type==='multimodal') ? 'var(--transit)' : 'var(--primary)';
+    type==='transit'     ? 'var(--transit)' :
+    type==='multimodal'  ? 'var(--safe)'    : 'var(--primary)';
 
   const estSteps = Math.round((rd.dist*1000)/0.762);
   const estCals  = Math.round((rd.dist*1000)*0.05);
 
-  // Time display: multimodal and transit use their computed mmMin/metroMin
-  if (type === 'transit' || type === 'multimodal') {
-    const tMin = rd.mmMin || rd.metroMin || (Math.ceil(rd.dist*4)+8);
-    document.getElementById('hudTime').textContent = `${tMin} min`;
+  if (type==='transit') {
+    document.getElementById('hudTime').textContent = `${Math.ceil(rd.dist*4)+8} min`;
     document.getElementById('hudTime').style.color = 'var(--transit)';
   } else {
     document.getElementById('hudTime').textContent = `${Math.ceil(rd.dist*12)} min`;
@@ -1130,15 +1198,14 @@ function showHud(type, route, fromLL) {
 
   const stepsBox    = document.getElementById('stepsBox');
   const transitWrap = document.getElementById('transitWrap');
-  // Both transit and multimodal show the transit view panel
-  if (type === 'transit' || type === 'multimodal') {
-    stepsBox.style.display='none'; transitWrap.style.display='block';
-    buildTransitView(coords, steps, rd, type);
-  } else {
+  if (type !== 'transit') {
     stepsBox.innerHTML = itinHtml; stepsBox.style.display='block'; transitWrap.style.display='none';
+  } else {
+    stepsBox.style.display='none'; transitWrap.style.display='block';
+    buildTransitView(coords, steps, rd);
   }
 
-  if (type !== 'transit' && type !== 'multimodal') {
+  if (type !== 'transit') {
     const color = type==='safe' ? '#7c3aed' : '#2563eb';
     const dash  = type==='walk' ? '10,8' : '';
     const poly  = L.polyline(coords, { color, weight:6, opacity:.9, dashArray:dash }).addTo(interactiveLayer);
@@ -1152,18 +1219,15 @@ function showHud(type, route, fromLL) {
 
   updateSurfaceReadout();
   if (document.getElementById('voiceToggle')?.checked && 'speechSynthesis' in window) {
-    const label = (type==='transit'||type==='multimodal') ? 'transit route'
-                : type==='safe' ? 'safest walk' : 'shortest walk';
-    const tMin = rd.mmMin || rd.metroMin || Math.ceil(rd.dist*12);
-    speechSynthesis.speak(new SpeechSynthesisUtterance(`Route: ${label}. ${tMin} minutes.`));
+    const label = type==='transit' ? 'transit route' : type==='safe' ? 'safest walk' : 'shortest walk';
+    speechSynthesis.speak(new SpeechSynthesisUtterance(`Route: ${label}. ${Math.ceil(rd.dist*12)} minutes.`));
   }
 }
 
 // ── TRANSIT VIEW ──
-async function buildTransitView(coords, steps, rd, type='transit') {
+async function buildTransitView(coords, steps, rd) {
   const tw = document.getElementById('transitWrap');
   const n  = steps.length;
-  const isMultimodal = type === 'multimodal';
 
   const mkS = list => list.map(s => {
     const road = s.name ? `onto ${s.name}` : 'forward';
@@ -1173,10 +1237,6 @@ async function buildTransitView(coords, steps, rd, type='transit') {
       <span>🚶</span><span style="flex:1;text-transform:capitalize;">${act} ${road}</span>
       <span style="color:#2563eb;font-weight:800;">${Math.round(s.distance)}m</span></div>`;
   }).join('');
-
-  const modeBadge = isMultimodal
-    ? `<div style="display:inline-block;background:rgba(124,58,237,.12);color:#7c3aed;font-size:9px;font-weight:800;padding:2px 7px;border-radius:10px;margin-bottom:8px;">⚡ FASTEST MULTIMODAL</div>`
-    : '';
 
   // ── METRO ──
   if (cachedMetroPlan) {
@@ -1202,7 +1262,6 @@ async function buildTransitView(coords, steps, rd, type='transit') {
     document.getElementById('hudTime').textContent = `${approxMin} min`;
 
     tw.innerHTML = `
-      ${modeBadge}
       <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;margin-bottom:8px;">
         <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Metro (${(walkInKm*1000).toFixed(0)}m)</div>
         ${mkS(steps.slice(0,Math.max(1,Math.floor(n*.15))))}
@@ -1213,6 +1272,42 @@ async function buildTransitView(coords, steps, rd, type='transit') {
       </div>
       <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;">
         <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Destination (${(walkOutKm*1000).toFixed(0)}m)</div>
+        ${mkS(steps.slice(Math.floor(n*.85)))}
+      </div>`;
+    return;
+  }
+
+  // ── WMATA METRO (DC) ──
+  if (window._cachedWmataPlan &&
+      typeof WmataEngine !== 'undefined' && WmataEngine.wmataDataReady()) {
+    const wp = window._cachedWmataPlan;
+    const { html: wmHtml, approxMin: wmMin } = WmataEngine.buildWmataMetroHudHtml(wp);
+    const color = wp.color;
+
+    const p1 = Math.max(1, Math.min(Math.floor(coords.length*(wp.walkInKm/(rd.dist+.01))), coords.length-2));
+    const p2 = Math.max(p1+1, Math.min(Math.floor(coords.length*(1-wp.walkOutKm/(rd.dist+.01))), coords.length-1));
+    L.polyline(coords.slice(0,p1), { color:'#2563eb', weight:5, dashArray:'8,8' }).addTo(transitLayer);
+    L.polyline(coords.slice(p2),   { color:'#2563eb', weight:5, dashArray:'8,8' }).addTo(transitLayer);
+    if (typeof WMATA_LINES !== 'undefined' && WMATA_LINES[wp.line]) {
+      L.polyline(WMATA_LINES[wp.line], { color, weight:6, opacity:.9 }).addTo(transitLayer);
+    }
+    const mkStn = (ll, label, c) => L.marker(ll, { icon: L.divIcon({ className:'', iconSize:[null,null],
+      html:`<div style="background:${c};border:2px solid white;border-radius:4px;padding:2px 5px;font-size:10px;font-weight:800;color:white;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.3);">${label}</div>` }) });
+    mkStn([wp.board.lat,wp.board.lng],  `🚇 ${wp.board.name}`,  color).addTo(stationLayer);
+    mkStn([wp.alight.lat,wp.alight.lng], `🚇 ${wp.alight.name}`, color).addTo(stationLayer);
+    map.fitBounds(L.latLngBounds([...coords,[wp.board.lat,wp.board.lng],[wp.alight.lat,wp.alight.lng]]), { padding:[50,50] });
+    document.getElementById('hudTime').textContent = `${wmMin} min`;
+    tw.innerHTML = `
+      <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;margin-bottom:8px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Metro (${(wp.walkInKm*1000).toFixed(0)}m)</div>
+        ${mkS(steps.slice(0,Math.max(1,Math.floor(n*.15))))}
+      </div>
+      <div style="background:${color}18;padding:12px;border-radius:10px;border-left:4px solid ${color};margin-bottom:8px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:${color};margin-bottom:8px;">🚇 WMATA ${wp.line.toUpperCase()} LINE · ~${wmMin} min</div>
+        ${wmHtml}
+      </div>
+      <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Destination (${(wp.walkOutKm*1000).toFixed(0)}m)</div>
         ${mkS(steps.slice(Math.floor(n*.85)))}
       </div>`;
     return;
@@ -1240,29 +1335,39 @@ async function buildTransitView(coords, steps, rd, type='transit') {
     if (built.boardStop?.lat) mkLbl([built.boardStop.lat,built.boardStop.lng], `🚏 ${built.boardStop.name}`, built.agencyColor).addTo(stationLayer);
     if (built.alightStop?.lat) mkLbl([built.alightStop.lat,built.alightStop.lng], `🚏 ${built.alightStop.name}`, '#475569').addTo(stationLayer);
     document.getElementById('hudTime').textContent = `${built.approxMin} min`;
+  } else if (window._cachedWmataBus && window._cachedWmataBus.type === 'direct' &&
+             typeof WmataEngine !== 'undefined') {
+    // WMATA bus
+    const built = WmataEngine.buildWmataBusHudHtml(window._cachedWmataBus);
+    busCardHtml = built.html;
+    if (built.coords && built.coords.length > 1) {
+      L.polyline(built.coords, { color:'#E97F1B', weight:8, opacity:.9, dashArray:'8,5' }).addTo(transitLayer);
+    } else {
+      L.polyline(coords.slice(Math.max(0,p1-1),p2+1), { color:'#E97F1B', weight:8, opacity:.9 }).addTo(transitLayer);
+    }
+    const mkLbl = (ll, label, c) => {
+      const ico = L.divIcon({ className:'', iconSize:[null,null],
+        html:`<div style="background:${c};border:2px solid white;border-radius:6px;padding:2px 6px;font-size:9px;font-weight:800;color:white;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,.3);">${label}</div>` });
+      return L.marker(ll, { icon:ico });
+    };
+    if (built.boardStop?.lat)  mkLbl([built.boardStop.lat,built.boardStop.lng],  `🚏 ${built.boardStop.name}`,  '#E97F1B').addTo(stationLayer);
+    if (built.alightStop?.lat) mkLbl([built.alightStop.lat,built.alightStop.lng], `🚏 ${built.alightStop.name}`, '#475569').addTo(stationLayer);
+    document.getElementById('hudTime').textContent = `${built.approxMin} min`;
   } else {
-    // Fallback: no direct route found — show nearest stop info
-    const ns  = getNearestBusStops(coords[p1][0], coords[p1][1], 1, 0.8);
-    const sn  = ns.length ? ns[0].name : 'Nearest Bus Stop';
-    const eta = Math.ceil(rd.dist / 0.4) + 5; // rough transit time
+    const eta  = Math.floor(Math.random()*8)+4;
+    const next = new Date(Date.now()+eta*60000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    const ns   = getNearestBusStops(coords[p1][0], coords[p1][1], 1, 0.8);
+    const sn   = ns.length ? ns[0].name : 'Nearest Bus Stop';
     L.polyline(coords.slice(Math.max(0,p1-1),p2+1), { color:'#d97706', weight:8, opacity:.9 }).addTo(transitLayer);
     busCardHtml = `<div style="background:white;padding:12px;border-radius:10px;border:1px solid #e2e8f0;margin-bottom:8px;">
       <div style="display:flex;align-items:center;gap:10px;">
         <span style="font-size:24px;">🚌</span>
-        <div style="flex:1;"><div style="font-size:13px;font-weight:800;color:#d97706;">DTC / DIMTS Bus</div>
-          <div style="font-size:10px;color:#64748b;">Nearest stop: ${sn}</div>
-          <div style="font-size:10px;color:#94a3b8;">No direct route found — check local stops</div>
-        </div>
-        <div style="text-align:right;">
-          <div style="font-size:14px;font-weight:900;color:#d97706;">~${eta} min</div>
-          <div style="font-size:10px;color:#64748b;">est. transit</div>
-        </div>
+        <div style="flex:1;"><div style="font-size:13px;font-weight:800;color:#d97706;">DTC / DIMTS Bus</div><div style="font-size:10px;color:#64748b;">Board near: ${sn}</div></div>
+        <div style="text-align:right;"><div style="font-size:12px;font-weight:800;color:#dc2626;">~${eta} min</div><div style="font-size:10px;color:#64748b;">Next: ${next}</div></div>
       </div></div>`;
-    document.getElementById('hudTime').textContent = `${eta} min`;
   }
 
   tw.innerHTML = `
-    ${modeBadge}
     <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;margin-bottom:8px;">
       <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Stop</div>
       ${mkS(steps.slice(0,Math.max(1,Math.floor(n*.15))))}
@@ -1310,7 +1415,7 @@ function stopLive() {
   const vSteps = document.getElementById('vLifetimeSteps');
   if (vSteps) vSteps.textContent = (parseInt(vSteps.textContent.replace(/,/g,'')||0)+finalSteps).toLocaleString();
   // Save completed route to DB
-  const rd = simData[currentRouteMode] || simData['transit'] || simData.walk;
+  const rd = simData[currentRouteMode] || simData.walk;
   if (rd && activeDestLatLng) {
     const from = activeOriginLatLng || userLoc;
     saveRouteToDB({
@@ -1427,11 +1532,8 @@ function clearRoute(clearInputs) {
     activeOriginLatLng=null; activeOriginName=''; activeDestLatLng=null; activeDestName='';
     if (originMarker) { map.removeLayer(originMarker); originMarker=null; }
     document.getElementById('nearestBusInfo').style.display='none';
-    // Only clear transit caches when fully resetting (not when just switching route type)
     cachedMetroPlan=null; window._cachedBusJourney=null;
   }
-  // Note: do NOT clear cachedMetroPlan/_cachedBusJourney here when clearInputs=false
-  // because pickRoute calls clearRoute(false) and needs the cached plans intact
 }
 
 function toggleMini() {
