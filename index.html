@@ -67,18 +67,44 @@
 
       <!-- Route Card -->
       <div class="route-card" id="routeCard">
-        <h3>Choose Route</h3>
-        <div class="route-opt walk" onclick="pickRoute('walk')">
+
+        <!-- Transport mode toggles -->
+        <div style="margin-bottom:12px;">
+          <div style="font-size:10px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Use in route</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;" id="modeToggles">
+            <button class="mode-toggle active" data-mode="walk"   onclick="toggleMode('walk')"  >🚶 Walk</button>
+            <button class="mode-toggle active" data-mode="metro"  onclick="toggleMode('metro')" >🚇 Metro</button>
+            <button class="mode-toggle active" data-mode="bus"    onclick="toggleMode('bus')"   >🚌 Bus</button>
+            <button class="mode-toggle active" data-mode="auto"   onclick="toggleMode('auto')"  >🛺 Auto</button>
+            <button class="mode-toggle"        data-mode="cycle"  onclick="toggleMode('cycle')" >🚲 Cycle</button>
+          </div>
+        </div>
+
+        <div style="font-size:10px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Route Options</div>
+
+        <div class="route-opt walk" id="opt-walk" onclick="pickRoute('walk')">
           <div><div class="opt-label c-blue">✂️ Shortest Walk</div><div class="opt-meta" id="metaWalk">— min · — km</div></div>
           <div class="opt-score c-blue" id="scoreWalk">—</div>
         </div>
-        <div class="route-opt safe" onclick="pickRoute('safe')">
+        <div class="route-opt safe" id="opt-safe" onclick="pickRoute('safe')">
           <div><div class="opt-label c-purple">🛡️ Safest Walk</div><div class="opt-meta" id="metaSafe">— min · — km</div></div>
           <div class="opt-score c-purple" id="scoreSafe">—</div>
         </div>
-        <div class="route-opt bus" onclick="pickRoute('transit')">
-          <div><div class="opt-label c-orange" id="busOptLabel">🚌 Bus / Metro</div><div class="opt-meta" id="metaBus">— min · —</div></div>
+        <div class="route-opt bus" id="opt-metro" onclick="pickRoute('transit')" style="display:none;">
+          <div><div class="opt-label" style="color:#1565c0;">🚇 Metro Route</div><div class="opt-meta" id="metaMetro">— min · — stops</div></div>
+          <div class="opt-score" id="scoreMetro" style="color:#1565c0;">—</div>
+        </div>
+        <div class="route-opt bus" id="opt-bus" onclick="pickRoute('bus')">
+          <div><div class="opt-label c-orange" id="busOptLabel">🚌 Bus Route</div><div class="opt-meta" id="metaBus">— min · —</div></div>
           <div class="opt-score c-orange" id="scoreBus">—</div>
+        </div>
+        <div class="route-opt" id="opt-multimodal" onclick="pickRoute('multimodal')"
+          style="display:none;border-color:rgba(124,58,237,.3);background:rgba(124,58,237,.03);">
+          <div>
+            <div class="opt-label c-purple">⚡ Fastest Multimodal</div>
+            <div class="opt-meta" id="metaMultimodal">— min · walk + metro/bus</div>
+          </div>
+          <div class="opt-score c-purple" id="scoreMultimodal">—</div>
         </div>
         <div id="nearestBusInfo" class="bus-info-strip" style="display:none;"></div>
       </div>

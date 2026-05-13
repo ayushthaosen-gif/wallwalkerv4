@@ -198,3 +198,24 @@ input:checked+.slider:before{transform:translateX(18px);}
 
 /* TOAST */
 .toast{position:fixed;top:calc(var(--header-h) + env(safe-area-inset-top) + 8px);left:50%;transform:translateX(-50%);background:#1e293b;color:white;padding:10px 20px;border-radius:20px;font-size:13px;font-weight:700;z-index:9000;opacity:0;transition:opacity .25s;pointer-events:none;white-space:nowrap;max-width:90vw;overflow:hidden;text-overflow:ellipsis;}
+
+/* ── MODE TOGGLES ── */
+.mode-toggle {
+  padding: 6px 12px; border-radius: 20px; border: 1.5px solid #e2e8f0;
+  background: white; font-size: 11px; font-weight: 700; cursor: pointer;
+  font-family: inherit; color: #64748b; transition: all .2s;
+}
+.mode-toggle.active {
+  background: #0f172a; border-color: #0f172a; color: white;
+}
+.mode-toggle.active[data-mode="walk"]  { background: #2563eb; border-color: #2563eb; }
+.mode-toggle.active[data-mode="metro"] { background: #1565c0; border-color: #1565c0; }
+.mode-toggle.active[data-mode="bus"]   { background: #d97706; border-color: #d97706; }
+.mode-toggle.active[data-mode="auto"]  { background: #16a34a; border-color: #16a34a; }
+.mode-toggle.active[data-mode="cycle"] { background: #7c3aed; border-color: #7c3aed; }
+.mode-toggle.disabled-mode { opacity: .4; text-decoration: line-through; }
+/* Multimodal leg badge */
+.leg-badge {
+  display:inline-flex;align-items:center;gap:4px;padding:3px 8px;
+  border-radius:6px;font-size:10px;font-weight:800;color:white;
+}

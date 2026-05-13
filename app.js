@@ -477,6 +477,30 @@ let activeDestLatLng = null, activeOriginLatLng = null;
 let activeOriginName = '', activeDestName = '';
 let originMarker = null;
 let simData = {};
+
+// ── TRANSPORT MODE PREFERENCES ──
+// Which modes the user has toggled ON
+let enabledModes = new Set(['walk','metro','bus','auto']);
+
+function toggleMode(mode) {
+  const btn = document.querySelector(`.mode-toggle[data-mode="${mode}"]`);
+  if (!btn) return;
+  if (enabledModes.has(mode)) {
+    // Don't allow disabling walk entirely
+    if (mode === 'walk' && enabledModes.size === 1) { showToast('At least one mode must be on'); return; }
+    enabledModes.delete(mode);
+    btn.classList.remove('active');
+  } else {
+    enabledModes.add(mode);
+    btn.classList.add('active');
+  }
+  // Recompute routes with new mode preferences
+  const from = activeOriginLatLng || userLoc;
+  if (from && activeDestLatLng) prepareComparison(from, activeDestLatLng);
+}
+
+function isModeEnabled(mode) { return enabledModes.has(mode); }
+
 let isLiveTracking = false;
 let currentRouteMode = 'walk';
 let cachedMetroPlan = null;
@@ -900,24 +924,33 @@ function prepareComparison(fromLL, toLL) {
 
   const baseDist  = (fromLL.distanceTo(toLL) / 1000) * 1.3;
   const hazardPen = localHazards.reduce((a, h) => a + Math.abs(Env.HAZARD_SCORE_MAP[h.type] || 5), 0);
-  const baseScore = Math.max(40, 100 - Math.round(baseDist*6) - hazardPen);
+  const baseScore = Math.max(40, 100 - Math.round(baseDist * 6) - hazardPen);
+  const isLong    = baseDist > 3; // long distance → show multimodal option
 
   simData = {
-    walk:    { dist: baseDist,       score: baseScore,              mode:'walk' },
-    safe:    { dist: baseDist*1.15,  score: Math.min(98,baseScore+12), mode:'safe' },
-    transit: { dist: baseDist,       score: 80,                     mode:'transit' },
+    walk:       { dist: baseDist,       score: baseScore,                  mode:'walk' },
+    safe:       { dist: baseDist*1.15,  score: Math.min(98,baseScore+12), mode:'safe' },
+    transit:    { dist: baseDist,       score: 80,                         mode:'transit' },
+    multimodal: { dist: baseDist,       score: 90,                         mode:'multimodal' },
   };
 
-  document.getElementById('metaWalk').textContent  = `${Math.ceil(simData.walk.dist*12)} min · ${simData.walk.dist.toFixed(1)} km`;
-  document.getElementById('scoreWalk').textContent = simData.walk.score;
-  document.getElementById('metaSafe').textContent  = `${Math.ceil(simData.safe.dist*13)} min · ${simData.safe.dist.toFixed(1)} km`;
-  document.getElementById('scoreSafe').textContent = simData.safe.score;
+  // Walk options — always shown if walk enabled
+  const walkVisible = isModeEnabled('walk');
+  document.getElementById('opt-walk').style.display = walkVisible ? 'flex' : 'none';
+  document.getElementById('opt-safe').style.display = walkVisible ? 'flex' : 'none';
+  if (walkVisible) {
+    document.getElementById('metaWalk').textContent  = `${Math.ceil(simData.walk.dist*12)} min · ${simData.walk.dist.toFixed(1)} km`;
+    document.getElementById('scoreWalk').textContent = simData.walk.score;
+    document.getElementById('metaSafe').textContent  = `${Math.ceil(simData.safe.dist*13)} min · ${simData.safe.dist.toFixed(1)} km`;
+    document.getElementById('scoreSafe').textContent = simData.safe.score;
+  }
 
   const busEl    = document.getElementById('nearestBusInfo');
   const busLabel = document.getElementById('busOptLabel');
 
-  // 1. Try metro first
-  if (typeof MetroEngine !== 'undefined' && typeof METRO_DATA !== 'undefined') {
+  // ── METRO ──
+  let metroFound = false;
+  if (isModeEnabled('metro') && typeof MetroEngine !== 'undefined' && typeof METRO_DATA !== 'undefined') {
     const nf = MetroEngine.getNearestMetroStations(fromLL.lat, fromLL.lng, 3, 2.5);
     const nt = MetroEngine.getNearestMetroStations(toLL.lat, toLL.lng, 3, 2.5);
     outer: for (const f of nf) {
@@ -928,39 +961,82 @@ function prepareComparison(fromLL, toLL) {
           cachedMetroPlan = { plan, boardStop:f, alightStop:t, walkInKm:f.dist, walkOutKm:t.dist };
           const totalStops = plan.filter(l=>l.type==='metro').reduce((a,l)=>a+l.numStops,0);
           const metroMin   = Math.round(f.dist*12) + totalStops*2 + Math.round(t.dist*12) + 4;
-          document.getElementById('metaBus').textContent  = `🚇 ${metroMin} min · ${totalStops} stops`;
-          document.getElementById('scoreBus').textContent = 92;
-          if (busLabel) busLabel.textContent = '🚇 Metro Route';
+          simData.transit.score = 92; simData.transit.metroMin = metroMin; simData.transit.totalStops = totalStops;
+          document.getElementById('opt-metro').style.display = 'flex';
+          document.getElementById('metaMetro').textContent   = `🚇 ${metroMin} min · ${totalStops} stops · walk ${(f.dist*1000).toFixed(0)}m`;
+          document.getElementById('scoreMetro').textContent  = 92;
           if (busEl) { busEl.innerHTML=`🚉 <b>${f.name}</b> → <b>${t.name}</b>`; busEl.style.display='block'; }
+          metroFound = true;
           break outer;
         }
       }
     }
+  } else {
+    document.getElementById('opt-metro').style.display = 'none';
   }
 
-  // 2. Try real bus
-  if (!cachedMetroPlan) {
-    if (typeof BusEngine !== 'undefined' && BusEngine.busDataReady()) {
-      const bj = BusEngine.findBusRoutes(fromLL.lat, fromLL.lng, toLL.lat, toLL.lng);
-      if (bj && bj.type === 'direct') {
-        const opt = bj.options[0];
-        const approxMin = Math.round(bj.walkInKm*12) + opt.numStops*2 + Math.round(bj.walkOutKm*12) + 6;
-        document.getElementById('metaBus').textContent  = `🚌 ${approxMin} min · ${opt.numStops} stops`;
-        document.getElementById('scoreBus').textContent = 78;
-        if (busLabel) busLabel.textContent = '🚌 Real Bus Route';
-        if (busEl) { busEl.innerHTML=`🚌 <b>${opt.routeName}</b> · Board: ${opt.boardStop.name}`; busEl.style.display='block'; }
-        window._cachedBusJourney = bj;
-      } else {
-        document.getElementById('metaBus').textContent  = `${Math.ceil(simData.transit.dist*4)+8} min · ${simData.transit.dist.toFixed(1)} km`;
-        document.getElementById('scoreBus').textContent = simData.transit.score;
-        if (busLabel) busLabel.textContent = '🚌 Public Bus';
-        const s = getNearestBusStops(fromLL.lat, fromLL.lng, 1, 1.0);
-        if (busEl && s.length) { busEl.textContent=`🚏 Nearest stop: ${s[0].name} (${(s[0].dist*1000).toFixed(0)}m)`; busEl.style.display='block'; }
-      }
+  // ── BUS ──
+  let busFound = false;
+  if (isModeEnabled('bus') && typeof BusEngine !== 'undefined' && BusEngine.busDataReady()) {
+    const bj = BusEngine.findBusRoutes(fromLL.lat, fromLL.lng, toLL.lat, toLL.lng);
+    if (bj && bj.type === 'direct') {
+      const opt = bj.options[0];
+      const approxMin = Math.round(bj.walkInKm*12) + opt.numStops*2 + Math.round(bj.walkOutKm*12) + 6;
+      document.getElementById('opt-bus').style.display  = 'flex';
+      document.getElementById('metaBus').textContent    = `🚌 ${opt.routeName} · ${approxMin} min · ${opt.numStops} stops`;
+      document.getElementById('scoreBus').textContent   = 78;
+      if (busLabel) busLabel.textContent = `🚌 ${opt.routeName}`;
+      if (!metroFound && busEl) { busEl.innerHTML=`🚌 <b>${opt.routeName}</b> · Board: ${opt.boardStop.name}`; busEl.style.display='block'; }
+      window._cachedBusJourney = bj;
+      busFound = true;
     } else {
-      document.getElementById('metaBus').textContent  = `${Math.ceil(simData.transit.dist*4)+8} min · ${simData.transit.dist.toFixed(1)} km`;
+      document.getElementById('opt-bus').style.display  = 'flex';
+      document.getElementById('metaBus').textContent    = `🚌 ${Math.ceil(simData.transit.dist*4)+8} min · ${simData.transit.dist.toFixed(1)} km`;
+      document.getElementById('scoreBus').textContent   = simData.transit.score;
+      if (busLabel) busLabel.textContent = '🚌 Bus';
+    }
+  } else {
+    document.getElementById('opt-bus').style.display = isModeEnabled('bus') ? 'flex' : 'none';
+    if (isModeEnabled('bus')) {
+      document.getElementById('metaBus').textContent  = `🚌 ${Math.ceil(simData.transit.dist*4)+8} min`;
       document.getElementById('scoreBus').textContent = simData.transit.score;
-      if (busLabel) busLabel.textContent = '🚌 Public Bus';
+    }
+  }
+
+  // ── MULTIMODAL (long distances) ──
+  // Show if distance > 3km AND at least metro or bus is enabled alongside walk
+  const multimodal = isModeEnabled('walk') && (isModeEnabled('metro') || isModeEnabled('bus')) && isLong;
+  document.getElementById('opt-multimodal').style.display = multimodal ? 'flex' : 'none';
+  if (multimodal) {
+    // Best combo: walk to nearest transit, ride, walk out
+    let mmMin = 0, mmDesc = '';
+    if (metroFound && cachedMetroPlan) {
+      const { walkInKm, walkOutKm } = cachedMetroPlan;
+      const totalStops = cachedMetroPlan.plan.filter(l=>l.type==='metro').reduce((a,l)=>a+l.numStops,0);
+      mmMin  = Math.round(walkInKm*12) + totalStops*2 + Math.round(walkOutKm*12) + 4;
+      mmDesc = `🚶${(walkInKm*1000).toFixed(0)}m + 🚇${totalStops} stops + 🚶${(walkOutKm*1000).toFixed(0)}m`;
+    } else if (busFound && window._cachedBusJourney) {
+      const bj = window._cachedBusJourney; const opt = bj.options[0];
+      mmMin  = Math.round(bj.walkInKm*12) + opt.numStops*2 + Math.round(bj.walkOutKm*12) + 6;
+      mmDesc = `🚶${(bj.walkInKm*1000).toFixed(0)}m + 🚌${opt.numStops} stops + 🚶${(bj.walkOutKm*1000).toFixed(0)}m`;
+    } else {
+      // Estimate: walk 500m to stop + ride + walk 500m
+      mmMin  = Math.ceil(baseDist / 4) + 10;
+      mmDesc = 'Walk + Bus/Metro combination';
+    }
+    simData.multimodal.mmMin = mmMin;
+    document.getElementById('metaMultimodal').textContent  = `${mmMin} min · ${mmDesc}`;
+    document.getElementById('scoreMultimodal').textContent = Math.min(95, baseScore + 15);
+    simData.multimodal.score = Math.min(95, baseScore + 15);
+  }
+
+  // ── AUTO-RICKSHAW estimate ──
+  if (isModeEnabled('auto')) {
+    // Show as info in nearest bus strip if no other transit
+    const autoMin = Math.ceil(baseDist / 0.5); // ~30 km/h in city
+    if (!metroFound && !busFound && busEl) {
+      busEl.innerHTML = `🛺 Auto ~${autoMin} min · 🚶 Walk ~${Math.ceil(baseDist*12)} min`;
+      busEl.style.display = 'block';
     }
   }
 
@@ -970,11 +1046,13 @@ function prepareComparison(fromLL, toLL) {
   document.getElementById('routeCard').classList.add('active');
 }
 
+
 // ── ROUTING ──
 async function pickRoute(type) {
   document.getElementById('routeCard').classList.remove('active');
   interactiveLayer.clearLayers(); transitLayer.clearLayers();
-  currentRouteMode = type;
+  // multimodal uses transit routing under the hood
+  currentRouteMode = type === 'multimodal' ? 'transit' : type;
   const from = activeOriginLatLng || userLoc;
   if (!from || !activeDestLatLng) { showToast('Set both locations first'); return; }
   showToast('Calculating route…');
@@ -995,7 +1073,7 @@ function showHud(type, route, fromLL) {
   if (btnLbl)  btnLbl.textContent  = '▼ Min';
   if (restore) restore.classList.remove('visible');
 
-  const rd     = simData[type] || simData.walk;
+  const rd     = simData[type] || simData[currentRouteMode] || simData.walk;
   const steps  = route.legs[0].steps;
   const coords = route.geometry.coordinates.map(c => [c[1], c[0]]);
   routeCoordsData = { footpaths:[], bridges:[], underpasses:[], crossings:[] };
@@ -1032,7 +1110,9 @@ function showHud(type, route, fromLL) {
   walkabilityBase = rd.score;
   updateHudScore();
   document.getElementById('hudScore').style.color =
-    type==='safe' ? 'var(--safe)' : type==='transit' ? 'var(--transit)' : 'var(--primary)';
+    type==='safe'        ? 'var(--safe)'    :
+    type==='transit'     ? 'var(--transit)' :
+    type==='multimodal'  ? 'var(--safe)'    : 'var(--primary)';
 
   const estSteps = Math.round((rd.dist*1000)/0.762);
   const estCals  = Math.round((rd.dist*1000)*0.05);
