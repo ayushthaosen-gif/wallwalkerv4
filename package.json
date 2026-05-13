@@ -1,7 +1,7 @@
 {
   "name": "gaitway",
-  "version": "5.0.0",
-  "description": "GaitWay walkability PWA — Express + Supabase",
+  "version": "5.1.0",
+  "description": "GaitWay walkability PWA — Express + Supabase + Gemini Vision",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -9,6 +9,7 @@
   },
   "engines": { "node": ">=18.0.0" },
   "dependencies": {
+    "@google/genai": "^0.7.0",
     "cors": "^2.8.5",
     "express": "^4.18.3",
     "pg": "^8.11.3"
