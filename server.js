@@ -193,7 +193,8 @@ app.get('/api/stats', async (req, res) => {
 });
 
 // ── CATCH-ALL ──
-app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+const INDEX = path.join(__dirname, 'index.html');
+app.get('*', (req, res) => res.sendFile(INDEX));
 
 app.listen(PORT, () => {
   console.log(`✅ GaitWay running on port ${PORT}`);
