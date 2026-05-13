@@ -91,6 +91,17 @@ header{
 .hud{position:absolute;bottom:calc(var(--nav-h) + 10px);left:12px;right:12px;z-index:4000;background:white;border-radius:20px;padding:12px 14px;box-shadow:var(--shadow);border:1px solid var(--border);display:none;transition:transform .35s cubic-bezier(.4,0,.2,1);max-height:calc(100% - var(--nav-h) - 80px);overflow-y:auto;}
 .hud.active{display:block;}
 .hud.mini{transform:translateY(calc(100% - 44px));overflow:hidden;}
+/* Floating restore bubble shown when HUD is minimised */
+#hudRestoreBtn{
+  position:absolute;bottom:calc(var(--nav-h) + 10px);left:50%;transform:translateX(-50%);
+  z-index:4100;display:none;
+  background:#2563eb;color:white;border:none;border-radius:30px;
+  padding:10px 20px;font-size:13px;font-weight:800;font-family:inherit;
+  cursor:pointer;box-shadow:0 4px 16px rgba(37,99,235,.45);
+  white-space:nowrap;gap:8px;align-items:center;
+  animation:slideUp .3s ease;
+}
+#hudRestoreBtn.visible{display:flex;}
 .hud-topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
 .pill-handle{width:36px;height:4px;background:#e2e8f0;border-radius:4px;cursor:pointer;}
 .btn-close{background:#f1f5f9;border:none;border-radius:50%;width:26px;height:26px;font-weight:700;color:var(--muted);cursor:pointer;font-size:11px;}
