@@ -68,12 +68,44 @@ function findBusRoutes(fromLat,fromLng,toLat,toLng){
     : { type:'no_direct', nearestFrom:fromStops[0], nearestTo:toStops[0] };
 }
 
-// ── FETCH NEXT TIMINGS FROM SERVER ──
-async function getStopTimings(stopId, type='bus'){
+// ── GET TIMINGS — reads from client-side JS chunks first, API fallback ──
+function getStopTimingsSync(stopId, type='bus') {
+  const timeMap  = type==='metro' ? window.METRO_STOP_TIMES : window.BUS_STOP_TIMES;
+  const schedMap = type==='metro' ? window.METRO_SCHED      : window.BUS_ROUTE_SCHED;
+  if (!timeMap || !timeMap[stopId]) return null;
+
+  const now = new Date();
+  const cur = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+  const services = Object.entries(timeMap[stopId]).map(([rid, times]) => {
+    const info  = schedMap?.[rid] || {};
+    const upcoming = times.filter(t => t >= cur);
+    const nextTimes = upcoming.length >= 3 ? upcoming.slice(0,5)
+                    : [...upcoming, ...times.slice(0, 5-upcoming.length)];
+    return {
+      routeId:   rid,
+      routeName: info.n || rid,
+      agency:    info.a || (type==='metro'?'DMRC':'DTC'),
+      color:     info.color || (type==='metro'?'#1565c0':'#d97706'),
+      nextTimes,
+      allTimes:  times,
+    };
+  }).sort((a,b) => (a.nextTimes[0]||'99:99').localeCompare(b.nextTimes[0]||'99:99'));
+
+  return { stopId, type, serviceCount: services.length, services };
+}
+
+async function getStopTimings(stopId, type='bus') {
+  // Try client-side data first (loaded from static JS chunks)
+  const local = getStopTimingsSync(stopId, type);
+  if (local && local.serviceCount > 0) return local;
+  // Fallback to server API (works if server has JSON files loaded)
   try {
     const res = await fetch(`${API_BASE}/api/transit/stop/${stopId}?type=${type}`);
-    return await res.json();
-  } catch(e) { return null; }
+    const data = await res.json();
+    if (data && data.serviceCount > 0) return data;
+  } catch(e) {}
+  return local || null;
 }
 
 // ── BUILD BUS HUD HTML (with route numbers + timings) ──
@@ -163,21 +195,24 @@ async function buildBusHudHtml(journey){
 
 // ── STOP INFO POPUP (tap a bus stop marker) ──
 async function buildStopInfoHtml(stopId, stopName, type='bus'){
+  const icon = type==='metro' ? '🚇' : '🚏';
   const data = await getStopTimings(stopId, type);
-  if(!data||!data.services||!data.services.length){
-    return `<b>🚏 ${stopName}</b><br><small style="color:#94a3b8">No schedule data</small>`;
+  if(!data || !data.services || !data.services.length){
+    return `<div style="min-width:200px;"><b>${icon} ${stopName}</b><br>
+      <small style="color:#94a3b8;">No schedule loaded yet.<br>Try again in a moment.</small></div>`;
   }
-  const lines = data.services.slice(0,6).map(s=>`
-    <div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #f1f5f9;">
-      <div style="background:${s.color||'#d97706'};color:white;font-size:10px;font-weight:900;padding:2px 7px;border-radius:4px;min-width:50px;text-align:center;">${s.routeName}</div>
-      <span style="font-size:11px;flex:1;color:#475569;">${s.nextTimes.slice(0,3).join(' · ')}</span>
+  const lines = data.services.slice(0,8).map(s=>`
+    <div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid #f8fafc;">
+      <div style="background:${s.color||'#d97706'};color:white;font-size:10px;font-weight:900;padding:2px 8px;border-radius:5px;min-width:54px;text-align:center;flex-shrink:0;">${s.routeName}</div>
+      <span style="font-size:11px;color:#475569;font-weight:600;">${s.nextTimes.slice(0,3).join('  ·  ')}</span>
     </div>`).join('');
-
-  return `<div style="min-width:220px;">
-    <b style="font-size:13px;">🚏 ${stopName}</b>
-    <div style="font-size:9px;color:#94a3b8;margin-bottom:6px;margin-top:2px;">${data.serviceCount} routes serve this stop</div>
+  return `<div style="min-width:240px;max-width:300px;">
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+      <b style="font-size:13px;">${icon} ${stopName}</b>
+    </div>
+    <div style="font-size:9px;color:#94a3b8;margin-bottom:8px;font-weight:600;">${data.serviceCount} routes · next departures</div>
     ${lines}
-    ${data.services.length>6?`<div style="font-size:10px;color:#94a3b8;padding-top:4px;">+${data.services.length-6} more routes</div>`:''}
+    ${data.services.length>8?`<div style="font-size:10px;color:#94a3b8;padding-top:6px;font-weight:600;">+${data.services.length-8} more routes at this stop</div>`:''}
   </div>`;
 }
 

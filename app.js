@@ -434,6 +434,22 @@ function initMap() {
   stationLayer.addTo(map);
   hazardLayer.addTo(map);
 
+  // Refresh transit stops as user pans/zooms
+  let transitRefreshTimer = null;
+  map.on('moveend zoomend', () => {
+    clearTimeout(transitRefreshTimer);
+    transitRefreshTimer = setTimeout(() => {
+      const center = map.getCenter();
+      const zoom   = map.getZoom();
+      // Only show stops when zoomed in enough (avoid cluttering at zoom < 14)
+      if (zoom >= 14) {
+        refreshTransitOnView(center.lat, center.lng, zoom);
+      } else {
+        stationLayer.clearLayers();
+      }
+    }, 400);
+  });
+
   // Long-press to drop destination
   map.on('contextmenu', async e => {
     showToast('Fetching address…');
@@ -566,37 +582,56 @@ function getNearestBusStops(lat, lng, n=5, km=0.8) {
     : [];
 }
 
-// Show bus stops + metro stations near user on map
-function showNearbyTransit(lat, lng) {
+// Refresh transit stops based on current map view
+function refreshTransitOnView(lat, lng, zoom) {
   stationLayer.clearLayers();
-  // Bus stops within 500m — tap for live schedule
-  getNearestBusStops(lat, lng, 6, 0.5).forEach(s => {
-    const ico = L.divIcon({ className:'',
-      html:`<div style="background:white;border:2px solid #d97706;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;box-shadow:0 2px 6px rgba(0,0,0,.25);">🚏</div>`,
-      iconSize:[20,20], iconAnchor:[10,10] });
-    const marker = L.marker([s.lat,s.lng],{icon:ico}).addTo(stationLayer);
-    marker.bindPopup(`<b>🚏 ${s.name}</b><br><small>${(s.dist*1000).toFixed(0)}m away</small><br><small style="color:#94a3b8">Tap again for schedule…</small>`);
-    marker.on('popupopen', async () => {
-      if(typeof BusEngine !== 'undefined') {
+
+  // Scale radius and count by zoom level
+  const busRadius   = zoom >= 17 ? 0.3 : zoom >= 15 ? 0.5 : 0.8;
+  const busCount    = zoom >= 17 ? 10  : zoom >= 15 ? 8   : 6;
+  const metroRadius = zoom >= 15 ? 1.0 : 1.8;
+  const metroCount  = zoom >= 15 ? 6   : 4;
+
+  // Bus stops
+  if (typeof BusEngine !== 'undefined' && BusEngine.busDataReady()) {
+    BusEngine.getNearestBusStops(lat, lng, busCount, busRadius).forEach(s => {
+      const ico = L.divIcon({ className:'',
+        html:`<div style="background:white;border:2px solid #d97706;border-radius:50%;width:${zoom>=16?22:18}px;height:${zoom>=16?22:18}px;display:flex;align-items:center;justify-content:center;font-size:11px;box-shadow:0 2px 6px rgba(0,0,0,.25);">🚏</div>`,
+        iconSize:[20,20], iconAnchor:[10,10] });
+      const marker = L.marker([s.lat,s.lng],{icon:ico}).addTo(stationLayer);
+      // Immediate content — no "tap again" needed
+      marker.bindPopup(`<div style="min-width:160px;"><b>🚏 ${s.name}</b><br><small style="color:#94a3b8">Loading schedule…</small></div>`, {maxWidth:320});
+      marker.on('popupopen', async () => {
         const html = await BusEngine.buildStopInfoHtml(s.id, s.name, 'bus');
         marker.getPopup().setContent(html).update();
-      }
+      });
     });
-  });
-  // Metro stations within 1.5km — tap for live schedule
+  }
+
+  // Metro stations
   if (typeof MetroEngine !== 'undefined') {
-    MetroEngine.getNearestMetroStations(lat, lng, 5, 1.5).forEach(s => {
+    MetroEngine.getNearestMetroStations(lat, lng, metroCount, metroRadius).forEach(s => {
+      const color = MetroEngine.parseLineColor(
+        Object.values(METRO_DATA?.routes||{}).find(r=>
+          METRO_DATA.route_stops[Object.keys(METRO_DATA.routes).find(k=>METRO_DATA.routes[k]===r)]?.includes(String(s.id))
+        )?.name || ''
+      ) || '#1565c0';
       const ico = L.divIcon({ className:'',
-        html:`<div style="background:#1565c0;border:2px solid white;border-radius:4px;padding:2px 5px;font-size:9px;font-weight:800;color:white;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.3);">🚇</div>`,
+        html:`<div style="background:${color};border:2px solid white;border-radius:5px;padding:3px 6px;font-size:10px;font-weight:800;color:white;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.35);">🚇 ${zoom>=16?s.name:''}</div>`,
         iconSize:[null,null] });
       const marker = L.marker([s.lat,s.lng],{icon:ico}).addTo(stationLayer);
-      marker.bindPopup(`<b>🚇 ${s.name}</b><br><small>${(s.dist*1000).toFixed(0)}m · DMRC</small><br><small style="color:#94a3b8">Tap again for schedule…</small>`);
+      marker.bindPopup(`<div style="min-width:160px;"><b>🚇 ${s.name}</b><br><small style="color:#94a3b8">Loading schedule…</small></div>`, {maxWidth:320});
       marker.on('popupopen', async () => {
         const html = await MetroEngine.buildMetroStopInfoHtml(s.id, s.name);
         marker.getPopup().setContent(html).update();
       });
     });
   }
+}
+
+// Show transit near GPS location (called on first fix)
+function showNearbyTransit(lat, lng) {
+  refreshTransitOnView(lat, lng, map.getZoom() || 15);
 }
 
 // ── SURFACE AI + ENV UPDATE ──

@@ -196,28 +196,27 @@ async function buildMetroHudHtml(legs, originName, destName, walkInKm, walkOutKm
 
 // ── STOP INFO POPUP for metro station ──
 async function buildMetroStopInfoHtml(stopId, stopName){
-  const API_BASE = window.location.hostname==='localhost'?'http://localhost:3000':'';
-  try {
-    const res  = await fetch(`${API_BASE}/api/transit/stop/${stopId}?type=metro`);
-    const data = await res.json();
-    if(!data.services||!data.services.length)
-      return `<b>🚇 ${stopName}</b><br><small style="color:#94a3b8">No schedule data</small>`;
-
-    const lines = data.services.map(s=>`
-      <div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid #f1f5f9;">
-        <div style="background:${s.color||'#1565c0'};width:12px;height:12px;border-radius:50%;flex-shrink:0;"></div>
-        <span style="font-size:11px;font-weight:700;flex:1;">${s.routeName}</span>
-        <span style="font-size:11px;color:#2563eb;font-weight:800;">${s.nextTimes.slice(0,3).join(' · ')}</span>
-      </div>`).join('');
-
-    return `<div style="min-width:240px;">
-      <b style="font-size:13px;">🚇 ${stopName}</b>
-      <div style="font-size:9px;color:#94a3b8;margin-bottom:6px;margin-top:2px;">${data.serviceCount} lines serve this station</div>
-      ${lines}
-    </div>`;
-  } catch(e){
-    return `<b>🚇 ${stopName}</b><br><small style="color:#94a3b8">Schedule unavailable</small>`;
+  // Use client-side data from window.METRO_STOP_TIMES
+  if (typeof BusEngine !== 'undefined') {
+    const data = await BusEngine.getStopTimings(stopId, 'metro');
+    if (data && data.services && data.services.length) {
+      const lines = data.services.map(s=>`
+        <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f8fafc;">
+          <div style="width:14px;height:14px;border-radius:50%;background:${s.color||'#1565c0'};flex-shrink:0;"></div>
+          <span style="font-size:12px;font-weight:700;flex:1;color:#0f172a;">${s.routeName}</span>
+          <span style="font-size:11px;font-weight:800;color:#1565c0;">${s.nextTimes.slice(0,3).join('  ·  ')}</span>
+        </div>`).join('');
+      return `<div style="min-width:240px;max-width:300px;">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+          <b style="font-size:13px;">🚇 ${stopName}</b>
+        </div>
+        <div style="font-size:9px;color:#94a3b8;margin-bottom:8px;font-weight:600;">${data.serviceCount} lines · next trains</div>
+        ${lines}
+      </div>`;
+    }
   }
+  return `<div style="min-width:200px;"><b>🚇 ${stopName}</b><br>
+    <small style="color:#94a3b8;">Schedule loading…<br>Try tapping again shortly.</small></div>`;
 }
 
 window.MetroEngine = {
