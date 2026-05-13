@@ -149,7 +149,7 @@
         <div class="hero-title" id="vaultName">Walker</div>
         <div class="hero-xp" id="vaultXp">0</div>
         <div class="hero-xplbl">Civic XP Earned</div>
-        <button class="btn-name" onclick="editName()">✏️ Change Name</button>
+        <button class="btn-name" onclick="openModal('profileModal')">✏️ Edit Profile</button>
       </div>
 
       <div class="section-title">Footpath Type Legend</div>
@@ -305,29 +305,139 @@
 </script>
 
 <!-- LOGIN MODAL -->
+<!-- ══ LOGIN MODAL ══ -->
 <div class="overlay active" id="loginModal" style="z-index:9999;">
-  <div class="sheet" style="max-height:70vh;">
+  <div class="sheet" style="max-height:90vh;">
     <div class="sheet-handle"></div>
+
+    <!-- Step 1: Email + Name -->
     <div id="loginStep1">
-      <h3>🚶 Welcome to GaitWay</h3>
-      <p>Enter your email to get a login code. No password needed.</p>
-      <input type="email" id="loginEmail" placeholder="your@email.com"
-        style="width:100%;padding:14px;border-radius:12px;border:1.5px solid #e2e8f0;font-size:16px;font-family:inherit;margin-bottom:10px;box-sizing:border-box;">
-      <input type="text" id="loginName" placeholder="Your name (new users)"
-        style="width:100%;padding:14px;border-radius:12px;border:1.5px solid #e2e8f0;font-size:16px;font-family:inherit;margin-bottom:16px;box-sizing:border-box;">
-      <button onclick="requestOTP()" class="btn-start" style="margin:0;">Send Login Code →</button>
-      <button onclick="continueAsGuest()" class="btn-cancel" style="margin-top:10px;">Continue as Guest</button>
-      <div id="loginError" style="color:#dc2626;font-size:12px;font-weight:700;text-align:center;margin-top:8px;"></div>
+      <div style="text-align:center;margin-bottom:20px;">
+        <div style="font-size:48px;margin-bottom:8px;">🚶</div>
+        <h3 style="font-size:22px;font-weight:900;margin:0 0 4px;">Welcome to GaitWay</h3>
+        <p style="color:#64748b;font-size:13px;margin:0;">Walk smarter. Map hazards. Earn XP.</p>
+      </div>
+      <div style="background:#f8fafc;border-radius:14px;padding:16px;margin-bottom:16px;">
+        <div style="font-size:11px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Your Details</div>
+        <input type="text" id="loginName" placeholder="Your name" autocomplete="name"
+          style="width:100%;padding:13px 14px;border-radius:10px;border:1.5px solid #e2e8f0;font-size:15px;font-family:inherit;margin-bottom:8px;box-sizing:border-box;background:white;">
+        <input type="email" id="loginEmail" placeholder="Email address" autocomplete="email" inputmode="email"
+          style="width:100%;padding:13px 14px;border-radius:10px;border:1.5px solid #e2e8f0;font-size:15px;font-family:inherit;margin-bottom:4px;box-sizing:border-box;background:white;">
+        <div style="font-size:11px;color:#94a3b8;font-weight:600;padding:4px 2px;">No password. We email you a code.</div>
+      </div>
+      <button onclick="requestOTP()" class="btn-start" style="margin:0 0 8px;font-size:16px;">Get Login Code →</button>
+      <button onclick="continueAsGuest()" class="btn-cancel">Continue as Guest</button>
+      <div id="loginError" style="color:#dc2626;font-size:12px;font-weight:700;text-align:center;margin-top:10px;min-height:16px;"></div>
+      <div style="text-align:center;margin-top:14px;">
+        <div style="display:flex;gap:16px;justify-content:center;font-size:11px;color:#94a3b8;font-weight:600;">
+          <span>✅ No password</span><span>✅ Free forever</span><span>✅ Data stays private</span>
+        </div>
+      </div>
     </div>
+
+    <!-- Step 2: OTP verify -->
     <div id="loginStep2" style="display:none;">
-      <h3>📬 Check your email</h3>
-      <p id="loginStep2Desc">Enter the 6-digit code sent to your email.</p>
-      <input type="number" id="loginOTP" placeholder="000000" maxlength="6"
-        style="width:100%;padding:14px;border-radius:12px;border:1.5px solid #e2e8f0;font-size:28px;font-weight:900;letter-spacing:8px;text-align:center;font-family:inherit;margin-bottom:16px;box-sizing:border-box;">
-      <button onclick="verifyOTP()" class="btn-start" style="margin:0;">Verify & Login →</button>
-      <button onclick="document.getElementById('loginStep1').style.display='block';document.getElementById('loginStep2').style.display='none';" class="btn-cancel" style="margin-top:10px;">← Back</button>
-      <div id="otpError" style="color:#dc2626;font-size:12px;font-weight:700;text-align:center;margin-top:8px;"></div>
+      <div style="text-align:center;margin-bottom:20px;">
+        <div style="font-size:48px;margin-bottom:8px;">📬</div>
+        <h3 style="font-size:20px;font-weight:900;margin:0 0 4px;">Check your email</h3>
+        <p id="loginStep2Desc" style="color:#64748b;font-size:13px;margin:0;">Enter the 6-digit code we sent you.</p>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:center;margin-bottom:20px;" id="otpBoxes">
+        <input type="number" class="otp-digit" id="otp0" maxlength="1" min="0" max="9" inputmode="numeric"
+          style="width:44px;height:56px;border-radius:12px;border:2px solid #e2e8f0;font-size:24px;font-weight:900;text-align:center;font-family:inherit;">
+        <input type="number" class="otp-digit" id="otp1" maxlength="1" inputmode="numeric"
+          style="width:44px;height:56px;border-radius:12px;border:2px solid #e2e8f0;font-size:24px;font-weight:900;text-align:center;font-family:inherit;">
+        <input type="number" class="otp-digit" id="otp2" maxlength="1" inputmode="numeric"
+          style="width:44px;height:56px;border-radius:12px;border:2px solid #e2e8f0;font-size:24px;font-weight:900;text-align:center;font-family:inherit;">
+        <input type="number" class="otp-digit" id="otp3" maxlength="1" inputmode="numeric"
+          style="width:44px;height:56px;border-radius:12px;border:2px solid #e2e8f0;font-size:24px;font-weight:900;text-align:center;font-family:inherit;">
+        <input type="number" class="otp-digit" id="otp4" maxlength="1" inputmode="numeric"
+          style="width:44px;height:56px;border-radius:12px;border:2px solid #e2e8f0;font-size:24px;font-weight:900;text-align:center;font-family:inherit;">
+        <input type="number" class="otp-digit" id="otp5" maxlength="1" inputmode="numeric"
+          style="width:44px;height:56px;border-radius:12px;border:2px solid #e2e8f0;font-size:24px;font-weight:900;text-align:center;font-family:inherit;">
+      </div>
+      <button onclick="verifyOTP()" class="btn-start" style="margin:0 0 8px;" id="verifyBtn">Verify Code →</button>
+      <button onclick="resendOTP()" class="btn-cancel" id="resendBtn">Resend Code</button>
+      <button onclick="backToStep1()" style="background:none;border:none;color:#94a3b8;font-size:12px;font-weight:700;cursor:pointer;display:block;margin:10px auto 0;font-family:inherit;">← Change email</button>
+      <div id="otpError" style="color:#dc2626;font-size:12px;font-weight:700;text-align:center;margin-top:10px;min-height:16px;"></div>
+      <div id="otpTimer" style="color:#94a3b8;font-size:11px;font-weight:600;text-align:center;margin-top:6px;"></div>
     </div>
+
+    <!-- Step 3: Profile setup (after first login) -->
+    <div id="loginStep3" style="display:none;">
+      <div style="text-align:center;margin-bottom:20px;">
+        <div style="font-size:48px;margin-bottom:8px;">🎉</div>
+        <h3 style="font-size:20px;font-weight:900;margin:0 0 4px;">You're in!</h3>
+        <p style="color:#64748b;font-size:13px;margin:0;">Tell us a bit more to personalise your experience.</p>
+      </div>
+      <div style="background:#f8fafc;border-radius:14px;padding:16px;margin-bottom:16px;">
+        <div style="font-size:11px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;">Walking Profile</div>
+        <div style="margin-bottom:12px;">
+          <label style="font-size:12px;font-weight:700;color:#475569;display:block;margin-bottom:6px;">I usually walk for</label>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;" id="walkPurpose">
+            <button class="profile-chip active" data-val="commute" onclick="toggleProfileChip(this,'walkPurpose')">🏢 Commute</button>
+            <button class="profile-chip" data-val="fitness" onclick="toggleProfileChip(this,'walkPurpose')">🏃 Fitness</button>
+            <button class="profile-chip" data-val="leisure" onclick="toggleProfileChip(this,'walkPurpose')">🌳 Leisure</button>
+            <button class="profile-chip" data-val="errands" onclick="toggleProfileChip(this,'walkPurpose')">🛍️ Errands</button>
+          </div>
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="font-size:12px;font-weight:700;color:#475569;display:block;margin-bottom:6px;">I care most about</label>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;" id="walkPriority">
+            <button class="profile-chip active" data-val="safety" onclick="toggleProfileChip(this,'walkPriority')">🛡️ Safety</button>
+            <button class="profile-chip" data-val="shade" onclick="toggleProfileChip(this,'walkPriority')">🌳 Shade</button>
+            <button class="profile-chip" data-val="speed" onclick="toggleProfileChip(this,'walkPriority')">⚡ Speed</button>
+            <button class="profile-chip" data-val="accessibility" onclick="toggleProfileChip(this,'walkPriority')">♿ Accessibility</button>
+          </div>
+        </div>
+        <div>
+          <label style="font-size:12px;font-weight:700;color:#475569;display:block;margin-bottom:6px;">My neighbourhood / area</label>
+          <input type="text" id="profileArea" placeholder="e.g. Dwarka, Lajpat Nagar…"
+            style="width:100%;padding:11px 12px;border-radius:10px;border:1.5px solid #e2e8f0;font-size:14px;font-family:inherit;box-sizing:border-box;background:white;">
+        </div>
+      </div>
+      <button onclick="saveProfile()" class="btn-start" style="margin:0;">Start Walking 🚶</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ EDIT PROFILE MODAL ══ -->
+<div class="overlay" id="profileModal">
+  <div class="sheet" style="max-height:90vh;">
+    <div class="sheet-handle"></div>
+    <h3>👤 Your Profile</h3>
+    <div style="background:#f8fafc;border-radius:14px;padding:16px;margin-bottom:16px;">
+      <div style="font-size:11px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Account</div>
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+        <div id="profileAvatar" style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:22px;color:white;flex-shrink:0;">🚶</div>
+        <div style="flex:1;">
+          <input type="text" id="profileName" placeholder="Your name"
+            style="width:100%;padding:10px 12px;border-radius:10px;border:1.5px solid #e2e8f0;font-size:15px;font-weight:700;font-family:inherit;box-sizing:border-box;">
+        </div>
+      </div>
+      <div style="font-size:11px;color:#94a3b8;font-weight:600;" id="profileEmailDisplay"></div>
+    </div>
+    <div style="background:#f8fafc;border-radius:14px;padding:16px;margin-bottom:16px;">
+      <div style="font-size:11px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;">Walking Stats</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+        <div style="background:white;border-radius:10px;padding:10px;text-align:center;border:1px solid #e2e8f0;">
+          <div style="font-size:22px;font-weight:900;color:#2563eb;" id="pStatXp">0</div>
+          <div style="font-size:10px;color:#94a3b8;font-weight:700;">XP</div>
+        </div>
+        <div style="background:white;border-radius:10px;padding:10px;text-align:center;border:1px solid #e2e8f0;">
+          <div style="font-size:22px;font-weight:900;color:#16a34a;" id="pStatRoutes">0</div>
+          <div style="font-size:10px;color:#94a3b8;font-weight:700;">Walks</div>
+        </div>
+        <div style="background:white;border-radius:10px;padding:10px;text-align:center;border:1px solid #e2e8f0;">
+          <div style="font-size:22px;font-weight:900;color:#dc2626;" id="pStatHazards">0</div>
+          <div style="font-size:10px;color:#94a3b8;font-weight:700;">Reports</div>
+        </div>
+      </div>
+    </div>
+    <div id="profileRouteHistory" style="margin-bottom:16px;"></div>
+    <button onclick="saveProfileEdit()" class="btn-start" style="margin:0 0 8px;">Save Changes</button>
+    <button onclick="logoutUser()" style="background:#fff5f5;border:1.5px solid #fecaca;color:#dc2626;width:100%;padding:12px;border-radius:12px;font-weight:700;font-size:14px;cursor:pointer;font-family:inherit;">Sign Out</button>
+    <button class="btn-cancel" onclick="closeModal('profileModal')">Close</button>
   </div>
 </div>
 </body>

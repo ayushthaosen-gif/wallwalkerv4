@@ -140,11 +140,25 @@ app.post('/api/auth/verify-otp', async (req, res) => {
          updated_at = NOW()`,
       [userId, name?.trim() || 'Walker']
     );
+    // Check if user existed before this login
+    const existed = await pool.query(`SELECT id FROM users WHERE id=$1`, [userId]);
+    const isNewUser = existed.rows.length === 0;
+
+    await pool.query(
+      `INSERT INTO users (id, name) VALUES ($1, $2)
+       ON CONFLICT (id) DO UPDATE SET
+         name = CASE WHEN $2 IS NOT NULL AND $2 != '' THEN $2 ELSE users.name END,
+         updated_at = NOW()`,
+      [userId, name?.trim() || 'Walker']
+    );
     const { rows } = await pool.query(
       `SELECT id,name,xp,route_count,hazard_count,created_at FROM users WHERE id=$1`,
       [userId]
     );
-    res.json({ ok: true, user: rows[0], token: makeToken(userId), userId });
+    // Return email hint (first 2 chars + domain) for display — never full email
+    const parts     = email.split('@');
+    const emailHint = parts[0].slice(0,2) + '***@' + parts[1];
+    res.json({ ok: true, user: { ...rows[0], email_hint: emailHint }, token: makeToken(userId), userId, isNewUser });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -155,11 +169,16 @@ app.post('/api/users/upsert', async (req, res) => {
   const { id, name } = req.body;
   if (!id) return res.status(400).json({ error: 'id required' });
   try {
+    const { walk_purpose, walk_priority, area } = req.body;
     await pool.query(
-      `INSERT INTO users (id,name) VALUES ($1,$2)
+      `INSERT INTO users (id,name,walk_purpose,walk_priority,area) VALUES ($1,$2,$3,$4,$5)
        ON CONFLICT (id) DO UPDATE SET
-         name=COALESCE(NULLIF($2,'Walker'),users.name),updated_at=NOW()`,
-      [id, name || 'Walker']
+         name=COALESCE(NULLIF($2,'Walker'),users.name),
+         walk_purpose=COALESCE($3,users.walk_purpose),
+         walk_priority=COALESCE($4,users.walk_priority),
+         area=COALESCE($5,users.area),
+         updated_at=NOW()`,
+      [id, name||'Walker', walk_purpose||null, walk_priority||null, area||null]
     );
     const { rows } = await pool.query(
       `SELECT id,name,xp,route_count,hazard_count FROM users WHERE id=$1`, [id]

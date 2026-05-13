@@ -13,47 +13,136 @@ if (!userId) {
 }
 
 
-// ── AUTH ──
+// ══════════════════════════════════════════════
+// AUTH & USER PROFILE
+// ══════════════════════════════════════════════
 let userToken = localStorage.getItem('gw_token') || null;
+let otpTimer  = null;
+let otpResendCountdown = 0;
 
 function isLoggedIn() { return !!userToken; }
-
 function authHeaders() {
-  return userToken ? { 'Content-Type':'application/json', 'Authorization':'Bearer '+userToken }
-                   : { 'Content-Type':'application/json' };
+  return userToken
+    ? { 'Content-Type':'application/json', 'Authorization':'Bearer '+userToken }
+    : { 'Content-Type':'application/json' };
 }
 
+// ── OTP digit box navigation ──
+function initOTPBoxes() {
+  const boxes = document.querySelectorAll('.otp-digit');
+  boxes.forEach((box, i) => {
+    box.addEventListener('input', e => {
+      const v = e.target.value.toString().slice(-1);
+      e.target.value = v;
+      if (v && i < boxes.length - 1) boxes[i+1].focus();
+      if (getOTPValue().length === 6) verifyOTP();
+    });
+    box.addEventListener('keydown', e => {
+      if (e.key === 'Backspace' && !box.value && i > 0) boxes[i-1].focus();
+    });
+    box.addEventListener('paste', e => {
+      e.preventDefault();
+      const paste = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g,'').slice(0,6);
+      paste.split('').forEach((ch, idx) => { if (boxes[idx]) boxes[idx].value = ch; });
+      if (paste.length === 6) verifyOTP();
+    });
+  });
+}
+
+function getOTPValue() {
+  return [0,1,2,3,4,5].map(i => document.getElementById('otp'+i)?.value||'').join('');
+}
+
+function clearOTPBoxes() {
+  [0,1,2,3,4,5].forEach(i => { const el=document.getElementById('otp'+i); if(el) el.value=''; });
+}
+
+function startOTPTimer(secs=120) {
+  clearInterval(otpTimer);
+  otpResendCountdown = secs;
+  const el = document.getElementById('otpTimer');
+  const rb  = document.getElementById('resendBtn');
+  if (rb) rb.disabled = true;
+  otpTimer = setInterval(() => {
+    otpResendCountdown--;
+    if (el) el.textContent = otpResendCountdown > 0 ? `Resend in ${otpResendCountdown}s` : '';
+    if (otpResendCountdown <= 0) {
+      clearInterval(otpTimer);
+      if (rb) rb.disabled = false;
+    }
+  }, 1000);
+}
+
+// ── Step 1: Request OTP ──
 async function requestOTP() {
   const email = document.getElementById('loginEmail').value.trim();
   const name  = document.getElementById('loginName').value.trim();
   const errEl = document.getElementById('loginError');
   errEl.textContent = '';
-  if (!email || !email.includes('@')) { errEl.textContent = 'Enter a valid email'; return; }
+  if (!name) { errEl.textContent = 'Please enter your name'; return; }
+  if (!email || !email.includes('@')) { errEl.textContent = 'Enter a valid email address'; return; }
+
+  const btn = document.querySelector('#loginStep1 .btn-start');
+  btn.textContent = 'Sending…'; btn.disabled = true;
+
   try {
-    const res  = await fetch(`${API}/api/auth/request-otp`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ email }) });
+    const res  = await fetch(`${API}/api/auth/request-otp`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ email })
+    });
     const data = await res.json();
-    if (!data.ok) { errEl.textContent = data.error; return; }
+    if (!data.ok) { errEl.textContent = data.error || 'Could not send code'; btn.textContent='Get Login Code →'; btn.disabled=false; return; }
+
     localStorage.setItem('gw_pending_email', email);
     localStorage.setItem('gw_pending_name',  name);
+
     document.getElementById('loginStep1').style.display = 'none';
     document.getElementById('loginStep2').style.display = 'block';
     document.getElementById('loginStep2Desc').textContent = `Code sent to ${email}`;
-    // Dev: auto-fill OTP if returned
-    if (data.dev_otp) document.getElementById('loginOTP').value = data.dev_otp;
-  } catch(e) { errEl.textContent = 'Network error — try again'; }
+
+    initOTPBoxes();
+    startOTPTimer(120);
+    setTimeout(() => document.getElementById('otp0')?.focus(), 100);
+
+    // Dev mode — auto fill
+    if (data.dev_otp) {
+      const digits = data.dev_otp.toString().split('');
+      digits.forEach((d,i) => { const el=document.getElementById('otp'+i); if(el) el.value=d; });
+    }
+  } catch(e) {
+    errEl.textContent = 'Network error — check connection';
+  }
+  btn.textContent = 'Get Login Code →'; btn.disabled = false;
 }
 
+// ── Step 2: Verify OTP ──
 async function verifyOTP() {
-  const otp   = document.getElementById('loginOTP').value.trim();
+  const otp   = getOTPValue();
   const email = localStorage.getItem('gw_pending_email');
   const name  = localStorage.getItem('gw_pending_name') || 'Walker';
   const errEl = document.getElementById('otpError');
   errEl.textContent = '';
-  if (!otp || otp.length < 6) { errEl.textContent = 'Enter the 6-digit code'; return; }
+
+  if (otp.length < 6) { errEl.textContent = 'Enter all 6 digits'; return; }
+
+  const btn = document.getElementById('verifyBtn');
+  btn.textContent = 'Verifying…'; btn.disabled = true;
+
   try {
-    const res  = await fetch(`${API}/api/auth/verify-otp`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ email, otp, name }) });
+    const res  = await fetch(`${API}/api/auth/verify-otp`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ email, otp, name })
+    });
     const data = await res.json();
-    if (!data.ok) { errEl.textContent = data.error || 'Invalid code'; return; }
+    if (!data.ok) {
+      errEl.textContent = data.error || 'Incorrect code — try again';
+      clearOTPBoxes();
+      document.getElementById('otp0')?.focus();
+      btn.textContent = 'Verify Code →'; btn.disabled = false;
+      return;
+    }
+    clearInterval(otpTimer);
+
     // Save session
     userId    = data.userId;
     userToken = data.token;
@@ -62,46 +151,177 @@ async function verifyOTP() {
     localStorage.setItem('gw_user_name', data.user.name);
     localStorage.removeItem('gw_pending_email');
     localStorage.removeItem('gw_pending_name');
+
     applyUserToUI(data.user);
-    document.getElementById('loginModal').classList.remove('active');
-    showToast(`Welcome, ${data.user.name}! 🎉`);
-  } catch(e) { errEl.textContent = 'Network error — try again'; }
+
+    // First-time user → show profile setup
+    if (data.isNewUser) {
+      document.getElementById('loginStep2').style.display = 'none';
+      document.getElementById('loginStep3').style.display = 'block';
+    } else {
+      document.getElementById('loginModal').classList.remove('active');
+      showToast(`Welcome back, ${data.user.name}! 🎉`);
+    }
+  } catch(e) {
+    errEl.textContent = 'Network error — try again';
+  }
+  btn.textContent = 'Verify Code →'; btn.disabled = false;
+}
+
+// ── Resend OTP ──
+async function resendOTP() {
+  const email = localStorage.getItem('gw_pending_email');
+  if (!email) { backToStep1(); return; }
+  try {
+    await fetch(`${API}/api/auth/request-otp`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ email })
+    });
+    clearOTPBoxes();
+    document.getElementById('otp0')?.focus();
+    document.getElementById('otpError').textContent = '';
+    startOTPTimer(120);
+    showToast('New code sent!');
+  } catch(e) { showToast('Could not resend — check connection'); }
+}
+
+function backToStep1() {
+  clearInterval(otpTimer);
+  document.getElementById('loginStep1').style.display = 'block';
+  document.getElementById('loginStep2').style.display = 'none';
+  document.getElementById('loginError').textContent = '';
+}
+
+// ── Profile chip toggle ──
+function toggleProfileChip(btn, groupId) {
+  document.querySelectorAll(`#${groupId} .profile-chip`).forEach(c => c.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+// ── Save profile (step 3) ──
+async function saveProfile() {
+  const purpose  = document.querySelector('#walkPurpose .profile-chip.active')?.dataset.val || 'commute';
+  const priority = document.querySelector('#walkPriority .profile-chip.active')?.dataset.val || 'safety';
+  const area     = document.getElementById('profileArea')?.value.trim() || '';
+  const name     = localStorage.getItem('gw_pending_name') || localStorage.getItem('gw_user_name') || 'Walker';
+
+  localStorage.setItem('gw_walk_purpose',  purpose);
+  localStorage.setItem('gw_walk_priority', priority);
+  localStorage.setItem('gw_area',          area);
+
+  // Save to server
+  try {
+    await fetch(`${API}/api/users/upsert`, {
+      method:'POST', headers: authHeaders(),
+      body: JSON.stringify({ id:userId, name, walk_purpose:purpose, walk_priority:priority, area })
+    });
+  } catch(e) {}
+
+  document.getElementById('loginModal').classList.remove('active');
+  showToast(`Welcome, ${name}! Let's walk 🚶`);
 }
 
 function continueAsGuest() {
   document.getElementById('loginModal').classList.remove('active');
-  showToast('Continuing as guest — data saved locally');
+  showToast('Guest mode — reports saved locally');
 }
 
+// ── Apply user data to all UI elements ──
 function applyUserToUI(user) {
+  if (!user) return;
   document.getElementById('vaultName').textContent = user.name || 'Walker';
   document.getElementById('vaultXp').textContent   = (user.xp || 0).toLocaleString();
+  // Update profile modal if open
+  const pn = document.getElementById('profileName');
+  if (pn) pn.value = user.name || '';
+  const ed = document.getElementById('profileEmailDisplay');
+  if (ed) ed.textContent = user.email_hint ? `Signed in · ${user.email_hint}` : 'Guest account';
+  const ps = document.getElementById('pStatXp');      if (ps) ps.textContent = (user.xp||0).toLocaleString();
+  const pr = document.getElementById('pStatRoutes');  if (pr) pr.textContent = user.route_count || 0;
+  const ph = document.getElementById('pStatHazards'); if (ph) ph.textContent = user.hazard_count || 0;
 }
 
 function showLoginModal() {
-  document.getElementById('loginModal').classList.add('active');
+  document.getElementById('loginStep1').style.display = 'block';
+  document.getElementById('loginStep2').style.display = 'none';
+  document.getElementById('loginStep3').style.display = 'none';
+  openModal('loginModal');
 }
 
+// ── Edit profile save ──
+async function saveProfileEdit() {
+  const name = document.getElementById('profileName')?.value.trim();
+  if (!name) { showToast('Enter a name'); return; }
+  try {
+    const res = await fetch(`${API}/api/users/${userId}`, {
+      method:'PATCH', headers: authHeaders(),
+      body: JSON.stringify({ name })
+    });
+    const user = await res.json();
+    localStorage.setItem('gw_user_name', user.name);
+    applyUserToUI(user);
+    closeModal('profileModal');
+    showToast('Profile saved ✓');
+  } catch(e) { showToast('Could not save — check connection'); }
+}
+
+// ── Logout ──
+function logoutUser() {
+  if (!confirm('Sign out of GaitWay?')) return;
+  userToken = null; userId = null;
+  ['gw_token','gw_user_id','gw_user_name','gw_pending_email','gw_pending_name'].forEach(k => localStorage.removeItem(k));
+  closeModal('profileModal');
+  applyUserToUI({ name:'Walker', xp:0, route_count:0, hazard_count:0 });
+  showLoginModal();
+  showToast('Signed out');
+}
+
+// ── Load route history into profile modal ──
+async function loadProfileRouteHistory() {
+  const el = document.getElementById('profileRouteHistory');
+  if (!el || !userId) return;
+  try {
+    const res = await fetch(`${API}/api/routes/${userId}`);
+    const routes = await res.json();
+    if (!routes.length) { el.innerHTML = '<div style="color:#94a3b8;font-size:12px;text-align:center;padding:10px;">No walks yet</div>'; return; }
+    el.innerHTML = '<div style="font-size:12px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Recent Walks</div>'
+      + routes.slice(0,5).map(r => `
+        <div style="background:#f8fafc;border-radius:10px;padding:10px 12px;margin-bottom:6px;display:flex;align-items:center;gap:10px;">
+          <div style="font-size:18px;">${r.mode==='transit'?'🚌':r.mode==='safe'?'🛡️':'🚶'}</div>
+          <div style="flex:1;">
+            <div style="font-size:12px;font-weight:700;">${r.from_name||'?'} → ${r.to_name||'?'}</div>
+            <div style="font-size:10px;color:#94a3b8;">${r.dist_km?.toFixed(1)||'?'}km · ${r.steps?.toLocaleString()||'?'} steps</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:16px;font-weight:900;color:#2563eb;">${r.walk_score||'—'}</div>
+            <div style="font-size:9px;color:#94a3b8;">score</div>
+          </div>
+        </div>`).join('');
+  } catch(e) {}
+}
+
+// ── Init user session on load ──
 async function initUserSession() {
-  // Show login if no token and no stored userId
   const storedToken = localStorage.getItem('gw_token');
   const storedId    = localStorage.getItem('gw_user_id');
+
   if (!storedToken && !storedId) {
-    // New user — show login
-    setTimeout(() => openModal('loginModal'), 800);
+    // Brand new user — show login after map loads
+    setTimeout(() => openModal('loginModal'), 1000);
     return;
   }
+
   userToken = storedToken;
   userId    = storedId || userId;
+
   try {
-    const res = await fetch(`${API}/api/users/upsert`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const res  = await fetch(`${API}/api/users/upsert`, {
+      method: 'POST', headers: { 'Content-Type':'application/json' },
       body: JSON.stringify({ id: userId, name: localStorage.getItem('gw_user_name') || 'Walker' })
     });
     const user = await res.json();
     applyUserToUI(user);
-  } catch(e) { console.warn('User session offline'); }
+  } catch(e) { console.warn('User session offline — using cached data'); }
 }
 
 async function loadHazardsFromDB() {
@@ -194,7 +414,7 @@ function initTabs() {
       const target = document.getElementById(this.dataset.target);
       if (target) target.classList.add('active');
       if (this.dataset.target === 'explore-tab') setTimeout(() => map.invalidateSize(), 100);
-      if (this.dataset.target === 'vault-tab') refreshVaultStats();
+      if (this.dataset.target === 'vault-tab') { refreshVaultStats(); loadProfileRouteHistory(); }
     });
   });
 }
