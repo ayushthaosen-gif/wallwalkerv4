@@ -556,7 +556,7 @@ function initMap() {
 
   map = L.map('map', { zoomControl:false, attributionControl:false })
          .setView([28.6139, 77.2090], 13);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png').addTo(map);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19 }).addTo(map);
   interactiveLayer.addTo(map);
   transitLayer.addTo(map);
   stationLayer.addTo(map);
