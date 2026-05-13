@@ -5,6 +5,107 @@ const API = window.location.hostname === 'localhost'
   ? 'http://localhost:3000'
   : '';  // Same origin on Render — empty string works
 
+
+// ══════════════════════════════════════════════
+// PWA INSTALL
+// ══════════════════════════════════════════════
+let _deferredInstallPrompt = null;
+
+function initPWA() {
+  const dismissed = localStorage.getItem('gw_install_dismissed');
+  const installed  = window.matchMedia('(display-mode: standalone)').matches
+                  || window.navigator.standalone === true;
+
+  if (installed || dismissed) return; // already installed or user dismissed
+
+  const ua       = navigator.userAgent;
+  const isIOS    = /iphone|ipad|ipod/i.test(ua);
+  const isAndroid= /android/i.test(ua);
+  const isSafari = /safari/i.test(ua) && !/chrome/i.test(ua);
+
+  // Android/Chrome: listen for beforeinstallprompt
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    _deferredInstallPrompt = e;
+    // Show the banner after 30 seconds on the page
+    setTimeout(() => showInstallBanner(), 30000);
+  });
+
+  // iOS Safari: show manual instructions after delay
+  if (isIOS && isSafari) {
+    setTimeout(() => {
+      showPlatform('ios');
+      openModal('iosInstallModal');
+    }, 20000);
+    return;
+  }
+
+  // Android non-Chrome or other: show Android steps
+  if (isAndroid && !window.addEventListener.toString().includes('beforeinstallprompt')) {
+    setTimeout(() => {
+      showPlatform('android');
+      openModal('iosInstallModal');
+    }, 25000);
+  }
+}
+
+function showInstallBanner() {
+  const dismissed = localStorage.getItem('gw_install_dismissed');
+  const installed  = window.matchMedia('(display-mode: standalone)').matches;
+  if (dismissed || installed) return;
+  document.getElementById('installBanner').style.display = 'block';
+}
+
+function hideInstallBanner() {
+  document.getElementById('installBanner').style.display = 'none';
+}
+
+async function triggerInstall() {
+  if (_deferredInstallPrompt) {
+    _deferredInstallPrompt.prompt();
+    const { outcome } = await _deferredInstallPrompt.userChoice;
+    _deferredInstallPrompt = null;
+    hideInstallBanner();
+    if (outcome === 'accepted') {
+      localStorage.setItem('gw_install_dismissed', '1');
+      showToast('GaitWay added to home screen! 🎉');
+    }
+  } else {
+    // Fallback: show manual instructions
+    hideInstallBanner();
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    showPlatform(isIOS ? 'ios' : 'android');
+    openModal('iosInstallModal');
+  }
+}
+
+function dismissInstall() {
+  hideInstallBanner();
+  localStorage.setItem('gw_install_dismissed', '1');
+}
+
+function showPlatform(platform) {
+  document.getElementById('iosSteps').style.display     = platform==='ios'     ? 'block' : 'none';
+  document.getElementById('androidSteps').style.display = platform==='android' ? 'block' : 'none';
+  document.getElementById('tabIos').style.background     = platform==='ios'     ? '#2563eb' : '#f1f5f9';
+  document.getElementById('tabIos').style.color          = platform==='ios'     ? 'white'   : '#64748b';
+  document.getElementById('tabAndroid').style.background = platform==='android' ? '#16a34a' : '#f1f5f9';
+  document.getElementById('tabAndroid').style.color      = platform==='android' ? 'white'   : '#64748b';
+}
+
+// Also add install shortcut in vault (show button if not installed)
+function checkInstallState() {
+  const installed = window.matchMedia('(display-mode: standalone)').matches
+                 || window.navigator.standalone === true;
+  const el = document.getElementById('installShortcut');
+  if (!el) return;
+  if (installed) {
+    el.innerHTML = '<div style="color:#16a34a;font-size:12px;font-weight:700;">✅ Running as installed app</div>';
+  } else {
+    el.innerHTML = '<button onclick="triggerInstall()" style="width:100%;background:#2563eb;color:white;border:none;padding:12px;border-radius:12px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;">📲 Add to Home Screen</button>';
+  }
+}
+
 // ── USER SESSION ──
 let userId = localStorage.getItem('gw_user_id');
 if (!userId) {
@@ -402,6 +503,8 @@ window.onload = () => {
   initSearchBoxes();
   pollBusData();
   initUserSession();
+  initPWA();
+  checkInstallState();
 };
 
 // ── TABS ──
@@ -600,10 +703,11 @@ function refreshTransitOnView(lat, lng, zoom) {
         iconSize:[20,20], iconAnchor:[10,10] });
       const marker = L.marker([s.lat,s.lng],{icon:ico}).addTo(stationLayer);
       // Immediate content — no "tap again" needed
-      marker.bindPopup(`<div style="min-width:160px;"><b>🚏 ${s.name}</b><br><small style="color:#94a3b8">Loading schedule…</small></div>`, {maxWidth:320});
+      marker.bindPopup(`<div style="min-width:160px;"><b>🚏 ${s.name}</b><br><small style="color:#2563eb;font-weight:600;">⏳ Loading schedule…</small></div>`, {maxWidth:320});
       marker.on('popupopen', async () => {
+        // getStopTimings waits up to 8s for data — popup auto-updates when ready
         const html = await BusEngine.buildStopInfoHtml(s.id, s.name, 'bus');
-        marker.getPopup().setContent(html).update();
+        if (marker.isPopupOpen()) marker.getPopup().setContent(html).update();
       });
     });
   }
@@ -620,10 +724,10 @@ function refreshTransitOnView(lat, lng, zoom) {
         html:`<div style="background:${color};border:2px solid white;border-radius:5px;padding:3px 6px;font-size:10px;font-weight:800;color:white;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.35);">🚇 ${zoom>=16?s.name:''}</div>`,
         iconSize:[null,null] });
       const marker = L.marker([s.lat,s.lng],{icon:ico}).addTo(stationLayer);
-      marker.bindPopup(`<div style="min-width:160px;"><b>🚇 ${s.name}</b><br><small style="color:#94a3b8">Loading schedule…</small></div>`, {maxWidth:320});
+      marker.bindPopup(`<div style="min-width:160px;"><b>🚇 ${s.name}</b><br><small style="color:#2563eb;font-weight:600;">⏳ Loading schedule…</small></div>`, {maxWidth:320});
       marker.on('popupopen', async () => {
         const html = await MetroEngine.buildMetroStopInfoHtml(s.id, s.name);
-        marker.getPopup().setContent(html).update();
+        if (marker.isPopupOpen()) marker.getPopup().setContent(html).update();
       });
     });
   }
@@ -886,6 +990,10 @@ async function pickRoute(type) {
 function showHud(type, route, fromLL) {
   const hud = document.getElementById('hud');
   hud.classList.add('active'); isMinimized = false; hud.classList.remove('mini');
+  const btnLbl  = document.getElementById('btnMiniToggle');
+  const restore = document.getElementById('hudRestoreBtn');
+  if (btnLbl)  btnLbl.textContent  = '▼ Min';
+  if (restore) restore.classList.remove('visible');
 
   const rd     = simData[type] || simData.walk;
   const steps  = route.legs[0].steps;
@@ -1228,7 +1336,28 @@ function clearRoute(clearInputs) {
 
 function toggleMini() {
   isMinimized = !isMinimized;
-  document.getElementById('hud').classList.toggle('mini', isMinimized);
+  const hud     = document.getElementById('hud');
+  const btnLbl  = document.getElementById('btnMiniToggle');
+  const restore = document.getElementById('hudRestoreBtn');
+
+  hud.classList.toggle('mini', isMinimized);
+
+  if (isMinimized) {
+    // Update button label
+    if (btnLbl) { btnLbl.textContent = '▲ Max'; }
+    // Show floating restore bubble with current time/dist
+    if (restore) {
+      const time = document.getElementById('hudTime')?.textContent || '';
+      const dist = document.getElementById('hudDist')?.textContent || '';
+      const label = document.getElementById('hudRestoreLabel');
+      if (label) label.textContent = `🚶 ${time} · ${dist} · tap to expand`;
+      restore.classList.add('visible');
+    }
+  } else {
+    // Maximised
+    if (btnLbl) { btnLbl.textContent = '▼ Min'; }
+    if (restore) restore.classList.remove('visible');
+  }
 }
 
 function toggleTrees() {

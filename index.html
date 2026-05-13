@@ -6,7 +6,19 @@
   <meta name="theme-color" content="#2563eb">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-touch-fullscreen" content="yes">
+  <meta name="apple-mobile-web-app-title" content="GaitWay">
+  <meta name="application-name" content="GaitWay">
+  <meta name="msapplication-TileColor" content="#2563eb">
+  <meta name="msapplication-tap-highlight" content="no">
+  <!-- iOS touch icon -->
+  <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3204/3204933.png">
+  <link rel="apple-touch-icon" sizes="152x152" href="https://cdn-icons-png.flaticon.com/512/3204/3204933.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="https://cdn-icons-png.flaticon.com/512/3204/3204933.png">
+  <link rel="apple-touch-icon" sizes="167x167" href="https://cdn-icons-png.flaticon.com/512/3204/3204933.png">
+  <!-- iOS splash screens -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>GaitWay — Walk Smart</title>
   <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -74,9 +86,12 @@
       <!-- HUD -->
       <div class="hud" id="hud">
         <div class="hud-topbar">
-          <div style="width:26px;"></div>
-          <div class="pill-handle" onclick="toggleMini()"></div>
-          <button class="btn-close" onclick="clearRoute(true)">✕</button>
+          <button class="btn-close" onclick="clearRoute(true)" title="Close">✕</button>
+          <div class="pill-handle" onclick="toggleMini()" title="Minimise / Maximise"></div>
+          <button id="btnMiniToggle" onclick="toggleMini()" title="Minimise"
+            style="background:#f1f5f9;border:none;border-radius:10px;padding:5px 10px;font-size:13px;font-weight:800;color:#475569;cursor:pointer;font-family:inherit;transition:all .2s;">
+            ▼ Min
+          </button>
         </div>
         <div class="hud-scores">
           <div class="score-block">
@@ -182,6 +197,7 @@
         <div class="diag-row"><span>Lifetime Steps</span><span class="diag-val" id="vLifetimeSteps">0</span></div>
       </div>
 
+      <div id="installShortcut" style="margin-bottom:16px;"></div>
       <div class="section-title">Preferences</div>
       <div class="pref-row"><div class="pref-txt"><b>Voice Navigation</b><span>Spoken turn-by-turn</span></div><label class="switch"><input type="checkbox" id="voiceToggle"><span class="slider"></span></label></div>
       <div class="pref-row"><div class="pref-txt"><b>Surface Prompts</b><span>Ask to log poor surfaces</span></div><label class="switch"><input type="checkbox" id="surfacePromptToggle" checked><span class="slider"></span></label></div>
@@ -269,14 +285,14 @@
 <script src="bus_stop_routes.js" async></script>
 <script src="bus_routes_p1.js" async></script>
 <script src="metro_data.js" async></script>
-<!-- Transit timing data (loaded async, merged by transit_loader.js) -->
-<script src="stop_timings_p1.js" async></script>
-<script src="stop_timings_p2.js" async></script>
-<script src="stop_timings_p3.js" async></script>
-<script src="stop_timings_p4.js" async></script>
-<script src="route_schedules.js" async></script>
-<script src="metro_schedules.js" async></script>
-<script src="metro_stop_times.js" async></script>
+<!-- Transit timing data — defer ensures ordered load after DOM -->
+<script src="stop_timings_p1.js" defer></script>
+<script src="stop_timings_p2.js" defer></script>
+<script src="stop_timings_p3.js" defer></script>
+<script src="stop_timings_p4.js" defer></script>
+<script src="route_schedules.js" defer></script>
+<script src="metro_schedules.js" defer></script>
+<script src="metro_stop_times.js" defer></script>
 <script src="transit_loader.js" defer></script>
 <script src="bus_engine.js"></script>
 <script src="metro_engine.js"></script>
@@ -438,6 +454,84 @@
     <button onclick="saveProfileEdit()" class="btn-start" style="margin:0 0 8px;">Save Changes</button>
     <button onclick="logoutUser()" style="background:#fff5f5;border:1.5px solid #fecaca;color:#dc2626;width:100%;padding:12px;border-radius:12px;font-weight:700;font-size:14px;cursor:pointer;font-family:inherit;">Sign Out</button>
     <button class="btn-cancel" onclick="closeModal('profileModal')">Close</button>
+  </div>
+</div>
+
+<!-- ══ PWA INSTALL PROMPT ══ -->
+<div id="installBanner" style="display:none;position:fixed;bottom:80px;left:12px;right:12px;z-index:8000;animation:slideUp .4s ease;">
+  <div style="background:white;border-radius:20px;padding:16px 18px;box-shadow:0 8px 32px rgba(0,0,0,.15);border:1px solid rgba(0,0,0,.07);">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <img src="https://cdn-icons-png.flaticon.com/512/3204/3204933.png" style="width:48px;height:48px;border-radius:12px;flex-shrink:0;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:14px;font-weight:900;color:#0f172a;">Add GaitWay to Home Screen</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px;">Works offline · Feels native · No app store needed</div>
+      </div>
+      <button onclick="dismissInstall()" style="background:none;border:none;color:#94a3b8;font-size:20px;cursor:pointer;padding:4px;flex-shrink:0;line-height:1;">×</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px;">
+      <button id="installBtn" onclick="triggerInstall()" style="flex:1;background:#2563eb;color:white;border:none;padding:11px;border-radius:12px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;">Add to Home Screen</button>
+      <button onclick="dismissInstall()" style="background:#f1f5f9;border:none;padding:11px 16px;border-radius:12px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;color:#64748b;">Later</button>
+    </div>
+  </div>
+</div>
+
+<!-- iOS manual install instructions (shown on Safari/iOS since beforeinstallprompt doesn't fire) -->
+<div class="overlay" id="iosInstallModal">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <div style="text-align:center;margin-bottom:20px;">
+      <img src="https://cdn-icons-png.flaticon.com/512/3204/3204933.png" style="width:64px;height:64px;border-radius:16px;margin-bottom:10px;">
+      <h3 style="font-size:20px;font-weight:900;margin:0 0 4px;">Add GaitWay to Home Screen</h3>
+      <p style="color:#64748b;font-size:13px;margin:0;">Install as an app — no App Store needed. Works offline.</p>
+    </div>
+
+    <!-- iOS Safari steps -->
+    <div id="iosSteps" style="display:none;">
+      <div style="background:#f8fafc;border-radius:14px;padding:16px;margin-bottom:16px;">
+        <div style="font-size:11px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;">iPhone / iPad (Safari)</div>
+        <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px;">
+          <div style="background:#2563eb;color:white;font-size:11px;font-weight:900;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">1</div>
+          <div style="font-size:13px;font-weight:600;">Tap the <b>Share</b> button <span style="font-size:18px;">⬆</span> at the bottom of Safari</div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px;">
+          <div style="background:#2563eb;color:white;font-size:11px;font-weight:900;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">2</div>
+          <div style="font-size:13px;font-weight:600;">Scroll down and tap <b>"Add to Home Screen"</b> <span style="font-size:16px;">＋</span></div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;">
+          <div style="background:#2563eb;color:white;font-size:11px;font-weight:900;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">3</div>
+          <div style="font-size:13px;font-weight:600;">Tap <b>"Add"</b> — GaitWay appears on your home screen</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Android Chrome steps -->
+    <div id="androidSteps" style="display:none;">
+      <div style="background:#f8fafc;border-radius:14px;padding:16px;margin-bottom:16px;">
+        <div style="font-size:11px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;">Android (Chrome)</div>
+        <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px;">
+          <div style="background:#16a34a;color:white;font-size:11px;font-weight:900;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">1</div>
+          <div style="font-size:13px;font-weight:600;">Tap the <b>⋮ menu</b> in the top-right of Chrome</div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;">
+          <div style="background:#16a34a;color:white;font-size:11px;font-weight:900;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">2</div>
+          <div style="font-size:13px;font-weight:600;">Tap <b>"Add to Home screen"</b> and confirm</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:4px;justify-content:center;margin-bottom:16px;" id="platformTabs">
+      <button onclick="showPlatform('ios')" id="tabIos"
+        style="padding:7px 16px;border-radius:20px;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;background:#2563eb;color:white;">🍎 iOS</button>
+      <button onclick="showPlatform('android')" id="tabAndroid"
+        style="padding:7px 16px;border-radius:20px;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;background:#f1f5f9;color:#64748b;">🤖 Android</button>
+    </div>
+
+    <div style="background:#eff6ff;border-radius:12px;padding:12px;margin-bottom:16px;display:flex;gap:10px;align-items:flex-start;">
+      <span style="font-size:18px;">✅</span>
+      <div style="font-size:12px;color:#1d4ed8;font-weight:600;">Once installed, GaitWay opens full-screen with no browser bar — just like a native app.</div>
+    </div>
+
+    <button class="btn-cancel" onclick="closeModal('iosInstallModal');localStorage.setItem('gw_install_dismissed','1');">Maybe later</button>
   </div>
 </div>
 </body>
