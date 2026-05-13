@@ -12,7 +12,87 @@ if (!userId) {
   localStorage.setItem('gw_user_id', userId);
 }
 
+
+// ── AUTH ──
+let userToken = localStorage.getItem('gw_token') || null;
+
+function isLoggedIn() { return !!userToken; }
+
+function authHeaders() {
+  return userToken ? { 'Content-Type':'application/json', 'Authorization':'Bearer '+userToken }
+                   : { 'Content-Type':'application/json' };
+}
+
+async function requestOTP() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const name  = document.getElementById('loginName').value.trim();
+  const errEl = document.getElementById('loginError');
+  errEl.textContent = '';
+  if (!email || !email.includes('@')) { errEl.textContent = 'Enter a valid email'; return; }
+  try {
+    const res  = await fetch(`${API}/api/auth/request-otp`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ email }) });
+    const data = await res.json();
+    if (!data.ok) { errEl.textContent = data.error; return; }
+    localStorage.setItem('gw_pending_email', email);
+    localStorage.setItem('gw_pending_name',  name);
+    document.getElementById('loginStep1').style.display = 'none';
+    document.getElementById('loginStep2').style.display = 'block';
+    document.getElementById('loginStep2Desc').textContent = `Code sent to ${email}`;
+    // Dev: auto-fill OTP if returned
+    if (data.dev_otp) document.getElementById('loginOTP').value = data.dev_otp;
+  } catch(e) { errEl.textContent = 'Network error — try again'; }
+}
+
+async function verifyOTP() {
+  const otp   = document.getElementById('loginOTP').value.trim();
+  const email = localStorage.getItem('gw_pending_email');
+  const name  = localStorage.getItem('gw_pending_name') || 'Walker';
+  const errEl = document.getElementById('otpError');
+  errEl.textContent = '';
+  if (!otp || otp.length < 6) { errEl.textContent = 'Enter the 6-digit code'; return; }
+  try {
+    const res  = await fetch(`${API}/api/auth/verify-otp`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ email, otp, name }) });
+    const data = await res.json();
+    if (!data.ok) { errEl.textContent = data.error || 'Invalid code'; return; }
+    // Save session
+    userId    = data.userId;
+    userToken = data.token;
+    localStorage.setItem('gw_user_id',   userId);
+    localStorage.setItem('gw_token',     userToken);
+    localStorage.setItem('gw_user_name', data.user.name);
+    localStorage.removeItem('gw_pending_email');
+    localStorage.removeItem('gw_pending_name');
+    applyUserToUI(data.user);
+    document.getElementById('loginModal').classList.remove('active');
+    showToast(`Welcome, ${data.user.name}! 🎉`);
+  } catch(e) { errEl.textContent = 'Network error — try again'; }
+}
+
+function continueAsGuest() {
+  document.getElementById('loginModal').classList.remove('active');
+  showToast('Continuing as guest — data saved locally');
+}
+
+function applyUserToUI(user) {
+  document.getElementById('vaultName').textContent = user.name || 'Walker';
+  document.getElementById('vaultXp').textContent   = (user.xp || 0).toLocaleString();
+}
+
+function showLoginModal() {
+  document.getElementById('loginModal').classList.add('active');
+}
+
 async function initUserSession() {
+  // Show login if no token and no stored userId
+  const storedToken = localStorage.getItem('gw_token');
+  const storedId    = localStorage.getItem('gw_user_id');
+  if (!storedToken && !storedId) {
+    // New user — show login
+    setTimeout(() => openModal('loginModal'), 800);
+    return;
+  }
+  userToken = storedToken;
+  userId    = storedId || userId;
   try {
     const res = await fetch(`${API}/api/users/upsert`, {
       method: 'POST',
@@ -20,9 +100,7 @@ async function initUserSession() {
       body: JSON.stringify({ id: userId, name: localStorage.getItem('gw_user_name') || 'Walker' })
     });
     const user = await res.json();
-    document.getElementById('vaultName').textContent = user.name || 'Walker';
-    document.getElementById('vaultXp').textContent   = (user.xp || 0).toLocaleString();
-    document.getElementById('vRoutes') && (document.getElementById('vRoutes').textContent = user.route_count || 0);
+    applyUserToUI(user);
   } catch(e) { console.warn('User session offline'); }
 }
 
@@ -271,22 +349,32 @@ function getNearestBusStops(lat, lng, n=5, km=0.8) {
 // Show bus stops + metro stations near user on map
 function showNearbyTransit(lat, lng) {
   stationLayer.clearLayers();
-  // Bus stops within 500m
-  getNearestBusStops(lat, lng, 5, 0.5).forEach(s => {
+  // Bus stops within 500m — tap for live schedule
+  getNearestBusStops(lat, lng, 6, 0.5).forEach(s => {
     const ico = L.divIcon({ className:'',
-      html:`<div style="background:white;border:2px solid #d97706;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;box-shadow:0 2px 6px rgba(0,0,0,.2);">🚏</div>`,
-      iconSize:[18,18], iconAnchor:[9,9] });
-    L.marker([s.lat,s.lng],{icon:ico}).addTo(stationLayer)
-     .bindPopup(`<b>🚏 ${s.name}</b><br><small>${(s.dist*1000).toFixed(0)}m · DTC/DIMTS</small>`);
+      html:`<div style="background:white;border:2px solid #d97706;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;box-shadow:0 2px 6px rgba(0,0,0,.25);">🚏</div>`,
+      iconSize:[20,20], iconAnchor:[10,10] });
+    const marker = L.marker([s.lat,s.lng],{icon:ico}).addTo(stationLayer);
+    marker.bindPopup(`<b>🚏 ${s.name}</b><br><small>${(s.dist*1000).toFixed(0)}m away</small><br><small style="color:#94a3b8">Tap again for schedule…</small>`);
+    marker.on('popupopen', async () => {
+      if(typeof BusEngine !== 'undefined') {
+        const html = await BusEngine.buildStopInfoHtml(s.id, s.name, 'bus');
+        marker.getPopup().setContent(html).update();
+      }
+    });
   });
-  // Metro stations within 1.5km
+  // Metro stations within 1.5km — tap for live schedule
   if (typeof MetroEngine !== 'undefined') {
-    MetroEngine.getNearestMetroStations(lat, lng, 4, 1.5).forEach(s => {
+    MetroEngine.getNearestMetroStations(lat, lng, 5, 1.5).forEach(s => {
       const ico = L.divIcon({ className:'',
-        html:`<div style="background:#1565c0;border:2px solid white;border-radius:4px;padding:2px 4px;font-size:9px;font-weight:800;color:white;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.3);">🚇</div>`,
+        html:`<div style="background:#1565c0;border:2px solid white;border-radius:4px;padding:2px 5px;font-size:9px;font-weight:800;color:white;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.3);">🚇</div>`,
         iconSize:[null,null] });
-      L.marker([s.lat,s.lng],{icon:ico}).addTo(stationLayer)
-       .bindPopup(`<b>🚇 ${s.name}</b><br><small>${(s.dist*1000).toFixed(0)}m · DMRC</small>`);
+      const marker = L.marker([s.lat,s.lng],{icon:ico}).addTo(stationLayer);
+      marker.bindPopup(`<b>🚇 ${s.name}</b><br><small>${(s.dist*1000).toFixed(0)}m · DMRC</small><br><small style="color:#94a3b8">Tap again for schedule…</small>`);
+      marker.on('popupopen', async () => {
+        const html = await MetroEngine.buildMetroStopInfoHtml(s.id, s.name);
+        marker.getPopup().setContent(html).update();
+      });
     });
   }
 }
@@ -626,7 +714,7 @@ function showHud(type, route, fromLL) {
 }
 
 // ── TRANSIT VIEW ──
-function buildTransitView(coords, steps, rd) {
+async function buildTransitView(coords, steps, rd) {
   const tw = document.getElementById('transitWrap');
   const n  = steps.length;
 
@@ -643,7 +731,7 @@ function buildTransitView(coords, steps, rd) {
   if (cachedMetroPlan) {
     const { plan, boardStop, alightStop, walkInKm, walkOutKm } = cachedMetroPlan;
     const { html:metroHtml, approxMin, totalMetroStops } =
-      MetroEngine.buildMetroHudHtml(plan, activeOriginName, activeDestName, walkInKm, walkOutKm);
+      await MetroEngine.buildMetroHudHtml(plan, activeOriginName, activeDestName, walkInKm, walkOutKm);
 
     const p1 = Math.max(1, Math.min(Math.floor(coords.length*(walkInKm/(rd.dist+.01))), coords.length-2));
     const p2 = Math.max(p1+1, Math.min(Math.floor(coords.length*(1-walkOutKm/(rd.dist+.01))), coords.length-1));
@@ -689,7 +777,7 @@ function buildTransitView(coords, steps, rd) {
   let busCardHtml = '';
 
   if (busJourney && busJourney.type === 'direct') {
-    const built = BusEngine.buildBusHudHtml(busJourney);
+    const built = await BusEngine.buildBusHudHtml(busJourney);
     busCardHtml = built.html;
     L.polyline(coords.slice(Math.max(0,p1-1),p2+1), { color:built.agencyColor, weight:8, opacity:.9 }).addTo(transitLayer);
     const mkLbl = (ll, label, c) => {
