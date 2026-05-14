@@ -567,6 +567,18 @@
     <button onclick="saveProfileEdit()" class="btn-start" style="margin:0 0 8px;">Save Changes</button>
     <button onclick="logoutUser()" style="background:#fff5f5;border:1.5px solid #fecaca;color:#dc2626;width:100%;padding:12px;border-radius:12px;font-weight:700;font-size:14px;cursor:pointer;font-family:inherit;">Sign Out</button>
     <button class="btn-cancel" onclick="closeModal('profileModal')">Close</button>
+    <!-- Admin key entry — accessible even when logged in -->
+    <div style="margin-top:14px;border-top:1px solid #f1f5f9;padding-top:14px;">
+      <div id="profileAdminSection" style="display:none;background:#fafafa;border:1.5px dashed #e2e8f0;border-radius:12px;padding:14px;margin-bottom:10px;">
+        <div style="font-size:11px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">🔑 Admin Access</div>
+        <input type="password" id="profileAdminKeyInput" placeholder="Enter admin key" autocomplete="off"
+          style="width:100%;padding:11px 12px;border-radius:10px;border:1.5px solid #e2e8f0;font-size:14px;font-family:inherit;box-sizing:border-box;background:white;margin-bottom:8px;"
+          onkeydown="if(event.key==='Enter')adminLoginFromProfile()">
+        <button onclick="adminLoginFromProfile()" style="width:100%;padding:12px;border-radius:10px;background:#0f172a;color:white;border:none;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit;">Enter Admin Mode →</button>
+        <div id="profileAdminError" style="color:#dc2626;font-size:11px;font-weight:700;text-align:center;margin-top:8px;min-height:14px;"></div>
+      </div>
+      <button onclick="toggleProfileAdminSection()" style="background:none;border:none;color:#cbd5e1;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;padding:4px 8px;display:block;margin:0 auto;">🔑</button>
+    </div>
   </div>
 </div>
 

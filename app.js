@@ -106,6 +106,37 @@ function toggleAdminKeySection() {
   if (el.style.display === 'block') setTimeout(() => document.getElementById('adminKeyInput').focus(), 50);
 }
 
+function toggleProfileAdminSection() {
+  const el = document.getElementById('profileAdminSection');
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+  if (el.style.display === 'block') setTimeout(() => document.getElementById('profileAdminKeyInput').focus(), 50);
+}
+
+async function adminLoginFromProfile() {
+  const key = (document.getElementById('profileAdminKeyInput').value || '').trim();
+  const errEl = document.getElementById('profileAdminError');
+  errEl.textContent = '';
+  if (!key) { errEl.textContent = 'Enter the admin key'; return; }
+  try {
+    const r = await fetch(`${API}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key }),
+    });
+    const d = await r.json();
+    if (!d.ok) { errEl.textContent = d.error || 'Invalid key'; return; }
+    localStorage.setItem('gw_admin_token', d.token);
+    _isAdmin = true;
+    document.getElementById('profileAdminKeyInput').value = '';
+    closeModal('profileModal');
+    _activateAdminUI();
+    openModal('adminModal');
+    _updateAdminStatus();
+  } catch(e) {
+    errEl.textContent = 'Could not reach server';
+  }
+}
+
 async function adminLogin() {
   const key = (document.getElementById('adminKeyInput').value || '').trim();
   const errEl = document.getElementById('adminLoginError');
@@ -149,6 +180,9 @@ async function initAdminSession() {
 function _activateAdminUI() {
   const badge = document.getElementById('badgeAdmin');
   if (badge) badge.style.display = 'flex';
+  // If profile modal admin section is open, replace it with "active" indicator
+  const profileSec = document.getElementById('profileAdminSection');
+  if (profileSec) profileSec.style.display = 'none';
 }
 
 function _updateAdminStatus() {
