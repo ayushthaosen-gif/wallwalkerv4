@@ -29,9 +29,11 @@ if (rateLimit) {
 // ── DATABASE ──
 // Accepts either DATABASE_URL (full connection string from Supabase dashboard)
 // or individual DB_HOST / DB_USER / DB_PASSWORD / DB_NAME / DB_PORT vars.
+const _dbUrl = process.env.DATABASE_URL;
+const _useUrl = _dbUrl && (_dbUrl.startsWith('postgresql://') || _dbUrl.startsWith('postgres://'));
 const pool = new Pool(
-  process.env.DATABASE_URL
-    ? { connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 5, idleTimeoutMillis: 30000, connectionTimeoutMillis: 15000 }
+  _useUrl
+    ? { connectionString: _dbUrl, ssl: { rejectUnauthorized: false }, max: 5, idleTimeoutMillis: 30000, connectionTimeoutMillis: 15000 }
     : {
         host:     process.env.DB_HOST     || 'aws-0-ap-southeast-1.pooler.supabase.com',
         port:     parseInt(process.env.DB_PORT || '5432'),
