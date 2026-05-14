@@ -5,6 +5,93 @@ const API = window.location.hostname === 'localhost'
   ? 'http://localhost:3000'
   : '';  // Same origin on Render — empty string works
 
+// ── CITY DETECTION — decides which transit data to load ──
+const CITY_BBOXES = {
+  delhi: [28.40, 76.84, 28.88, 77.35],
+  dc:    [38.79, -77.12, 38.99, -76.91],
+};
+let detectedCity = null;
+let wmataInjected = false;
+
+function detectCityFromCoords(lat, lng) {
+  for (const [city, [a, b, c, d]] of Object.entries(CITY_BBOXES)) {
+    if (lat >= a && lat <= c && lng >= b && lng <= d) return city;
+  }
+  return 'unknown';
+}
+
+function applyCity(city, lat, lng) {
+  if (detectedCity === city) return;
+  detectedCity = city;
+  localStorage.setItem('gw_city', city);
+  window._searchCountry = city === 'delhi' ? 'in' : city === 'dc' ? 'us' : '';
+  console.log(`✅ City detected: ${city}`);
+  if (city === 'dc') {
+    injectWmataScripts();
+    // Fly to DC coords if map is still centred on Delhi default
+    if (lat && map) {
+      const c = map.getCenter();
+      if (Math.abs(c.lat - 28.6139) < 0.5) map.flyTo([lat, lng], 14, { animate: true, duration: 1.5 });
+    }
+  }
+}
+
+function injectWmataScripts() {
+  if (wmataInjected) return;
+  wmataInjected = true;
+  ['wmata_stations.js','wmata_lines.js','wmata_bus_stops.js',
+   'wmata_bus_routes_p1.js','wmata_bus_routes_p2.js','wmata_park_ride.js'].forEach(src => {
+    if (document.querySelector(`script[src="${src}"]`)) return;
+    const s = document.createElement('script'); s.src = src; s.async = true;
+    document.head.appendChild(s);
+  });
+  const l = document.createElement('script'); l.src = 'wmata_loader.js'; l.defer = true;
+  document.head.appendChild(l);
+  console.log('📦 WMATA scripts injected');
+  pollWmataData();
+}
+
+// ── IP GEOLOCATION — 3 fallback APIs, fires immediately without GPS ──
+async function detectCityByIP() {
+  const cached = localStorage.getItem('gw_city');
+  if (cached) { applyCity(cached, null, null); return; }
+
+  const apis = [
+    async () => {
+      const r = await fetch('https://ip-api.com/json/?fields=lat,lon,status', { signal: AbortSignal.timeout(3000) });
+      const d = await r.json();
+      if (d.status === 'success') return [d.lat, d.lon];
+      throw new Error('ip-api failed');
+    },
+    async () => {
+      const r = await fetch('https://ipapi.co/json/', { signal: AbortSignal.timeout(3000) });
+      const d = await r.json();
+      if (d.latitude) return [d.latitude, d.longitude];
+      throw new Error('ipapi.co failed');
+    },
+    async () => {
+      const r = await fetch('https://freeipapi.com/api/json/', { signal: AbortSignal.timeout(3000) });
+      const d = await r.json();
+      if (d.latitude) return [d.latitude, d.longitude];
+      throw new Error('freeipapi failed');
+    },
+  ];
+
+  for (const fn of apis) {
+    try {
+      const [lat, lng] = await fn();
+      const city = detectCityFromCoords(lat, lng);
+      console.log(`🌐 IP location → ${city} (${lat.toFixed(3)}, ${lng.toFixed(3)})`);
+      applyCity(city, lat, lng);
+      // Pre-centre map if GPS hasn't fired yet
+      if (!userLoc && map && city !== 'delhi') map.setView([lat, lng], 13);
+      if (!userLoc) showNearbyTransit(lat, lng);
+      return;
+    } catch(e) { console.warn('IP geo fallback:', e.message); }
+  }
+  applyCity('delhi', 28.6139, 77.2090); // ultimate fallback
+}
+
 
 // ══════════════════════════════════════════════
 // PWA INSTALL
@@ -192,35 +279,26 @@ async function requestOTP() {
       body: JSON.stringify({ email })
     });
     const data = await res.json();
-
-    if (!res.ok || !data.ok) {
-      const msg = data.error || (res.status === 500 ? 'Server error — try again in a moment' : 'Could not send code');
-      errEl.textContent = msg;
-      btn.textContent = 'Get Login Code →'; btn.disabled = false;
-      return;
-    }
+    if (!data.ok) { errEl.textContent = data.error || 'Could not send code'; btn.textContent='Get Login Code →'; btn.disabled=false; return; }
 
     localStorage.setItem('gw_pending_email', email);
     localStorage.setItem('gw_pending_name',  name);
 
     document.getElementById('loginStep1').style.display = 'none';
     document.getElementById('loginStep2').style.display = 'block';
-    document.getElementById('loginStep2Desc').textContent = `Code sent to ${email.slice(0,3)}***@${email.split('@')[1]}`;
+    document.getElementById('loginStep2Desc').textContent = `Code sent to ${email}`;
 
     initOTPBoxes();
     startOTPTimer(120);
     setTimeout(() => document.getElementById('otp0')?.focus(), 100);
 
-    // Dev mode — auto fill OTP boxes
+    // Dev mode — auto fill
     if (data.dev_otp) {
-      data.dev_otp.toString().split('').forEach((d,i) => {
-        const el = document.getElementById('otp'+i); if(el) el.value = d;
-      });
-      showToast(`Dev OTP: ${data.dev_otp}`);
+      const digits = data.dev_otp.toString().split('');
+      digits.forEach((d,i) => { const el=document.getElementById('otp'+i); if(el) el.value=d; });
     }
   } catch(e) {
-    errEl.textContent = 'Cannot reach server — check your connection';
-    console.error('requestOTP error:', e);
+    errEl.textContent = 'Network error — check connection';
   }
   btn.textContent = 'Get Login Code →'; btn.disabled = false;
 }
@@ -234,7 +312,6 @@ async function verifyOTP() {
   errEl.textContent = '';
 
   if (otp.length < 6) { errEl.textContent = 'Enter all 6 digits'; return; }
-  if (!email) { errEl.textContent = 'Session expired — please go back'; backToStep1(); return; }
 
   const btn = document.getElementById('verifyBtn');
   btn.textContent = 'Verifying…'; btn.disabled = true;
@@ -245,9 +322,8 @@ async function verifyOTP() {
       body: JSON.stringify({ email, otp, name })
     });
     const data = await res.json();
-
-    if (!res.ok || !data.ok) {
-      errEl.textContent = data.error || (res.status === 500 ? 'Server error — try again' : 'Incorrect code');
+    if (!data.ok) {
+      errEl.textContent = data.error || 'Incorrect code — try again';
       clearOTPBoxes();
       document.getElementById('otp0')?.focus();
       btn.textContent = 'Verify Code →'; btn.disabled = false;
@@ -258,34 +334,26 @@ async function verifyOTP() {
     // Save session
     userId    = data.userId;
     userToken = data.token;
-    const userName = data.user?.name || name;
     localStorage.setItem('gw_user_id',   userId);
     localStorage.setItem('gw_token',     userToken);
-    localStorage.setItem('gw_user_name', userName);
+    localStorage.setItem('gw_user_name', data.user.name);
     localStorage.removeItem('gw_pending_email');
     localStorage.removeItem('gw_pending_name');
 
-    applyUserToUI(data.user || { name: userName, xp: 0, route_count: 0, hazard_count: 0 });
+    applyUserToUI(data.user);
 
     // First-time user → show profile setup
     if (data.isNewUser) {
       document.getElementById('loginStep2').style.display = 'none';
       document.getElementById('loginStep3').style.display = 'block';
     } else {
-      closeModal('loginModal');
-      showToast(`Welcome back, ${userName}! 🎉`);
+      document.getElementById('loginModal').classList.remove('active');
+      showToast(`Welcome back, ${data.user.name}! 🎉`);
     }
   } catch(e) {
-    errEl.textContent = 'Cannot reach server — check connection';
-    console.error('verifyOTP error:', e);
+    errEl.textContent = 'Network error — try again';
   }
   btn.textContent = 'Verify Code →'; btn.disabled = false;
-}
-
-// Track dismiss so initUserSession doesn't re-open this session
-function dismissLoginModal() {
-  sessionStorage.setItem('gw_login_dismissed', '1');
-  closeModal('loginModal');
 }
 
 // ── Resend OTP ──
@@ -342,9 +410,8 @@ async function saveProfile() {
 }
 
 function continueAsGuest() {
-  sessionStorage.setItem('gw_login_dismissed', '1');
-  closeModal('loginModal');
-  showToast('Continuing as guest — hazards saved locally');
+  document.getElementById('loginModal').classList.remove('active');
+  showToast('Guest mode — reports saved locally');
 }
 
 // ── Apply user data to all UI elements ──
@@ -425,42 +492,24 @@ async function loadProfileRouteHistory() {
 async function initUserSession() {
   const storedToken = localStorage.getItem('gw_token');
   const storedId    = localStorage.getItem('gw_user_id');
-  const storedName  = localStorage.getItem('gw_user_name');
 
-  // Show login if user has never signed in (no token)
-  if (!storedToken) {
-    // Apply cached name/XP from any previous guest session
-    if (storedName) applyUserToUI({ name: storedName, xp: 0, route_count: 0, hazard_count: 0 });
-    // Delay so map renders first
-    setTimeout(() => {
-      // Don't re-show if user already dismissed login this session
-      if (!sessionStorage.getItem('gw_login_dismissed')) openModal('loginModal');
-    }, 1500);
+  if (!storedToken && !storedId) {
+    // Brand new user — show login after map loads
+    setTimeout(() => openModal('loginModal'), 1000);
     return;
   }
 
   userToken = storedToken;
   userId    = storedId || userId;
 
-  // Apply cached data immediately (fast path — no spinner)
-  if (storedName) applyUserToUI({ name: storedName, xp: 0, route_count: 0, hazard_count: 0 });
-
-  // Then refresh from server in background
   try {
     const res  = await fetch(`${API}/api/users/upsert`, {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json' },
-      body: JSON.stringify({ id: userId, name: storedName || 'Walker' })
+      method: 'POST', headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({ id: userId, name: localStorage.getItem('gw_user_name') || 'Walker' })
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const user = await res.json();
     applyUserToUI(user);
-    // Sync name back to localStorage in case it changed
-    if (user.name) localStorage.setItem('gw_user_name', user.name);
-  } catch(e) {
-    console.warn('Session refresh offline — using cached data');
-    // Don't show an error — cached data is fine for offline use
-  }
+  } catch(e) { console.warn('User session offline — using cached data'); }
 }
 
 async function loadHazardsFromDB() {
@@ -563,6 +612,7 @@ window.onload = () => {
   initMap();
   initSensors();
   initSearchBoxes();
+  detectCityByIP();   // IP geo — fires immediately, no GPS needed
   pollBusData();
   initUserSession();
   initPWA();
@@ -593,29 +643,34 @@ function initMap() {
 
   map = L.map('map', { zoomControl:false, attributionControl:false })
          .setView([28.6139, 77.2090], 13);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png').addTo(map);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19 }).addTo(map);
   interactiveLayer.addTo(map);
   transitLayer.addTo(map);
   stationLayer.addTo(map);
   hazardLayer.addTo(map);
 
-  // Refresh transit stops as user pans/zooms
+  // Refresh transit stops on pan/zoom
   let transitRefreshTimer = null;
   map.on('moveend zoomend', () => {
     clearTimeout(transitRefreshTimer);
     transitRefreshTimer = setTimeout(() => {
-      const center = map.getCenter();
-      const zoom   = map.getZoom();
-      // Only show stops when zoomed in enough (avoid cluttering at zoom < 14)
-      if (zoom >= 14) {
-        refreshTransitOnView(center.lat, center.lng, zoom);
-      } else {
+      const c = map.getCenter(), z = map.getZoom();
+      if (z >= 13) refreshTransitOnView(c.lat, c.lng, z);
+      else {
         stationLayer.clearLayers();
+        if (typeof WmataEngine !== 'undefined' && WmataEngine.wmataDataReady())
+          WmataEngine.drawWmataMetroLines(stationLayer);
       }
     }, 400);
   });
 
-  // Long-press to drop destination
+  // Tap map → POI action sheet
+  map.on('click', e => {
+    if (e.originalEvent._markerHandled) return;
+    showPoiSheet(e.latlng.lat, e.latlng.lng, null);
+  });
+
+  // Long-press → drop destination
   map.on('contextmenu', async e => {
     showToast('Fetching address…');
     try {
@@ -635,8 +690,10 @@ function initSensors() {
     const firstFix = !userLoc;
     userLoc = e.latlng;
 
-    // AUTO-FLY to user on first fix (fixes the "locate me" issue)
     if (firstFix) {
+      // GPS is authoritative — override IP detection
+      const city = detectCityFromCoords(e.latlng.lat, e.latlng.lng);
+      applyCity(city, e.latlng.lat, e.latlng.lng);
       map.flyTo(userLoc, 16, { animate: true, duration: 1.2 });
     } else if (isLiveTracking) {
       map.panTo(userLoc);
@@ -737,67 +794,96 @@ function pollBusData() {
   const check = setInterval(() => {
     if (typeof BusEngine !== 'undefined' && BusEngine.busDataReady()) {
       clearInterval(check);
-      console.log(`✅ Bus GTFS: ${Object.keys(BUS_STOPS_V2).length} stops, ${Object.keys(BUS_ROUTES_P1).length} routes`);
+      console.log(`✅ Bus GTFS: ${Object.keys(BUS_STOPS_V2).length} stops`);
+    }
+  }, 300);
+}
+function pollWmataData() {
+  const check = setInterval(() => {
+    if (typeof WmataEngine !== 'undefined' && WmataEngine.wmataDataReady()) {
+      clearInterval(check);
+      console.log(`✅ WMATA: ${Object.keys(WMATA_STATIONS).length} stations`);
+      WmataEngine.drawWmataMetroLines(stationLayer);
+      const loc = userLoc || (detectedCity === 'dc' ? L.latLng(38.9072, -77.0369) : null);
+      if (loc) WmataEngine.refreshWmataOnView(loc.lat, loc.lng, map.getZoom()||14, stationLayer);
     }
   }, 300);
 }
 function getNearestBusStops(lat, lng, n=5, km=0.8) {
   return (typeof BusEngine !== 'undefined' && BusEngine.busDataReady())
-    ? BusEngine.getNearestBusStops(lat, lng, n, km)
-    : [];
+    ? BusEngine.getNearestBusStops(lat, lng, n, km) : [];
 }
 
 // Refresh transit stops based on current map view
 function refreshTransitOnView(lat, lng, zoom) {
   stationLayer.clearLayers();
 
-  // Scale radius and count by zoom level
   const busRadius   = zoom >= 17 ? 0.3 : zoom >= 15 ? 0.5 : 0.8;
   const busCount    = zoom >= 17 ? 10  : zoom >= 15 ? 8   : 6;
   const metroRadius = zoom >= 15 ? 1.0 : 1.8;
   const metroCount  = zoom >= 15 ? 6   : 4;
 
-  // Bus stops
+  // Navigate/Start buttons injected into every popup
+  const navBtns = (slat, slng, sname, color) => `
+    <div style="display:flex;gap:6px;margin-top:8px;">
+      <button onclick="poiNavigateTo(${slat},${slng},'${sname.replace(/'/g,"\\'")}');map.closePopup();"
+        style="flex:1;background:${color};color:white;border:none;border-radius:8px;padding:8px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;">🧭 Navigate Here</button>
+      <button onclick="poiSetFrom(${slat},${slng},'${sname.replace(/'/g,"\\'")}');map.closePopup();"
+        style="flex:1;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:#475569;">📍 Start Here</button>
+    </div>`;
+
+  // ── Delhi Bus stops ──
   if (typeof BusEngine !== 'undefined' && BusEngine.busDataReady()) {
     BusEngine.getNearestBusStops(lat, lng, busCount, busRadius).forEach(s => {
       const ico = L.divIcon({ className:'',
         html:`<div style="background:white;border:2px solid #d97706;border-radius:50%;width:${zoom>=16?22:18}px;height:${zoom>=16?22:18}px;display:flex;align-items:center;justify-content:center;font-size:11px;box-shadow:0 2px 6px rgba(0,0,0,.25);">🚏</div>`,
         iconSize:[20,20], iconAnchor:[10,10] });
-      const marker = L.marker([s.lat,s.lng],{icon:ico}).addTo(stationLayer);
-      // Immediate content — no "tap again" needed
-      marker.bindPopup(`<div style="min-width:160px;"><b>🚏 ${s.name}</b><br><small style="color:#2563eb;font-weight:600;">⏳ Loading schedule…</small></div>`, {maxWidth:320});
-      marker.on('popupopen', async () => {
-        // getStopTimings waits up to 8s for data — popup auto-updates when ready
+      const m = L.marker([s.lat,s.lng],{icon:ico}).addTo(stationLayer);
+      m.on('click', e => { e.originalEvent._markerHandled = true; });
+      m.bindPopup(`<div style="min-width:200px;"><b>🚏 ${s.name}</b>
+        <div style="font-size:10px;color:#94a3b8;margin:2px 0 6px;">Stop ${s.id} · DTC/DIMTS</div>
+        <div style="font-size:11px;color:#64748b;">⏳ Loading schedule…</div>
+        ${navBtns(s.lat,s.lng,s.name,'#d97706')}</div>`, {maxWidth:300});
+      m.on('popupopen', async () => {
         const html = await BusEngine.buildStopInfoHtml(s.id, s.name, 'bus');
-        if (marker.isPopupOpen()) marker.getPopup().setContent(html).update();
+        if (m.isPopupOpen()) m.getPopup().setContent(html + navBtns(s.lat,s.lng,s.name,'#d97706')).update();
       });
     });
   }
 
-  // Metro stations
-  if (typeof MetroEngine !== 'undefined') {
+  // ── Delhi Metro stations ──
+  if (typeof MetroEngine !== 'undefined' && typeof METRO_DATA !== 'undefined') {
     MetroEngine.getNearestMetroStations(lat, lng, metroCount, metroRadius).forEach(s => {
       const color = MetroEngine.parseLineColor(
-        Object.values(METRO_DATA?.routes||{}).find(r=>
+        Object.values(METRO_DATA?.routes||{}).find(r =>
           METRO_DATA.route_stops[Object.keys(METRO_DATA.routes).find(k=>METRO_DATA.routes[k]===r)]?.includes(String(s.id))
-        )?.name || ''
-      ) || '#1565c0';
+        )?.name || '') || '#1565c0';
       const ico = L.divIcon({ className:'',
-        html:`<div style="background:${color};border:2px solid white;border-radius:5px;padding:3px 6px;font-size:10px;font-weight:800;color:white;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.35);">🚇 ${zoom>=16?s.name:''}</div>`,
+        html:`<div style="background:${color};border:2px solid white;border-radius:5px;padding:3px 6px;font-size:10px;font-weight:800;color:white;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.35);">🚇 ${zoom>=15?s.name:s.name.split(' ')[0]}</div>`,
         iconSize:[null,null] });
-      const marker = L.marker([s.lat,s.lng],{icon:ico}).addTo(stationLayer);
-      marker.bindPopup(`<div style="min-width:160px;"><b>🚇 ${s.name}</b><br><small style="color:#2563eb;font-weight:600;">⏳ Loading schedule…</small></div>`, {maxWidth:320});
-      marker.on('popupopen', async () => {
+      const m = L.marker([s.lat,s.lng],{icon:ico}).addTo(stationLayer);
+      m.on('click', e => { e.originalEvent._markerHandled = true; });
+      m.bindPopup(`<div style="min-width:200px;"><b>🚇 ${s.name}</b>
+        <div style="font-size:10px;color:#94a3b8;margin:2px 0 6px;">Delhi Metro</div>
+        <div style="font-size:11px;color:#64748b;">⏳ Loading schedule…</div>
+        ${navBtns(s.lat,s.lng,s.name,color)}</div>`, {maxWidth:300});
+      m.on('popupopen', async () => {
         const html = await MetroEngine.buildMetroStopInfoHtml(s.id, s.name);
-        if (marker.isPopupOpen()) marker.getPopup().setContent(html).update();
+        if (m.isPopupOpen()) m.getPopup().setContent(html + navBtns(s.lat,s.lng,s.name,color)).update();
       });
     });
+  }
+
+  // ── WMATA (DC) stations + stops ──
+  if (typeof WmataEngine !== 'undefined' && WmataEngine.wmataDataReady()) {
+    WmataEngine.refreshWmataOnView(lat, lng, zoom, stationLayer);
   }
 }
 
-// Show transit near GPS location (called on first fix)
+// Show transit near a location (GPS first fix or IP fallback)
 function showNearbyTransit(lat, lng) {
-  refreshTransitOnView(lat, lng, map.getZoom() || 15);
+  const zoom = map.getZoom() || 14;
+  refreshTransitOnView(lat, lng, zoom);
 }
 
 // ── SURFACE AI + ENV UPDATE ──
@@ -900,25 +986,27 @@ function showGpsOption() {
 async function doSearch(q, field) {
   try {
     const ref = userLoc ? `&lat=${userLoc.lat}&lon=${userLoc.lng}` : '';
-    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&countrycodes=in&limit=5${ref}`);
+    const cc  = window._searchCountry ? `&countrycodes=${window._searchCountry}` : '';
+    const r   = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=6&addressdetails=1${ref}${cc}`);
     const data = await r.json();
-    const dd = document.getElementById('resultsDropdown');
+    const dd  = document.getElementById('resultsDropdown');
     if (!data.length) { closeDropdown(); return; }
-
-    let html = field === 'from'
+    let html = field==='from'
       ? `<div class="result-item" onclick="useMyLocation()"><div><div class="result-name">📍 My Current Location</div><div class="result-sub">Use live GPS</div></div><div class="result-gps">GPS</div></div>`
       : '';
     html += data.map(item => {
       const parts = item.display_name.split(',');
-      const dist  = userLoc ? (L.latLng(item.lat, item.lon).distanceTo(userLoc)/1000).toFixed(1)+' km' : '--';
+      const name  = parts[0].trim();
+      const sub   = parts.slice(1,3).join(', ').trim();
+      const dist  = userLoc ? (L.latLng(item.lat,item.lon).distanceTo(userLoc)/1000).toFixed(1)+' km' : '--';
       const fn    = field==='from'
-        ? `setOrigin(${item.lat},${item.lon},'${parts[0].replace(/'/g,"\\'")}')`
-        : `setDest(${item.lat},${item.lon},'${parts[0].replace(/'/g,"\\'")}')`;
+        ? `setOrigin(${item.lat},${item.lon},'${name.replace(/'/g,"\\'")}')`
+        : `setDest(${item.lat},${item.lon},'${name.replace(/'/g,"\\'")}')`;
       return `<div class="result-item" onclick="${fn}">
-        <div><div class="result-name">${parts[0]}</div><div class="result-sub">${parts.slice(1,3).join(', ')}</div></div>
+        <div><div class="result-name">${name}</div><div class="result-sub">${sub}</div></div>
         <div class="result-dist">${dist}</div></div>`;
     }).join('');
-    dd.innerHTML = html; dd.classList.add('open');
+    dd.innerHTML=html; dd.classList.add('open');
   } catch {}
 }
 
@@ -1449,7 +1537,60 @@ function clearRoute(clearInputs) {
     if (originMarker) { map.removeLayer(originMarker); originMarker=null; }
     document.getElementById('nearestBusInfo').style.display='none';
     cachedMetroPlan=null; window._cachedBusJourney=null;
+    window._cachedWmataPlan=null; window._cachedWmataBus=null;
   }
+  // Do NOT clear transit caches on clearInputs=false — pickRoute needs them intact
+}
+
+// ── POI ACTION SHEET ──
+let _poiLat=null, _poiLng=null, _poiName='';
+
+async function showPoiSheet(lat, lng, knownName) {
+  _poiLat=lat; _poiLng=lng; _poiName=knownName||'';
+  document.getElementById('poiSheetName').textContent   = knownName || '📍 Fetching place…';
+  document.getElementById('poiSheetAddr').textContent   = '';
+  document.getElementById('poiSheetCoords').textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  openModal('poiModal');
+  if (!knownName) {
+    try {
+      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
+      const d = await r.json();
+      if (!document.getElementById('poiModal').classList.contains('active')) return;
+      const parts = (d.display_name||'').split(',');
+      _poiName = d.name || parts[0] || 'Dropped Pin';
+      document.getElementById('poiSheetName').textContent = _poiName;
+      document.getElementById('poiSheetAddr').textContent = parts.slice(1,3).join(', ').trim();
+    } catch {
+      _poiName='Dropped Pin';
+      document.getElementById('poiSheetName').textContent='📍 Dropped Pin';
+    }
+  }
+}
+
+function poiNavigateTo(lat, lng, name) {
+  if (lat!=null) { _poiLat=lat; _poiLng=lng; _poiName=name||''; }
+  closeModal('poiModal');
+  if (_poiLat==null) return;
+  setDest(_poiLat, _poiLng, _poiName||'Selected Location');
+  // Switch to Explore tab
+  document.querySelectorAll('.bottom-nav .nav-item').forEach(n=>n.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  const nav=document.querySelector('[data-target="explore-tab"]');
+  const tab=document.getElementById('explore-tab');
+  if (nav) nav.classList.add('active');
+  if (tab) { tab.classList.add('active'); setTimeout(()=>map.invalidateSize(),100); }
+}
+
+function poiSetFrom(lat, lng, name) {
+  if (lat!=null) { _poiLat=lat; _poiLng=lng; _poiName=name||''; }
+  closeModal('poiModal');
+  if (_poiLat==null) return;
+  setOrigin(_poiLat, _poiLng, _poiName||'Selected Location');
+}
+
+function poiReportHazard() {
+  closeModal('poiModal');
+  openModal('hazardModal');
 }
 
 function toggleMini() {
