@@ -1466,14 +1466,14 @@ function showHud(type, route, fromLL) {
   walkabilityBase = rd.score;
   updateHudScore();
   document.getElementById('hudScore').style.color =
-    type==='safe'        ? 'var(--safe)'    :
-    type==='transit'     ? 'var(--transit)' :
-    type==='multimodal'  ? 'var(--safe)'    : 'var(--primary)';
+    type==='safe'                            ? 'var(--safe)'    :
+    (type==='transit'||type==='multimodal')  ? 'var(--transit)' : 'var(--primary)';
 
   const estSteps = Math.round((rd.dist*1000)/0.762);
   const estCals  = Math.round((rd.dist*1000)*0.05);
 
-  if (type==='transit') {
+  const isTransitMode = type === 'transit' || type === 'multimodal';
+  if (isTransitMode) {
     document.getElementById('hudTime').textContent = `${Math.ceil(rd.dist*4)+8} min`;
     document.getElementById('hudTime').style.color = 'var(--transit)';
   } else {
@@ -1486,14 +1486,14 @@ function showHud(type, route, fromLL) {
 
   const stepsBox    = document.getElementById('stepsBox');
   const transitWrap = document.getElementById('transitWrap');
-  if (type !== 'transit') {
+  if (!isTransitMode) {
     stepsBox.innerHTML = itinHtml; stepsBox.style.display='block'; transitWrap.style.display='none';
   } else {
     stepsBox.style.display='none'; transitWrap.style.display='block';
     buildTransitView(coords, steps, rd);
   }
 
-  if (type !== 'transit') {
+  if (!isTransitMode) {
     const color = type==='safe' ? '#7c3aed' : '#2563eb';
     const dash  = type==='walk' ? '10,8' : '';
     const poly  = L.polyline(coords, { color, weight:6, opacity:.9, dashArray:dash }).addTo(interactiveLayer);
@@ -1512,7 +1512,7 @@ function showHud(type, route, fromLL) {
   const bShare = document.getElementById('btnShare');
   if (bShare) bShare.style.display = 'block';
   if (document.getElementById('voiceToggle')?.checked && 'speechSynthesis' in window) {
-    const label = type==='transit' ? 'transit route' : type==='safe' ? 'safest walk' : 'shortest walk';
+    const label = isTransitMode ? 'metro route' : type==='safe' ? 'safest walk' : 'shortest walk';
     speechSynthesis.speak(new SpeechSynthesisUtterance(`Route: ${label}. ${Math.ceil(rd.dist*12)} minutes.`));
   }
 }
