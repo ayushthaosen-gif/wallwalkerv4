@@ -94,6 +94,138 @@ async function detectCityByIP() {
 
 
 // ══════════════════════════════════════════════
+// ADMIN MODE — location override for debugging
+// ══════════════════════════════════════════════
+let _isAdmin      = false;
+let _adminSpoofOn = false;
+let _adminCoords  = null; // { lat, lng } last teleport coords
+
+function toggleAdminKeySection() {
+  const el = document.getElementById('adminKeySection');
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+  if (el.style.display === 'block') setTimeout(() => document.getElementById('adminKeyInput').focus(), 50);
+}
+
+async function adminLogin() {
+  const key = (document.getElementById('adminKeyInput').value || '').trim();
+  const errEl = document.getElementById('adminLoginError');
+  errEl.textContent = '';
+  if (!key) { errEl.textContent = 'Enter the admin key'; return; }
+  try {
+    const r = await fetch(`${API}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key }),
+    });
+    const d = await r.json();
+    if (!d.ok) { errEl.textContent = d.error || 'Invalid key'; return; }
+    localStorage.setItem('gw_admin_token', d.token);
+    _isAdmin = true;
+    document.getElementById('adminKeyInput').value = '';
+    closeModal('loginModal');
+    _activateAdminUI();
+    openModal('adminModal');
+    _updateAdminStatus();
+  } catch(e) {
+    errEl.textContent = 'Could not reach server';
+  }
+}
+
+async function initAdminSession() {
+  const token = localStorage.getItem('gw_admin_token');
+  if (!token) return;
+  try {
+    const r = await fetch(`${API}/api/admin/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    const d = await r.json();
+    if (d.ok) { _isAdmin = true; _activateAdminUI(); }
+    else { localStorage.removeItem('gw_admin_token'); }
+  } catch(e) { /* server unreachable — stay logged out of admin */ }
+}
+
+function _activateAdminUI() {
+  const badge = document.getElementById('badgeAdmin');
+  if (badge) badge.style.display = 'flex';
+}
+
+function _updateAdminStatus() {
+  const city    = document.getElementById('adminCityDisplay');
+  const country = document.getElementById('adminCountryDisplay');
+  const gps     = document.getElementById('adminGpsDisplay');
+  const spoof   = document.getElementById('adminSpoofDisplay');
+  if (city)    city.textContent    = detectedCity || '—';
+  if (country) country.textContent = window._searchCountry || '—';
+  if (gps)     gps.textContent     = userLoc ? `${userLoc.lat.toFixed(4)}, ${userLoc.lng.toFixed(4)}` : '—';
+  if (spoof)   spoof.textContent   = _adminSpoofOn ? 'ON' : 'off';
+  // Highlight active preset
+  document.querySelectorAll('.admin-city-btn').forEach(b => b.classList.remove('active'));
+  if (_adminCoords) {
+    document.querySelectorAll('.admin-city-btn').forEach(b => {
+      const fn = b.getAttribute('onclick') || '';
+      const m  = fn.match(/adminSetCity\('[^']*',([^,]+),([^)]+)\)/);
+      if (m && Math.abs(parseFloat(m[1]) - _adminCoords.lat) < 0.01) b.classList.add('active');
+    });
+  }
+  const spoofBtn = document.getElementById('adminSpoofToggle');
+  if (spoofBtn) { spoofBtn.textContent = _adminSpoofOn ? 'ON' : 'OFF'; spoofBtn.style.background = _adminSpoofOn ? '#0f172a' : 'white'; spoofBtn.style.color = _adminSpoofOn ? 'white' : '#0f172a'; }
+}
+
+function adminSetCity(city, lat, lng) {
+  _adminCoords  = { lat, lng };
+  detectedCity  = null; // reset so applyCity() runs even for same city
+  localStorage.removeItem('gw_city');
+  applyCity(city, lat, lng);
+  if (map) map.setView([lat, lng], 13);
+  if (_adminSpoofOn) userLoc = L.latLng(lat, lng);
+  showToast(`Admin: ${city === 'unknown' ? `${lat.toFixed(2)},${lng.toFixed(2)}` : city}`);
+  _updateAdminStatus();
+}
+
+function adminSetCustomCoords() {
+  const lat = parseFloat((document.getElementById('adminLat').value || '').trim());
+  const lng = parseFloat((document.getElementById('adminLng').value || '').trim());
+  if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    showToast('Invalid coordinates'); return;
+  }
+  const city = detectCityFromCoords(lat, lng);
+  adminSetCity(city, lat, lng);
+}
+
+function adminToggleSpoof() {
+  _adminSpoofOn = !_adminSpoofOn;
+  if (_adminSpoofOn && _adminCoords) {
+    userLoc = L.latLng(_adminCoords.lat, _adminCoords.lng);
+    showNearbyTransit(_adminCoords.lat, _adminCoords.lng);
+  }
+  _updateAdminStatus();
+}
+
+function adminClearCache() {
+  localStorage.removeItem('gw_city');
+  detectedCity  = null;
+  _adminCoords  = null;
+  _adminSpoofOn = false;
+  detectCityByIP();
+  showToast('City cache cleared — re-detecting…');
+  _updateAdminStatus();
+}
+
+function adminExitMode() {
+  if (!confirm('Exit admin mode? The 🔑 badge will disappear.')) return;
+  localStorage.removeItem('gw_admin_token');
+  _isAdmin      = false;
+  _adminSpoofOn = false;
+  _adminCoords  = null;
+  const badge   = document.getElementById('badgeAdmin');
+  if (badge) badge.style.display = 'none';
+  closeModal('adminModal');
+  showToast('Admin mode deactivated');
+}
+
+// ══════════════════════════════════════════════
 // PWA INSTALL
 // ══════════════════════════════════════════════
 let _deferredInstallPrompt = null;
@@ -626,6 +758,7 @@ window.onload = () => {
   detectCityByIP();   // IP geo — fires immediately, no GPS needed
   pollBusData();
   initUserSession();
+  initAdminSession(); // admin mode restore on page reload
   initPWA();
   checkInstallState();
   parseShareParams(); // #21 — auto-fill route from URL params

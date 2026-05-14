@@ -228,3 +228,11 @@ input:checked+.slider:before{transform:translateX(18px);}
   background:linear-gradient(90deg,#f0f0f0 25%,#e0e0e0 50%,#f0f0f0 75%);
   background-size:200% 100%; animation:shimmer 1.5s infinite; }
 @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+/* Admin panel */
+.admin-city-btn {
+  padding:10px 8px; border-radius:10px; border:1.5px solid #e2e8f0;
+  background:white; font-size:13px; font-weight:700; cursor:pointer;
+  font-family:inherit; text-align:center; transition:background .15s,border-color .15s; }
+.admin-city-btn:hover { background:#f1f5f9; border-color:#cbd5e1; }
+.admin-city-btn.active { background:#0f172a; color:white; border-color:#0f172a; }

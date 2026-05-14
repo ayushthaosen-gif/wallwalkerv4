@@ -379,6 +379,29 @@ app.get('/api/stats', async (req, res) => {
   } catch (e) { res.status(500).json({ error:e.message, db:'error' }); }
 });
 
+// ══════════════════════════════════════════════
+// ADMIN — Key-based login for debug/location override
+// Set ADMIN_KEY env var to enable. Never stored in DB.
+// ══════════════════════════════════════════════
+const ADMIN_KEY = process.env.ADMIN_KEY || null;
+
+app.post('/api/admin/login', (req, res) => {
+  if (!ADMIN_KEY) return res.status(503).json({ error: 'Admin not configured — set ADMIN_KEY env var' });
+  const { key } = req.body;
+  if (!key || key !== ADMIN_KEY) return res.status(401).json({ error: 'Invalid admin key' });
+  const day   = Math.floor(Date.now() / 86400000);
+  const token = crypto.createHmac('sha256', SECRET).update('admin:' + day).digest('hex');
+  res.json({ ok: true, token });
+});
+
+app.post('/api/admin/verify', (req, res) => {
+  if (!ADMIN_KEY) return res.status(503).json({ ok: false });
+  const { token } = req.body;
+  const day   = Math.floor(Date.now() / 86400000);
+  const valid = crypto.createHmac('sha256', SECRET).update('admin:' + day).digest('hex');
+  res.json({ ok: token === valid });
+});
+
 // ── CATCH-ALL ──
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
