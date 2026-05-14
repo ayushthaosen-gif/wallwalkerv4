@@ -19,6 +19,13 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, '.')));
 
+// Infrastructure: Rate limiting on /api/auth routes
+let rateLimit;
+try { rateLimit = require('express-rate-limit'); } catch(e) { rateLimit = null; }
+if (rateLimit) {
+  app.use('/api/auth', rateLimit({ windowMs: 15*60*1000, max: 10, message: { error: 'Too many requests — try again later' } }));
+}
+
 // ── DATABASE ──
 const pool = new Pool({
   host:     process.env.DB_HOST     || 'aws-0-ap-southeast-1.pooler.supabase.com',
