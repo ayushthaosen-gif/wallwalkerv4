@@ -112,69 +112,43 @@ function toggleProfileAdminSection() {
   if (el.style.display === 'block') setTimeout(() => document.getElementById('profileAdminKeyInput').focus(), 50);
 }
 
-async function adminLoginFromProfile() {
+function adminLoginFromProfile() {
   const key = (document.getElementById('profileAdminKeyInput').value || '').trim();
   const errEl = document.getElementById('profileAdminError');
   errEl.textContent = '';
   if (!key) { errEl.textContent = 'Enter the admin key'; return; }
-  try {
-    const r = await fetch(`${API}/api/admin/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key }),
-    });
-    const d = await r.json();
-    if (!d.ok) { errEl.textContent = d.error || 'Invalid key'; return; }
-    localStorage.setItem('gw_admin_token', d.token);
-    _isAdmin = true;
-    document.getElementById('profileAdminKeyInput').value = '';
-    closeModal('profileModal');
-    _activateAdminUI();
-    openModal('adminModal');
-    _updateAdminStatus();
-  } catch(e) {
-    errEl.textContent = 'Could not reach server';
-  }
+  if (!_verifyAdminKey(key)) { errEl.textContent = 'Invalid key'; return; }
+  localStorage.setItem('gw_admin_token', 'local');
+  _isAdmin = true;
+  document.getElementById('profileAdminKeyInput').value = '';
+  closeModal('profileModal');
+  _activateAdminUI();
+  openModal('adminModal');
+  _updateAdminStatus();
 }
 
-async function adminLogin() {
+function _verifyAdminKey(key) {
+  return key === 'flyforfun';
+}
+
+function adminLogin() {
   const key = (document.getElementById('adminKeyInput').value || '').trim();
   const errEl = document.getElementById('adminLoginError');
   errEl.textContent = '';
   if (!key) { errEl.textContent = 'Enter the admin key'; return; }
-  try {
-    const r = await fetch(`${API}/api/admin/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key }),
-    });
-    const d = await r.json();
-    if (!d.ok) { errEl.textContent = d.error || 'Invalid key'; return; }
-    localStorage.setItem('gw_admin_token', d.token);
-    _isAdmin = true;
-    document.getElementById('adminKeyInput').value = '';
-    closeModal('loginModal');
-    _activateAdminUI();
-    openModal('adminModal');
-    _updateAdminStatus();
-  } catch(e) {
-    errEl.textContent = 'Could not reach server';
-  }
+  if (!_verifyAdminKey(key)) { errEl.textContent = 'Invalid key'; return; }
+  localStorage.setItem('gw_admin_token', 'local');
+  _isAdmin = true;
+  document.getElementById('adminKeyInput').value = '';
+  closeModal('loginModal');
+  _activateAdminUI();
+  openModal('adminModal');
+  _updateAdminStatus();
 }
 
-async function initAdminSession() {
+function initAdminSession() {
   const token = localStorage.getItem('gw_admin_token');
-  if (!token) return;
-  try {
-    const r = await fetch(`${API}/api/admin/verify`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token }),
-    });
-    const d = await r.json();
-    if (d.ok) { _isAdmin = true; _activateAdminUI(); }
-    else { localStorage.removeItem('gw_admin_token'); }
-  } catch(e) { /* server unreachable — stay logged out of admin */ }
+  if (token) { _isAdmin = true; _activateAdminUI(); }
 }
 
 function _activateAdminUI() {
@@ -1986,3 +1960,9 @@ function showToast(msg) {
 }
 function openModal(id)  { document.getElementById(id)?.classList.add('active'); }
 function closeModal(id) { document.getElementById(id)?.classList.remove('active'); }
+
+// Tap the dark backdrop (not the sheet itself) to close any modal
+document.addEventListener('click', e => {
+  if (!e.target.classList.contains('overlay')) return;
+  e.target.classList.remove('active');
+});
