@@ -35,6 +35,7 @@
       <div class="badge badge-aqi" id="badgeAqi" onclick="openModal('aqiModal')">AQI —</div>
       <div class="badge badge-temp" id="badgeTemp" onclick="openModal('tempModal')">— °C</div>
       <div class="badge badge-trees" onclick="toggleTrees()">🌳</div>
+      <div class="badge" id="badgeHeatmap" onclick="toggleHeatmap()" style="background:#fff5f5;color:#dc2626;">🔥 Heat</div>
     </div>
   </header>
 
@@ -119,6 +120,7 @@
             ▼ Min
           </button>
         </div>
+        <div id="hudModeSwitcher" style="display:none;gap:6px;margin-bottom:10px;flex-wrap:wrap;"></div>
         <div class="hud-scores">
           <div class="score-block">
             <div class="score-lbl">Walkability</div>
@@ -141,6 +143,8 @@
           <span>👟 <b id="liveStepCount">0</b> steps</span>
           <span class="sep">|</span>
           <span>🔥 <b id="liveCals">0</b> kcal</span>
+          <span class="sep">|</span>
+          <span>⏱ <b id="liveEta">— min left</b></span>
         </div>
         <div id="surfaceReadout" class="surface-readout">
           <div class="surface-idle">Start walking to detect surface · canopy · lighting</div>
@@ -155,6 +159,7 @@
         <div class="transit-wrap" id="transitWrap"></div>
         <button class="btn-start" id="btnStart" onclick="startLive()">▶ Start Live Walk</button>
         <button class="btn-start btn-stop" id="btnStop" onclick="stopLive()">⏹ Stop Navigation</button>
+        <button id="btnShare" onclick="shareRoute()" style="display:none;background:#f8fafc;border:1.5px solid #e2e8f0;color:#475569;width:100%;padding:11px;border-radius:14px;font-size:14px;font-weight:800;font-family:inherit;cursor:pointer;margin-bottom:8px;">🔗 Share This Route</button>
         <div class="hazard-row">
           <div class="chip" onclick="openModal('hazardModal')">📍 Hazard</div>
           <div class="chip" onclick="quickHazard('🚧 Construction')">🚧 Work</div>
@@ -301,12 +306,15 @@
   <div class="sheet">
     <div class="sheet-handle"></div>
     <h3>Walkability Score</h3>
-    <p>Starts at 100. Penalised by: hazards (−5–15), rough surface (−3), no lighting (−5), exposed / no shade (−2). Bonus: good lighting (+3), good canopy (+2). Tap infra tiles on map to zoom to those points.</p>
+    <p>How your score is calculated:</p>
+    <div id="scoreBreakdown" style="margin:12px 0;"></div>
+    <p style="font-size:11px;color:#94a3b8;">Tap infra tiles on map to zoom to those points.</p>
     <button class="btn-cancel" onclick="closeModal('scoreModal')">Got it</button>
   </div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js"></script>
 <script src="bus_stops_v2.js" async></script>
 <script src="bus_stop_routes.js" async></script>
 <script src="bus_routes_p1.js" async></script>

@@ -565,6 +565,16 @@ let activeOriginName = '', activeDestName = '';
 let originMarker = null;
 let simData = {};
 
+// #3 — smart marker delta registry
+const _visibleMarkers = new Map(); // stopId → L.Marker
+
+// #6 — off-route detection
+let currentRouteCoords = [];
+let offRouteCount = 0;
+
+// Hazard heatmap layer
+let heatLayer = null;
+
 // ── TRANSPORT MODE PREFERENCES ──
 // Which modes the user has toggled ON
 let enabledModes = new Set(['walk','metro','bus','auto']);
@@ -592,6 +602,7 @@ let isLiveTracking = false;
 let currentRouteMode = 'walk';
 let cachedMetroPlan = null;
 
+
 // Surface / motion
 let motionDataZ=[], motionDataX=[], motionDataY=[];
 let lastKnownSurface = 'Unknown';
@@ -617,7 +628,24 @@ window.onload = () => {
   initUserSession();
   initPWA();
   checkInstallState();
+  parseShareParams(); // #21 — auto-fill route from URL params
 };
+
+// #21 — Parse shared route URL params
+function parseShareParams() {
+  const p = new URLSearchParams(location.search);
+  const from = p.get('from'), to = p.get('to');
+  if (!from || !to) return;
+  const [fLat, fLng] = from.split(',').map(Number);
+  const [tLat, tLng] = to.split(',').map(Number);
+  const fn = p.get('fn') || 'Origin', tn = p.get('tn') || 'Destination';
+  const mode = p.get('mode') || 'walk';
+  setTimeout(() => {
+    setOrigin(fLat, fLng, fn);
+    setDest(tLat, tLng, tn);
+    setTimeout(() => pickRoute(mode), 800);
+  }, 1500);
+}
 
 // ── TABS ──
 function initTabs() {
@@ -658,6 +686,7 @@ function initMap() {
       if (z >= 13) refreshTransitOnView(c.lat, c.lng, z);
       else {
         stationLayer.clearLayers();
+        _visibleMarkers.clear(); // #3 — clear registry when zoomed out
         if (typeof WmataEngine !== 'undefined' && WmataEngine.wmataDataReady())
           WmataEngine.drawWmataMetroLines(stationLayer);
       }
@@ -714,6 +743,29 @@ function initSensors() {
     fetchLiveEnv(userLoc.lat, userLoc.lng);
     showNearbyTransit(userLoc.lat, userLoc.lng);
     if (firstFix) loadHazardsFromDB();
+
+    // #6 — off-route detection
+    if (isLiveTracking && currentRouteCoords.length > 1 && activeDestLatLng) {
+      const nearestDist = currentRouteCoords.reduce((min, c) => {
+        return Math.min(min, L.latLng(c[0], c[1]).distanceTo(userLoc));
+      }, Infinity);
+      if (nearestDist > 80) {
+        offRouteCount++;
+        if (offRouteCount === 3) {
+          showToast('Off route — recalculate?');
+          offRouteCount = 0;
+        }
+      } else {
+        offRouteCount = 0;
+      }
+    }
+
+    // #20 — ETA countdown
+    if (isLiveTracking && activeDestLatLng) {
+      const remM = Math.ceil(userLoc.distanceTo(activeDestLatLng) / 83);
+      const etaEl = document.getElementById('liveEta');
+      if (etaEl) etaEl.textContent = remM + ' min left';
+    }
   });
 
   map.on('locationerror', e => {
@@ -815,8 +867,10 @@ function getNearestBusStops(lat, lng, n=5, km=0.8) {
 }
 
 // Refresh transit stops based on current map view
+// #3 — uses delta registry to avoid flicker (only add/remove markers that enter/leave viewport)
 function refreshTransitOnView(lat, lng, zoom) {
-  stationLayer.clearLayers();
+  const bounds = map.getBounds();
+  const paddedBounds = bounds.pad(0.2);
 
   const busRadius   = zoom >= 17 ? 0.3 : zoom >= 15 ? 0.5 : 0.8;
   const busCount    = zoom >= 17 ? 10  : zoom >= 15 ? 8   : 6;
@@ -832,9 +886,17 @@ function refreshTransitOnView(lat, lng, zoom) {
         style="flex:1;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:#475569;">📍 Start Here</button>
     </div>`;
 
+  // Shimmer loading placeholder (#9)
+  const shimmerLoading = `
+    <div class="shimmer-line" style="width:80%;"></div>
+    <div class="shimmer-line" style="width:60%;"></div>
+    <div class="shimmer-line" style="width:70%;"></div>`;
+
   // ── Delhi Bus stops ──
   if (typeof BusEngine !== 'undefined' && BusEngine.busDataReady()) {
     BusEngine.getNearestBusStops(lat, lng, busCount, busRadius).forEach(s => {
+      const key = 'bus_' + s.id;
+      if (_visibleMarkers.has(key)) return; // already on map
       const ico = L.divIcon({ className:'',
         html:`<div style="background:white;border:2px solid #d97706;border-radius:50%;width:${zoom>=16?22:18}px;height:${zoom>=16?22:18}px;display:flex;align-items:center;justify-content:center;font-size:11px;box-shadow:0 2px 6px rgba(0,0,0,.25);">🚏</div>`,
         iconSize:[20,20], iconAnchor:[10,10] });
@@ -842,18 +904,21 @@ function refreshTransitOnView(lat, lng, zoom) {
       m.on('click', e => { e.originalEvent._markerHandled = true; });
       m.bindPopup(`<div style="min-width:200px;"><b>🚏 ${s.name}</b>
         <div style="font-size:10px;color:#94a3b8;margin:2px 0 6px;">Stop ${s.id} · DTC/DIMTS</div>
-        <div style="font-size:11px;color:#64748b;">⏳ Loading schedule…</div>
+        ${shimmerLoading}
         ${navBtns(s.lat,s.lng,s.name,'#d97706')}</div>`, {maxWidth:300});
       m.on('popupopen', async () => {
         const html = await BusEngine.buildStopInfoHtml(s.id, s.name, 'bus');
         if (m.isPopupOpen()) m.getPopup().setContent(html + navBtns(s.lat,s.lng,s.name,'#d97706')).update();
       });
+      _visibleMarkers.set(key, { marker: m, lat: s.lat, lng: s.lng });
     });
   }
 
   // ── Delhi Metro stations ──
   if (typeof MetroEngine !== 'undefined' && typeof METRO_DATA !== 'undefined') {
     MetroEngine.getNearestMetroStations(lat, lng, metroCount, metroRadius).forEach(s => {
+      const key = 'metro_' + s.id;
+      if (_visibleMarkers.has(key)) return; // already on map
       const color = MetroEngine.parseLineColor(
         Object.values(METRO_DATA?.routes||{}).find(r =>
           METRO_DATA.route_stops[Object.keys(METRO_DATA.routes).find(k=>METRO_DATA.routes[k]===r)]?.includes(String(s.id))
@@ -865,12 +930,13 @@ function refreshTransitOnView(lat, lng, zoom) {
       m.on('click', e => { e.originalEvent._markerHandled = true; });
       m.bindPopup(`<div style="min-width:200px;"><b>🚇 ${s.name}</b>
         <div style="font-size:10px;color:#94a3b8;margin:2px 0 6px;">Delhi Metro</div>
-        <div style="font-size:11px;color:#64748b;">⏳ Loading schedule…</div>
+        ${shimmerLoading}
         ${navBtns(s.lat,s.lng,s.name,color)}</div>`, {maxWidth:300});
       m.on('popupopen', async () => {
         const html = await MetroEngine.buildMetroStopInfoHtml(s.id, s.name);
         if (m.isPopupOpen()) m.getPopup().setContent(html + navBtns(s.lat,s.lng,s.name,color)).update();
       });
+      _visibleMarkers.set(key, { marker: m, lat: s.lat, lng: s.lng });
     });
   }
 
@@ -878,6 +944,14 @@ function refreshTransitOnView(lat, lng, zoom) {
   if (typeof WmataEngine !== 'undefined' && WmataEngine.wmataDataReady()) {
     WmataEngine.refreshWmataOnView(lat, lng, zoom, stationLayer);
   }
+
+  // Remove markers that have drifted outside padded bounds
+  _visibleMarkers.forEach((entry, id) => {
+    if (!paddedBounds.contains(L.latLng(entry.lat, entry.lng))) {
+      stationLayer.removeLayer(entry.marker);
+      _visibleMarkers.delete(id);
+    }
+  });
 }
 
 // Show transit near a location (GPS first fix or IP fallback)
@@ -948,6 +1022,7 @@ function updateHudScore() {
   const lng = userLoc ? userLoc.lng : 77.2090;
   const score = Env.computeWalkabilityScore(walkabilityBase, localHazards, lastSurfaceResult, lat, lng);
   if (el) el.textContent = score;
+  updateScoreBreakdown(); // #22 — keep breakdown in sync
 }
 
 // ── SEARCH A→B ──
@@ -989,6 +1064,8 @@ async function doSearch(q, field) {
     const cc  = window._searchCountry ? `&countrycodes=${window._searchCountry}` : '';
     const r   = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=6&addressdetails=1${ref}${cc}`);
     const data = await r.json();
+    // Save to cache for offline fallback
+    localStorage.setItem('gw_search_cache_'+q.slice(0,10), JSON.stringify(data.slice(0,3)));
     const dd  = document.getElementById('resultsDropdown');
     if (!data.length) { closeDropdown(); return; }
     let html = field==='from'
@@ -1007,7 +1084,26 @@ async function doSearch(q, field) {
         <div class="result-dist">${dist}</div></div>`;
     }).join('');
     dd.innerHTML=html; dd.classList.add('open');
-  } catch {}
+  } catch {
+    // Offline fallback — use cached results
+    const cached = getCachedSearchResults(q);
+    if (!cached.length) return;
+    const dd = document.getElementById('resultsDropdown');
+    let html = field==='from'
+      ? `<div class="result-item" onclick="useMyLocation()"><div><div class="result-name">📍 My Current Location</div><div class="result-sub">Use live GPS</div></div><div class="result-gps">GPS</div></div>`
+      : '';
+    html += cached.map(item => {
+      const parts = item.display_name.split(',');
+      const name  = parts[0].trim();
+      const sub   = parts.slice(1,3).join(', ').trim();
+      const fn    = field==='from'
+        ? `setOrigin(${item.lat},${item.lon},'${name.replace(/'/g,"\\'")}')`
+        : `setDest(${item.lat},${item.lon},'${name.replace(/'/g,"\\'")}')`;
+      return `<div class="result-item" onclick="${fn}">
+        <div><div class="result-name">📴 ${name}</div><div class="result-sub">${sub} · Cached</div></div></div>`;
+    }).join('');
+    dd.innerHTML=html; dd.classList.add('open');
+  }
 }
 
 function closeDropdown() { document.getElementById('resultsDropdown').classList.remove('open'); }
@@ -1202,6 +1298,7 @@ function showHud(type, route, fromLL) {
   const rd     = simData[type] || simData[currentRouteMode] || simData.walk;
   const steps  = route.legs[0].steps;
   const coords = route.geometry.coordinates.map(c => [c[1], c[0]]);
+  currentRouteCoords = coords; // #6 — store for off-route detection
   routeCoordsData = { footpaths:[], bridges:[], underpasses:[], crossings:[] };
   let itinHtml = '';
 
@@ -1276,6 +1373,11 @@ function showHud(type, route, fromLL) {
   }
 
   updateSurfaceReadout();
+  updateScoreBreakdown(); // #22
+  updateHudModeSwitcher(type); // #7
+  // #21 — show share button
+  const bShare = document.getElementById('btnShare');
+  if (bShare) bShare.style.display = 'block';
   if (document.getElementById('voiceToggle')?.checked && 'speechSynthesis' in window) {
     const label = type==='transit' ? 'transit route' : type==='safe' ? 'safest walk' : 'shortest walk';
     speechSynthesis.speak(new SpeechSynthesisUtterance(`Route: ${label}. ${Math.ceil(rd.dist*12)} minutes.`));
@@ -1499,7 +1601,7 @@ async function processPhoto(event) {
         st.textContent = `✔ ${label}`;
         setTimeout(() => { quickHazard(`📸 ${label}`); st.textContent=''; closeModal('hazardModal'); }, 1500);
       } catch {
-        st.textContent = 'AI unavailable';
+        st.textContent = '⚠ AI offline — saved as Photo Hazard';
         setTimeout(() => { quickHazard('📸 Photo Hazard'); st.textContent=''; closeModal('hazardModal'); }, 1200);
       }
     };
@@ -1538,6 +1640,12 @@ function clearRoute(clearInputs) {
     document.getElementById('nearestBusInfo').style.display='none';
     cachedMetroPlan=null; window._cachedBusJourney=null;
     window._cachedWmataPlan=null; window._cachedWmataBus=null;
+    // #3 — clear marker registry
+    stationLayer.clearLayers(); _visibleMarkers.clear();
+    // #6 — clear route coords
+    currentRouteCoords = []; offRouteCount = 0;
+    // #21 — hide share button
+    const bs = document.getElementById('btnShare'); if(bs) bs.style.display='none';
   }
   // Do NOT clear transit caches on clearInputs=false — pickRoute needs them intact
 }
@@ -1627,6 +1735,80 @@ function toggleTrees() {
 function refreshVaultStats() {
   const el = document.getElementById('vHazards');
   if (el) el.textContent = localHazards.length;
+}
+
+// #7 — HUD mode switcher
+function updateHudModeSwitcher(activeType) {
+  const sw = document.getElementById('hudModeSwitcher');
+  if (!sw) return;
+  const modes = [];
+  if (simData.walk)                modes.push({ type:'walk',    label:'🚶 Walk',  color:'#2563eb' });
+  if (cachedMetroPlan)             modes.push({ type:'transit', label:'🚇 Metro', color:'#1565c0' });
+  if (window._cachedBusJourney)    modes.push({ type:'bus',     label:'🚌 Bus',   color:'#d97706' });
+  if (modes.length > 1) {
+    sw.style.display = 'flex';
+    sw.innerHTML = modes.map(m => `
+      <button onclick="pickRoute('${m.type}')"
+        style="padding:6px 14px;border-radius:20px;border:2px solid ${m.color};
+               background:${m.type===activeType?m.color:'white'};
+               color:${m.type===activeType?'white':m.color};
+               font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;transition:all .2s;">
+        ${m.label}
+      </button>`).join('');
+  } else {
+    sw.style.display = 'none';
+  }
+}
+
+// #22 — Walkability score breakdown
+function updateScoreBreakdown() {
+  const el = document.getElementById('scoreBreakdown');
+  if (!el) return;
+  const items = [
+    { label: 'Footpaths',     val: Math.min(100, routeCoordsData.footpaths.length * 4),  color:'#2563eb', icon:'🚶' },
+    { label: 'Shade / Canopy',val: ({dense:90,partial:60,open:30,unknown:50})[Env.getCanopy()]||50, color:'#16a34a', icon:'🌳' },
+    { label: 'Crossings',     val: Math.max(0, 100 - routeCoordsData.crossings.length * 8), color:'#d97706', icon:'🚦' },
+    { label: 'Hazard density',val: Math.max(0, 100 - localHazards.length * 12),          color:'#dc2626', icon:'⚠️' },
+  ];
+  el.innerHTML = items.map(i => `
+    <div style="margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;margin-bottom:3px;">
+        <span>${i.icon} ${i.label}</span><span style="color:${i.color};">${i.val}</span>
+      </div>
+      <div style="background:#f1f5f9;border-radius:6px;height:8px;overflow:hidden;">
+        <div style="width:${i.val}%;height:100%;background:${i.color};border-radius:6px;transition:width .4s;"></div>
+      </div>
+    </div>`).join('');
+}
+
+// #21 — Share route
+function shareRoute() {
+  const from = activeOriginLatLng || userLoc;
+  if (!from || !activeDestLatLng) return;
+  const url = `${location.origin}${location.pathname}?from=${from.lat.toFixed(5)},${from.lng.toFixed(5)}&to=${activeDestLatLng.lat.toFixed(5)},${activeDestLatLng.lng.toFixed(5)}&fn=${encodeURIComponent(activeOriginName||'Origin')}&tn=${encodeURIComponent(activeDestName||'Destination')}&mode=${currentRouteMode}`;
+  if (navigator.share) {
+    navigator.share({ title: 'GaitWay Route', text: `${activeOriginName||'Origin'} → ${activeDestName}`, url });
+  } else {
+    navigator.clipboard?.writeText(url).then(() => showToast('Link copied!')).catch(() => showToast(url));
+  }
+}
+
+// Hazard heatmap toggle
+async function toggleHeatmap() {
+  if (heatLayer) { map.removeLayer(heatLayer); heatLayer=null; showToast('Heatmap hidden'); return; }
+  try {
+    const res = await fetch(`${API}/api/hazards?limit=1000`);
+    const hazards = await res.json();
+    if (!hazards.length) { showToast('No hazard data yet'); return; }
+    const pts = hazards.map(h => [h.lat, h.lng, 1.0]);
+    heatLayer = L.heatLayer(pts, { radius:25, blur:20, maxZoom:17, gradient:{0.4:'blue',0.65:'lime',1:'red'} }).addTo(map);
+    showToast(`Heatmap: ${hazards.length} hazards`);
+  } catch(e) { showToast('Could not load heatmap'); }
+}
+
+// Offline search cache helper
+function getCachedSearchResults(q) {
+  try { return JSON.parse(localStorage.getItem('gw_search_cache_'+q.slice(0,10))) || []; } catch { return []; }
 }
 
 // ── UTILS ──
