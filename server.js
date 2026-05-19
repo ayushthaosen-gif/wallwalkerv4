@@ -422,7 +422,11 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
 app.listen(PORT, () => {
   console.log(`✅ GaitWay v2 on port ${PORT}`);
-  console.log(`   DB:       ${process.env.DB_PASSWORD   ? '✓' : '⚠ DB_PASSWORD not set'}`);
+  const _du = process.env.DATABASE_URL;
+  const _dbLog = _du && (_du.startsWith('postgresql://') || _du.startsWith('postgres://'))
+    ? `✓ DATABASE_URL set (host: ${_du.split('@')[1]?.split('/')[0] || '?'})`
+    : process.env.DB_PASSWORD ? `✓ DB_PASSWORD set` : '⚠ No DB credentials set';
+  console.log(`   DB:       ${_dbLog}`);
   console.log(`   AI:       ${process.env.GEMINI_API_KEY      ? '✓ Gemini' : '⚠ GEMINI_API_KEY not set'}`);
   console.log(`   Maps:     ${process.env.GOOGLE_MAPS_KEY   ? '✓' : '— GOOGLE_MAPS_KEY not set (optional)'}`);
   console.log(`   Email:    ${process.env.SENDGRID_API_KEY  ? '✓ SendGrid' : '— dev mode (OTP in logs)'}`);
