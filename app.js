@@ -652,8 +652,32 @@ async function initUserSession() {
   } catch(e) { console.warn('User session offline — using cached data'); }
 }
 
+const _geocodeCache = new Map();
+async function _reverseGeocode(lat, lng) {
+  const key = `${lat.toFixed(3)},${lng.toFixed(3)}`;
+  if (_geocodeCache.has(key)) return _geocodeCache.get(key);
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, { signal: AbortSignal.timeout(4000) });
+    const d = await r.json();
+    const road = d.address?.road || d.address?.suburb || d.address?.neighbourhood || '';
+    const area = d.address?.suburb || d.address?.city_district || d.address?.city || '';
+    const name = [road, area].filter(Boolean).join(', ') || `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
+    _geocodeCache.set(key, name);
+    return name;
+  } catch { return `${lat.toFixed(3)}, ${lng.toFixed(3)}`; }
+}
+
+function _relTime(dateStr) {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1)  return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return new Date(dateStr).toLocaleDateString([], { month:'short', day:'numeric' });
+}
+
 async function loadHazardsFromDB() {
-  // Use GPS if available, IP-detected centre if not — always load something
   const loc = userLoc || (map ? map.getCenter() : null);
   const url  = loc
     ? `${API}/api/hazards?lat=${loc.lat}&lng=${loc.lng}&radius=20&limit=200`
@@ -662,32 +686,89 @@ async function loadHazardsFromDB() {
     const res = await fetch(url);
     const hazards = await res.json();
     if (!Array.isArray(hazards)) return;
+    localHazards = hazards;
+
+    // Map markers
     hazardLayer.clearLayers();
-    const list = document.getElementById('intelFeedList');
-    if (list) list.innerHTML = '';
     hazards.forEach(h => {
-      // Map marker
       const ico = L.divIcon({ className:'',
         html:`<div style="background:#dc2626;width:10px;height:10px;border-radius:50%;border:2px solid white;opacity:.7;"></div>`,
         iconSize:[10,10], iconAnchor:[5,5] });
       L.marker([h.lat,h.lng],{icon:ico}).addTo(hazardLayer)
-       .bindPopup(`<b>${h.type}</b>${h.surface?'<br>Surface: '+h.surface:''}${h.canopy?'<br>Canopy: '+h.canopy:''}<br><small>${new Date(h.created_at).toLocaleDateString()}</small>`);
-      // Intel feed card
-      if (list) {
-        const card = document.createElement('div');
-        card.style.cssText = 'background:white;border-radius:12px;padding:12px;margin-bottom:8px;border:1px solid #e2e8f0;display:flex;align-items:center;gap:10px;cursor:pointer;';
-        card.innerHTML = `<div style="font-size:22px;">${h.type.split(' ')[0]}</div>
-          <div style="flex:1;">
-            <div style="font-size:13px;font-weight:700;">${h.type}</div>
-            <div style="font-size:11px;color:#94a3b8;">${h.surface||''} ${h.ai_label?'· '+h.ai_label:''}</div>
-          </div>
-          <div style="font-size:10px;color:#94a3b8;text-align:right;">${new Date(h.created_at).toLocaleDateString()}<br>${h.lat.toFixed(3)},${h.lng.toFixed(3)}</div>`;
-        card.onclick = () => map.setView([h.lat, h.lng], 17);
-        list.appendChild(card);
-      }
+       .bindPopup(`<b>${h.type}</b>${h.ai_label?'<br>'+h.ai_label:''}${h.surface?'<br>Surface: '+h.surface:''}<br><small>${_relTime(h.created_at)}</small>`);
     });
-    if (list && !hazards.length) list.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><div>No hazards reported yet</div></div>';
-    localHazards = hazards;
+
+    const list = document.getElementById('intelFeedList');
+    if (!list) return;
+    if (!hazards.length) { list.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><div>No hazards reported yet</div></div>'; return; }
+
+    // Group by location (3dp ≈ 100m) then by type
+    const groups = new Map();
+    hazards.forEach(h => {
+      const key = `${h.lat.toFixed(3)},${h.lng.toFixed(3)}`;
+      if (!groups.has(key)) groups.set(key, { lat:h.lat, lng:h.lng, items:[], roadName:'📍 Loading…' });
+      groups.get(key).items.push(h);
+    });
+
+    // Render skeleton first, then fill road names async
+    list.innerHTML = '';
+    const today = new Date().toDateString();
+    let lastSection = '';
+
+    for (const [locKey, grp] of groups) {
+      // Date section header
+      const grpDate = new Date(grp.items[0].created_at).toDateString();
+      const section = grpDate === today ? 'Today' : grpDate === new Date(Date.now()-86400000).toDateString() ? 'Yesterday' : new Date(grp.items[0].created_at).toLocaleDateString([],{weekday:'long',month:'short',day:'numeric'});
+      if (section !== lastSection) {
+        const hdr = document.createElement('div');
+        hdr.style.cssText = 'font-size:11px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;padding:12px 4px 6px;';
+        hdr.textContent = section;
+        list.appendChild(hdr);
+        lastSection = section;
+      }
+
+      // Location group card
+      const card = document.createElement('div');
+      card.style.cssText = 'background:white;border-radius:14px;margin-bottom:10px;border:1px solid #e2e8f0;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.04);cursor:pointer;';
+      card.onclick = () => map.setView([grp.lat, grp.lng], 17);
+
+      // Count by type
+      const typeCounts = {};
+      grp.items.forEach(h => { typeCounts[h.type] = (typeCounts[h.type]||0)+1; });
+      const typeRows = Object.entries(typeCounts).map(([type, cnt]) =>
+        `<div style="display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid #f8fafc;">
+          <span style="font-size:18px;">${type.split(' ')[0]}</span>
+          <span style="flex:1;font-size:13px;font-weight:700;color:#0f172a;">${type.replace(/^\S+\s*/,'')}</span>
+          ${cnt>1?`<span style="background:#f1f5f9;color:#64748b;font-size:10px;font-weight:800;padding:2px 7px;border-radius:20px;">×${cnt}</span>`:''}
+          <span style="font-size:10px;color:#94a3b8;">${_relTime(grp.items.find(h=>h.type===type).created_at)}</span>
+        </div>`
+      ).join('');
+
+      // Env tags
+      const sample = grp.items[0];
+      const tags = [sample.canopy&&`🌳 ${sample.canopy}`, sample.lighting&&`💡 ${sample.lighting}`, sample.surface&&`🛤 ${sample.surface}`].filter(Boolean);
+
+      card.innerHTML = `
+        <div style="padding:10px 14px 6px;display:flex;align-items:center;gap:8px;">
+          <span style="font-size:11px;font-weight:800;color:#2563eb;flex:1;" id="road_${locKey.replace('.','_').replace(',','_')}">📍 Loading…</span>
+          <span style="font-size:10px;color:#94a3b8;">Anonymous</span>
+        </div>
+        ${typeRows}
+        ${tags.length?`<div style="padding:6px 14px 10px;display:flex;gap:6px;flex-wrap:wrap;">${tags.map(t=>`<span style="background:#f1f5f9;color:#475569;font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;">${t}</span>`).join('')}</div>`:'<div style="height:8px;"></div>'}`;
+      list.appendChild(card);
+    }
+
+    // Async fill road names (rate-limited — 1 per 300ms)
+    let delay = 0;
+    for (const [locKey, grp] of groups) {
+      const elId = 'road_' + locKey.replace('.','_').replace(',','_');
+      setTimeout(async () => {
+        const name = await _reverseGeocode(grp.lat, grp.lng);
+        const el = document.getElementById(elId);
+        if (el) el.textContent = '📍 ' + name;
+      }, delay);
+      delay += 300;
+    }
   } catch(e) { console.warn('Hazard load failed:', e.message); }
 }
 
