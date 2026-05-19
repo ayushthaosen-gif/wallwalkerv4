@@ -28,6 +28,9 @@ function applyCity(city, lat, lng) {
   console.log(`✅ City detected: ${city}`);
   if (city === 'dc') {
     injectWmataScripts();
+    setTimeout(loadDcLayers, 1500);
+    const dcBtn = document.getElementById('btnDcLayers');
+    if (dcBtn) dcBtn.style.display = 'block';
     // Fly to DC coords if map is still centred on Delhi default
     if (lat && map) {
       const c = map.getCenter();
@@ -909,6 +912,84 @@ function initTabs() {
   });
 }
 
+// ── DC LAYERS ──
+let dcParksLayer   = null;
+let dcLandmarkLayer = null;
+let _satelliteOn   = false;
+let _osmTile, _satTile;
+
+const DC_LANDMARKS = [
+  { name:'🏛 US Capitol',          lat:38.8899, lng:-77.0091 },
+  { name:'🏠 White House',         lat:38.8977, lng:-77.0366 },
+  { name:'🗿 Washington Monument', lat:38.8895, lng:-77.0353 },
+  { name:'🪖 Lincoln Memorial',    lat:38.8893, lng:-77.0502 },
+  { name:'🌊 Jefferson Memorial',  lat:38.8814, lng:-77.0365 },
+  { name:'⭐ Pentagon',            lat:38.8719, lng:-77.0563 },
+  { name:'✈️ Reagan Airport',      lat:38.8521, lng:-77.0379 },
+  { name:'🏥 Georgetown Univ',     lat:38.9076, lng:-77.0723 },
+  { name:'🎨 National Mall',       lat:38.8893, lng:-77.0227 },
+  { name:'🌳 Rock Creek Park',     lat:38.9517, lng:-77.0526 },
+  { name:'🏛 Library of Congress', lat:38.8887, lng:-77.0047 },
+  { name:'🎭 Kennedy Center',      lat:38.8963, lng:-77.0566 },
+];
+
+async function loadDcLayers() {
+  if (detectedCity !== 'dc') return;
+
+  // ── Landmarks ──
+  if (!dcLandmarkLayer) {
+    dcLandmarkLayer = L.layerGroup().addTo(map);
+    DC_LANDMARKS.forEach(lm => {
+      const ico = L.divIcon({ className:'', iconSize:[null,null],
+        html:`<div style="background:white;border:2px solid #1565c0;border-radius:8px;padding:2px 7px;font-size:10px;font-weight:800;color:#1565c0;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.2);">${lm.name}</div>` });
+      L.marker([lm.lat, lm.lng], { icon:ico }).addTo(dcLandmarkLayer)
+       .bindPopup(`<b>${lm.name}</b><br><button onclick="setDest(${lm.lat},${lm.lng},'${lm.name.replace(/'/,"\\'")}');closeModal('poiModal')" style="margin-top:6px;padding:4px 10px;background:#2563eb;color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px;">Navigate Here</button>`);
+    });
+  }
+
+  // ── Parks (Overpass API) ──
+  if (dcParksLayer) return;
+  const cached = sessionStorage.getItem('dc_parks_geojson');
+  let geojson;
+  if (cached) {
+    geojson = JSON.parse(cached);
+  } else {
+    try {
+      const q = `[out:json][timeout:20];way["leisure"="park"](38.79,-77.12,38.99,-76.91);out geom;`;
+      const r = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(q)}`, { signal: AbortSignal.timeout(10000) });
+      const d = await r.json();
+      geojson = { type:'FeatureCollection', features: d.elements.filter(e=>e.geometry).map(e => ({
+        type:'Feature',
+        properties:{ name: e.tags?.name || 'Park' },
+        geometry:{ type:'Polygon', coordinates:[ e.geometry.map(p=>[p.lon,p.lat]) ] }
+      }))};
+      sessionStorage.setItem('dc_parks_geojson', JSON.stringify(geojson));
+    } catch(e) { console.warn('DC parks load failed:', e.message); return; }
+  }
+  dcParksLayer = L.geoJSON(geojson, {
+    style:{ color:'#16a34a', weight:1.5, fillColor:'#22c55e', fillOpacity:.18 },
+    onEachFeature:(f,l) => l.bindPopup(`<b>🌳 ${f.properties.name}</b>`)
+  }).addTo(map);
+  console.log(`🌳 DC parks loaded: ${geojson.features.length}`);
+}
+
+function toggleSatellite() {
+  const btn = document.getElementById('btnSatellite');
+  if (!_satelliteOn) {
+    _osmTile?.remove();
+    _satTile = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:19, attribution:'Esri' });
+    _satTile.addTo(map); _satTile.bringToBack();
+    if (btn) { btn.textContent='🗺 Map'; btn.style.background='#0f172a'; btn.style.color='white'; }
+    _satelliteOn = true;
+  } else {
+    _satTile?.remove();
+    _osmTile = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19 });
+    _osmTile.addTo(map); _osmTile.bringToBack();
+    if (btn) { btn.textContent='🛰 Sat'; btn.style.background='white'; btn.style.color='#0f172a'; }
+    _satelliteOn = false;
+  }
+}
+
 // ── MAP ──
 function initMap() {
   interactiveLayer = L.layerGroup();
@@ -918,7 +999,7 @@ function initMap() {
 
   map = L.map('map', { zoomControl:false, attributionControl:false })
          .setView([28.6139, 77.2090], 13);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19 }).addTo(map);
+  _osmTile = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19 }).addTo(map);
   interactiveLayer.addTo(map);
   transitLayer.addTo(map);
   stationLayer.addTo(map);
