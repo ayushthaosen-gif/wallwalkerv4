@@ -653,19 +653,42 @@ async function initUserSession() {
 }
 
 async function loadHazardsFromDB() {
-  if (!userLoc) return;
+  // Use GPS if available, IP-detected centre if not — always load something
+  const loc = userLoc || (map ? map.getCenter() : null);
+  const url  = loc
+    ? `${API}/api/hazards?lat=${loc.lat}&lng=${loc.lng}&radius=20&limit=200`
+    : `${API}/api/hazards?limit=200`;
   try {
-    const res = await fetch(`${API}/api/hazards?lat=${userLoc.lat}&lng=${userLoc.lng}&radius=10&limit=200`);
+    const res = await fetch(url);
     const hazards = await res.json();
     if (!Array.isArray(hazards)) return;
+    hazardLayer.clearLayers();
+    const list = document.getElementById('intelFeedList');
+    if (list) list.innerHTML = '';
     hazards.forEach(h => {
+      // Map marker
       const ico = L.divIcon({ className:'',
         html:`<div style="background:#dc2626;width:10px;height:10px;border-radius:50%;border:2px solid white;opacity:.7;"></div>`,
         iconSize:[10,10], iconAnchor:[5,5] });
       L.marker([h.lat,h.lng],{icon:ico}).addTo(hazardLayer)
        .bindPopup(`<b>${h.type}</b>${h.surface?'<br>Surface: '+h.surface:''}${h.canopy?'<br>Canopy: '+h.canopy:''}<br><small>${new Date(h.created_at).toLocaleDateString()}</small>`);
+      // Intel feed card
+      if (list) {
+        const card = document.createElement('div');
+        card.style.cssText = 'background:white;border-radius:12px;padding:12px;margin-bottom:8px;border:1px solid #e2e8f0;display:flex;align-items:center;gap:10px;cursor:pointer;';
+        card.innerHTML = `<div style="font-size:22px;">${h.type.split(' ')[0]}</div>
+          <div style="flex:1;">
+            <div style="font-size:13px;font-weight:700;">${h.type}</div>
+            <div style="font-size:11px;color:#94a3b8;">${h.surface||''} ${h.ai_label?'· '+h.ai_label:''}</div>
+          </div>
+          <div style="font-size:10px;color:#94a3b8;text-align:right;">${new Date(h.created_at).toLocaleDateString()}<br>${h.lat.toFixed(3)},${h.lng.toFixed(3)}</div>`;
+        card.onclick = () => map.setView([h.lat, h.lng], 17);
+        list.appendChild(card);
+      }
     });
-  } catch(e) {}
+    if (list && !hazards.length) list.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><div>No hazards reported yet</div></div>';
+    localHazards = hazards;
+  } catch(e) { console.warn('Hazard load failed:', e.message); }
 }
 
 async function saveHazardToDB(type, lat, lng, extra={}) {
@@ -765,6 +788,7 @@ window.onload = () => {
   initSearchBoxes();
   detectCityByIP();   // IP geo — fires immediately, no GPS needed
   pollBusData();
+  setTimeout(loadHazardsFromDB, 2000); // load hazards without waiting for GPS
   initUserSession();
   initAdminSession(); // admin mode restore on page reload
   initPWA();
@@ -799,6 +823,7 @@ function initTabs() {
       if (target) target.classList.add('active');
       if (this.dataset.target === 'explore-tab') setTimeout(() => map.invalidateSize(), 100);
       if (this.dataset.target === 'vault-tab') { refreshVaultStats(); loadProfileRouteHistory(); }
+      if (this.dataset.target === 'intel-tab') loadHazardsFromDB();
     });
   });
 }
@@ -883,7 +908,7 @@ function initSensors() {
     document.getElementById('vGps').textContent = 'Active ✓';
     fetchLiveEnv(userLoc.lat, userLoc.lng);
     showNearbyTransit(userLoc.lat, userLoc.lng);
-    if (firstFix) loadHazardsFromDB();
+    loadHazardsFromDB();
 
     // #6 — off-route detection
     if (isLiveTracking && currentRouteCoords.length > 1 && activeDestLatLng) {
