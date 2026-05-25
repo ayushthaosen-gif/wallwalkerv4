@@ -278,15 +278,20 @@ app.post('/api/hazards', async (req, res) => {
 });
 
 app.get('/api/hazards', async (req, res) => {
-  const { lat,lng,radius=5,limit=200 } = req.query;
+  const { lat, lng, radius, limit = 500 } = req.query;
   try {
     const { rows } = await pool.query(
       `SELECT id,type,lat,lng,user_id,ai_label,surface,canopy,lighting,
               footpath_type,footpath_width,created_at
        FROM hazards ORDER BY created_at DESC LIMIT 1000`
     );
+    // Only apply radius filter if explicitly requested with lat+lng+radius
     let out = rows;
-    if (lat&&lng) out=rows.filter(h=>hav(+lat,+lng,h.lat,h.lng)<=+radius).slice(0,+limit);
+    if (lat && lng && radius) {
+      out = rows.filter(h => hav(+lat, +lng, h.lat, h.lng) <= +radius).slice(0, +limit);
+    } else {
+      out = rows.slice(0, +limit);
+    }
     res.json(out);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

@@ -771,10 +771,8 @@ async function loadHazardsFromDB(force) {
   const now = Date.now();
   if (!force && now - _lastHazardFetch < 5000) return; // debounce: 5s minimum between fetches
   _lastHazardFetch = now;
-  const loc = userLoc || (map ? map.getCenter() : null);
-  const url  = loc
-    ? `${API}/api/hazards?lat=${loc.lat}&lng=${loc.lng}&radius=20&limit=200`
-    : `${API}/api/hazards?limit=200`;
+  // Load all hazards globally (no radius filter) — DB has a hard LIMIT 1000 server-side
+  const url = `${API}/api/hazards?limit=500`;
   try {
     const res = await fetch(url);
     const hazards = await res.json();

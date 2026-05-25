@@ -423,7 +423,16 @@
     const n = prompt('Enter your name:', document.getElementById('vaultName').textContent);
     if (n && n.trim()) { document.getElementById('vaultName').textContent = n.trim(); localStorage.setItem('gw_user_name', n.trim()); }
   }
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+    // Force page reload when a new SW version takes over — ensures fresh app.js/CSS loads
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!sessionStorage.getItem('sw_reloaded')) {
+        sessionStorage.setItem('sw_reloaded', '1');
+        window.location.reload();
+      }
+    });
+  }
 </script>
 
 <!-- LOGIN MODAL -->
