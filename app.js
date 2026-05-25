@@ -969,6 +969,60 @@ let lastSurfaceResult = null;
 let walkabilityBase = 100;
 let localHazards = [];
 
+// ── HAZARD RETRY QUEUE — persists failed saves across sessions ──
+const _HAZARD_QUEUE_KEY = 'gw_hazard_queue';
+
+function _queueHazard(type, lat, lng, extra) {
+  try {
+    const q = JSON.parse(localStorage.getItem(_HAZARD_QUEUE_KEY) || '[]');
+    q.push({ type, lat, lng, extra, ts: Date.now() });
+    localStorage.setItem(_HAZARD_QUEUE_KEY, JSON.stringify(q));
+  } catch(e) { console.warn('Queue write failed:', e.message); }
+}
+
+async function _flushHazardQueue() {
+  try {
+    const q = JSON.parse(localStorage.getItem(_HAZARD_QUEUE_KEY) || '[]');
+    if (!q.length) return;
+    console.log(`🔄 Retrying ${q.length} queued hazard(s)…`);
+    const stillPending = [];
+    for (const item of q) {
+      const r = await saveHazardToDB(item.type, item.lat, item.lng, item.extra || {});
+      if (!r.ok) stillPending.push(item);
+    }
+    localStorage.setItem(_HAZARD_QUEUE_KEY, JSON.stringify(stillPending));
+    const flushed = q.length - stillPending.length;
+    if (flushed > 0) {
+      showToast(`✅ ${flushed} pending hazard${flushed > 1 ? 's' : ''} synced`);
+      loadHazardsFromDB(true);
+    }
+  } catch(e) { console.warn('Queue flush failed:', e.message); }
+}
+
+// ── DB HEALTH CHECK — runs once after init ──
+async function _checkDbHealth() {
+  try {
+    const res  = await fetch('/api/health');
+    const data = await res.json();
+    if (!data.ok) {
+      const msg = data.db.startsWith('error:') ? data.db.replace('error:', '').trim() : data.db;
+      showToast(`⚠️ Database offline: ${msg.slice(0, 60)}`, 7000);
+      console.error('DB health check failed:', data);
+      return;
+    }
+    // Tables missing? (first-time setup)
+    if (typeof data.tables.hazards === 'string' && data.tables.hazards.includes('missing')) {
+      showToast('⚠️ Hazards table missing — run supabase_schema.sql', 8000);
+      console.error('Missing tables:', data.tables);
+      return;
+    }
+    // All good — try to flush any queued hazards from previous offline sessions
+    _flushHazardQueue();
+  } catch(e) {
+    console.warn('Health check error:', e.message);
+  }
+}
+
 // ── SPLASH DISMISS ──
 const _splashShownAt = Date.now();
 function _hideSplash() {
@@ -999,6 +1053,7 @@ window.onload = () => {
   checkInstallState();
   parseShareParams(); // #21 — auto-fill route from URL params
   _hideSplash();      // dismiss loading screen once core init is done
+  setTimeout(_checkDbHealth, 3000); // check DB after splash gone
 };
 
 // #21 — Parse shared route URL params
@@ -2896,7 +2951,15 @@ async function quickHazard(type) {
       iconSize:[10,10], iconAnchor:[5,5] });
     L.marker(loc, { icon: icoFailed }).addTo(hazardLayer)
       .bindPopup(`<b>${type}</b><br><small style="color:#f97316;">⚠ Not saved to server</small>`);
-    showToast(`⚠️ ${type} logged locally — not synced to server`, 5000);
+    // Queue for retry next time the app has a DB connection
+    _queueHazard(type, loc.lat, loc.lng, {
+      surface:        lastSurfaceResult?.surface || null,
+      canopy:         Env.getCanopy(),
+      lighting:       Env.getLighting(),
+      footpath_type:  lastSurfaceResult?.footpathType || null,
+      footpath_width: lastSurfaceResult?.width || null,
+    });
+    showToast(`⚠️ Saved locally — will sync when DB is back`, 5000);
     console.warn('Hazard DB save failed:', result.error);
   }
 }

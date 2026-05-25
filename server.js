@@ -380,6 +380,45 @@ app.get('/api/places/search', async (req, res) => {
 });
 
 // ════════════════════════════════════════════
+// ════════════════════════════════════════════
+// HEALTH — DB connectivity + table check
+// ════════════════════════════════════════════
+app.get('/api/health', async (req, res) => {
+  const result = { ok: false, db: 'unknown', tables: {}, env: {} };
+
+  // Check env vars (values hidden, just presence)
+  result.env = {
+    DATABASE_URL: !!process.env.DATABASE_URL,
+    DB_PASSWORD:  !!process.env.DB_PASSWORD,
+    GEMINI_API_KEY:  !!process.env.GEMINI_API_KEY,
+    MTA_API_KEY:     !!process.env.MTA_API_KEY,
+    WMATA_API_KEY:   !!process.env.WMATA_API_KEY,
+    DELHI_OTD_KEY:   !!process.env.DELHI_OTD_KEY,
+    GOOGLE_MAPS_KEY: !!process.env.GOOGLE_MAPS_KEY,
+  };
+
+  try {
+    await pool.query('SELECT 1');
+    result.db = 'connected';
+
+    // Check each critical table exists and has rows
+    const tables = ['users', 'hazards', 'routes'];
+    for (const t of tables) {
+      try {
+        const r = await pool.query(`SELECT COUNT(*) FROM ${t}`);
+        result.tables[t] = +r.rows[0].count;
+      } catch(e) {
+        result.tables[t] = `missing: ${e.message}`;
+      }
+    }
+    result.ok = true;
+  } catch(e) {
+    result.db = `error: ${e.message}`;
+  }
+
+  res.json(result);
+});
+
 // STATS
 // ════════════════════════════════════════════
 app.get('/api/stats', async (req, res) => {
