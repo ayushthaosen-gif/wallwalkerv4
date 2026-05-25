@@ -206,7 +206,16 @@
       });
 
       const marker = L.marker([s.lat, s.lng], { icon })
-        .bindPopup(`<div style="min-width:140px"><strong style="font-size:13px;">🚇 ${s.name}</strong><br/><div style="margin-top:4px;">${badges}</div><div style="font-size:11px;color:#666;margin-top:3px;">${(s.dist * 1000).toFixed(0)}m away</div></div>`);
+        .bindPopup(`<div style="min-width:230px;font-family:-apple-system,BlinkMacSystemFont,'DM Sans',sans-serif;">
+          <div style="display:flex;align-items:center;gap:10px;padding-bottom:8px;border-bottom:2px solid #f1f5f9;">
+            <div style="width:34px;height:34px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:17px;">🚇</div>
+            <div style="min-width:0;">
+              <div style="font-size:14px;font-weight:900;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.name}</div>
+              <div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:3px;">${badges}</div>
+            </div>
+          </div>
+          <div style="font-size:10px;color:#64748b;margin-top:6px;font-weight:600;">${(s.dist * 1000).toFixed(0)}m away</div>
+        </div>`);
       layer.addLayer(marker);
     });
   }

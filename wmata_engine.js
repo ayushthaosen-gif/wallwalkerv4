@@ -211,32 +211,32 @@ function buildWmataStationPopup(station) {
     : '';
 
   return `
-    <div style="min-width:220px;max-width:290px;">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
-        <div style="width:16px;height:16px;border-radius:50%;background:${color};flex-shrink:0;"></div>
-        <b style="font-size:13px;line-height:1.2;">🚇 ${station.name}</b>
+    <div style="min-width:260px;max-width:320px;font-family:-apple-system,BlinkMacSystemFont,'DM Sans',sans-serif;">
+      <div style="display:flex;align-items:center;gap:10px;padding-bottom:10px;border-bottom:2px solid #f1f5f9;margin-bottom:6px;">
+        <div style="width:36px;height:36px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;">🚇</div>
+        <div style="min-width:0;">
+          <div style="font-size:15px;font-weight:900;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${station.name}</div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px;">${lineLabels}</div>
+        </div>
       </div>
-      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px;">${lineLabels}</div>
-      ${station.addr ? `<div style="font-size:11px;color:#64748b;margin-bottom:5px;">📍 ${station.addr}</div>` : ''}
+      ${station.addr ? `<div style="font-size:11px;color:#64748b;margin-bottom:6px;">📍 ${station.addr}</div>` : ''}
       ${alertHtml}
       ${arrHtml}
-      <div style="display:flex;gap:6px;margin-top:6px;">
+      <div style="display:flex;gap:6px;margin-top:8px;">
         <button onclick="poiNavigateTo(${station.lat},${station.lng},'${station.name.replace(/'/g,"\\'")}');map.closePopup();"
-          style="flex:1;background:#0D5CA8;color:white;border:none;border-radius:8px;padding:7px 8px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;">🧭 Go</button>
+          style="flex:1;background:#0D5CA8;color:white;border:none;border-radius:8px;padding:8px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;">🧭 Go</button>
         <button onclick="poiSetFrom(${station.lat},${station.lng},'${station.name.replace(/'/g,"\\'")}');map.closePopup();"
-          style="flex:1;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:7px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:#475569;">📍 From</button>
+          style="flex:1;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:#475569;">📍 From</button>
       </div>
-      ${station.url ? `<a href="${station.url}" target="_blank" style="display:block;text-align:center;font-size:10px;color:#0D5CA8;margin-top:5px;text-decoration:none;">WMATA Info →</a>` : ''}
+      ${station.url ? `<a href="${station.url}" target="_blank" rel="noopener" style="display:block;text-align:center;font-size:10px;color:#0D5CA8;margin-top:7px;text-decoration:none;font-weight:600;">WMATA Station Info →</a>` : ''}
     </div>`;
 }
 
 // ── BUS STOP POPUP HTML ──
 function buildWmataBusStopPopup(stop) {
-  // Find which routes serve this stop (by proximity to route endpoints)
-  let routeInfo = '';
+  let routeChips = '';
   if (wmataRoutesReady()) {
     const matchingRoutes = [];
-    // Check stop name against route origins/destinations
     const nameUpper = stop.name.toUpperCase();
     Object.entries(WMATA_BUS_ROUTES).forEach(([rid, variants]) => {
       variants.forEach(v => {
@@ -247,25 +247,30 @@ function buildWmataBusStopPopup(stop) {
       });
     });
     if (matchingRoutes.length) {
-      routeInfo = `<div style="margin-top:6px;font-size:10px;color:#64748b;">Routes: ${
-        matchingRoutes.slice(0,6).map(r =>
-          `<span style="background:#fff7ed;border:1px solid #fed7aa;color:#c2410c;padding:1px 5px;border-radius:4px;font-weight:700;">${r}</span>`
-        ).join(' ')
+      routeChips = `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;">${
+        matchingRoutes.slice(0, 8).map(r =>
+          `<span style="background:#fff7ed;border:1px solid #fed7aa;color:#c2410c;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:800;">${r}</span>`
+        ).join('')
       }</div>`;
     }
   }
 
   return `
-    <div style="min-width:200px;max-width:270px;">
-      <b style="font-size:13px;">🚏 ${stop.name}</b>
-      <div style="font-size:10px;color:#94a3b8;margin:3px 0 6px;">Stop ${stop.id} · WMATA Metrobus</div>
-      ${routeInfo}
-      <div id="arr_dc_bus_${stop.id}" style="font-size:11px;color:#94a3b8;margin:5px 0;font-style:italic;">Loading arrivals…</div>
-      <div style="display:flex;gap:6px;margin-top:6px;">
+    <div style="min-width:240px;max-width:300px;font-family:-apple-system,BlinkMacSystemFont,'DM Sans',sans-serif;">
+      <div style="display:flex;align-items:center;gap:10px;padding-bottom:10px;border-bottom:2px solid #f1f5f9;margin-bottom:6px;">
+        <div style="width:36px;height:36px;border-radius:50%;background:#E97F1B;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;">🚏</div>
+        <div style="min-width:0;">
+          <div style="font-size:15px;font-weight:900;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${stop.name}</div>
+          <div style="font-size:10px;color:#64748b;font-weight:600;">Stop ${stop.id} · WMATA Metrobus</div>
+        </div>
+      </div>
+      ${routeChips}
+      <div id="arr_dc_bus_${stop.id}" style="font-size:11px;color:#94a3b8;margin:4px 0 8px;font-style:italic;">Loading arrivals…</div>
+      <div style="display:flex;gap:6px;">
         <button onclick="poiNavigateTo(${stop.lat},${stop.lng},'${stop.name.replace(/'/g,"\\'")}');map.closePopup();"
-          style="flex:1;background:#E97F1B;color:white;border:none;border-radius:8px;padding:7px 8px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;">🧭 Go</button>
+          style="flex:1;background:#E97F1B;color:white;border:none;border-radius:8px;padding:8px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;">🧭 Go</button>
         <button onclick="poiSetFrom(${stop.lat},${stop.lng},'${stop.name.replace(/'/g,"\\'")}');map.closePopup();"
-          style="flex:1;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:7px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:#475569;">📍 From</button>
+          style="flex:1;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:#475569;">📍 From</button>
       </div>
     </div>`;
 }
@@ -273,14 +278,20 @@ function buildWmataBusStopPopup(stop) {
 // ── PARK & RIDE POPUP HTML ──
 function buildParkRidePopup(lot) {
   return `
-    <div style="min-width:200px;">
-      <b style="font-size:13px;">🅿️ ${lot.name}</b><br>
-      <div style="font-size:11px;color:#64748b;margin:4px 0 8px;">📍 ${lot.addr}</div>
+    <div style="min-width:220px;font-family:-apple-system,BlinkMacSystemFont,'DM Sans',sans-serif;">
+      <div style="display:flex;align-items:center;gap:10px;padding-bottom:10px;border-bottom:2px solid #f1f5f9;margin-bottom:8px;">
+        <div style="width:36px;height:36px;border-radius:50%;background:#16a34a;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;">🅿️</div>
+        <div style="min-width:0;">
+          <div style="font-size:15px;font-weight:900;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${lot.name}</div>
+          <div style="font-size:10px;color:#64748b;font-weight:600;">Park & Ride · WMATA</div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:#64748b;margin-bottom:10px;">📍 ${lot.addr}</div>
       <div style="display:flex;gap:6px;">
         <button onclick="poiNavigateTo(${lot.lat},${lot.lng},'${lot.name.replace(/'/g,"\\'")} Park & Ride');map.closePopup();"
-          style="flex:1;background:#16a34a;color:white;border:none;border-radius:8px;padding:7px 8px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;">🧭 Navigate Here</button>
+          style="flex:1;background:#16a34a;color:white;border:none;border-radius:8px;padding:8px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;">🧭 Navigate</button>
         <button onclick="poiSetFrom(${lot.lat},${lot.lng},'${lot.name.replace(/'/g,"\\'")} Park & Ride');map.closePopup();"
-          style="flex:1;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:7px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:#475569;">📍 Start Here</button>
+          style="flex:1;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:#475569;">📍 Start Here</button>
       </div>
     </div>`;
 }

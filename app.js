@@ -1842,10 +1842,16 @@ function refreshTransitOnView(lat, lng, zoom) {
         iconSize:[20,20], iconAnchor:[10,10] });
       const m = L.marker([s.lat,s.lng],{icon:ico}).addTo(stationLayer);
       m.on('click', e => { e.originalEvent._markerHandled = true; });
-      m.bindPopup(`<div style="min-width:200px;"><b>🚏 ${s.name}</b>
-        <div style="font-size:10px;color:#94a3b8;margin:2px 0 6px;">Stop ${s.id} · DTC/DIMTS</div>
+      m.bindPopup(`<div style="min-width:260px;font-family:-apple-system,BlinkMacSystemFont,'DM Sans',sans-serif;">
+        <div style="display:flex;align-items:center;gap:10px;padding-bottom:10px;border-bottom:2px solid #f1f5f9;margin-bottom:4px;">
+          <div style="width:36px;height:36px;border-radius:50%;background:#92400e;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;">🚏</div>
+          <div style="min-width:0;">
+            <div style="font-size:15px;font-weight:900;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.name}</div>
+            <div style="font-size:10px;color:#64748b;font-weight:600;">Stop ${s.id} · DTC / DIMTS</div>
+          </div>
+        </div>
         ${shimmerLoading}
-        ${navBtns(s.lat,s.lng,s.name,'#d97706')}</div>`, {maxWidth:300});
+        ${navBtns(s.lat,s.lng,s.name,'#d97706')}</div>`, {maxWidth:320});
       m.on('popupopen', async () => {
         const html = await BusEngine.buildStopInfoHtml(s.id, s.name, 'bus');
         if (m.isPopupOpen()) m.getPopup().setContent(html + navBtns(s.lat,s.lng,s.name,'#d97706')).update();
@@ -1868,10 +1874,16 @@ function refreshTransitOnView(lat, lng, zoom) {
         iconSize:[null,null] });
       const m = L.marker([s.lat,s.lng],{icon:ico}).addTo(stationLayer);
       m.on('click', e => { e.originalEvent._markerHandled = true; });
-      m.bindPopup(`<div style="min-width:200px;"><b>🚇 ${s.name}</b>
-        <div style="font-size:10px;color:#94a3b8;margin:2px 0 6px;">Delhi Metro</div>
+      m.bindPopup(`<div style="min-width:260px;font-family:-apple-system,BlinkMacSystemFont,'DM Sans',sans-serif;">
+        <div style="display:flex;align-items:center;gap:10px;padding-bottom:10px;border-bottom:2px solid #f1f5f9;margin-bottom:4px;">
+          <div style="width:36px;height:36px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;">🚇</div>
+          <div style="min-width:0;">
+            <div style="font-size:15px;font-weight:900;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.name}</div>
+            <div style="font-size:10px;color:#64748b;font-weight:600;">Delhi Metro</div>
+          </div>
+        </div>
         ${shimmerLoading}
-        ${navBtns(s.lat,s.lng,s.name,color)}</div>`, {maxWidth:300});
+        ${navBtns(s.lat,s.lng,s.name,color)}</div>`, {maxWidth:320});
       m.on('popupopen', async () => {
         const html = await MetroEngine.buildMetroStopInfoHtml(s.id, s.name);
         if (m.isPopupOpen()) m.getPopup().setContent(html + navBtns(s.lat,s.lng,s.name,color)).update();
@@ -1904,14 +1916,19 @@ function refreshTransitOnView(lat, lng, zoom) {
                    : s.ada === 'partial' ? '<span style="font-size:9px;background:#fef9c3;color:#854d0e;padding:1px 5px;border-radius:4px;margin-left:4px;">♿ Partial</span>' : '';
       const shimmer = `<div style="font-size:11px;color:#94a3b8;margin:6px 0 4px;font-style:italic;">Loading arrivals…</div>`;
       const alertHtml = _alertHtmlForLines(s.lines);
-      m.bindPopup(`<div style="min-width:200px;">
-        <b>🚇 ${s.name}</b>${adaTag}
-        <div style="margin:4px 0 2px;">${badgesHtml}</div>
-        <div style="font-size:10px;color:#94a3b8;margin-bottom:4px;">${s.borough||'NYC'} · ${(s.dist*1000).toFixed(0)}m away</div>
+      m.bindPopup(`<div style="min-width:270px;font-family:-apple-system,BlinkMacSystemFont,'DM Sans',sans-serif;">
+        <div style="display:flex;align-items:center;gap:10px;padding-bottom:10px;border-bottom:2px solid #f1f5f9;margin-bottom:6px;">
+          <div style="width:36px;height:36px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;">🚇</div>
+          <div style="min-width:0;flex:1;">
+            <div style="font-size:15px;font-weight:900;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.name}${adaTag}</div>
+            <div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:3px;">${badgesHtml}</div>
+          </div>
+        </div>
+        <div style="font-size:10px;color:#64748b;margin-bottom:4px;font-weight:600;">${s.borough||'NYC'} · ${(s.dist*1000).toFixed(0)}m away</div>
         ${alertHtml}
-        <div id="arr_${key}">${shimmer}</div>
+        <div id="arr_${key}" style="margin:4px 0;">${shimmer}</div>
         ${navBtns(s.lat,s.lng,s.name,color)}
-      </div>`, { maxWidth:300 });
+      </div>`, { maxWidth:320 });
       m.on('popupopen', () => _fetchSubwayArrivals(key, s.gtfs_stop_ids || [], s.lines));
       _visibleMarkers.set(key, { marker:m, lat:s.lat, lng:s.lng });
     });
@@ -1933,12 +1950,17 @@ function refreshTransitOnView(lat, lng, zoom) {
           iconSize:[20,20], iconAnchor:[10,10] });
         const m = L.marker([s.lat, s.lng], { icon:ico }).addTo(stationLayer);
         m.on('click', e => { e.originalEvent._markerHandled = true; });
-        m.bindPopup(`<div style="min-width:180px;">
-          <b>🚌 ${s.name}</b>
-          <div style="font-size:10px;color:#94a3b8;margin:2px 0 4px;">MTA Bus${routeLabel ? ' · ' + routeLabel : ''}</div>
-          <div id="arr_${key}" style="font-size:11px;color:#94a3b8;margin:4px 0;font-style:italic;">Loading arrivals…</div>
+        m.bindPopup(`<div style="min-width:250px;font-family:-apple-system,BlinkMacSystemFont,'DM Sans',sans-serif;">
+          <div style="display:flex;align-items:center;gap:10px;padding-bottom:10px;border-bottom:2px solid #f1f5f9;margin-bottom:6px;">
+            <div style="width:36px;height:36px;border-radius:50%;background:#dc2626;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;">🚌</div>
+            <div style="min-width:0;">
+              <div style="font-size:15px;font-weight:900;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.name}</div>
+              <div style="font-size:10px;color:#64748b;font-weight:600;">MTA Bus${routeLabel ? ' · Routes ' + routeLabel : ''}</div>
+            </div>
+          </div>
+          <div id="arr_${key}" style="font-size:11px;color:#94a3b8;margin:4px 0 6px;font-style:italic;">Loading arrivals…</div>
           ${navBtns(s.lat,s.lng,s.name,'#dc2626')}
-        </div>`, { maxWidth:270 });
+        </div>`, { maxWidth:300 });
         m.on('popupopen', () => _fetchBusArrivals(key, s.id, s.routes || []));
         _visibleMarkers.set(key, { marker:m, lat:s.lat, lng:s.lng });
       });
@@ -1968,11 +1990,16 @@ function refreshTransitOnView(lat, lng, zoom) {
       const adaBadge = s.ada !== 'none' ? `<span style="font-size:9px;background:#e0f2fe;color:#0369a1;padding:1px 5px;border-radius:4px;margin-left:4px;">♿ ${s.ada}</span>` : '';
       const m = L.marker([s.lat, s.lng], { icon:ico }).addTo(stationLayer);
       m.on('click', e => { e.originalEvent._markerHandled = true; });
-      m.bindPopup(`<div style="min-width:190px;">
-        <b>${emoji} ${s.name}</b>${adaBadge}
-        <div style="font-size:10px;color:#94a3b8;margin:2px 0 4px;">${label} · ${s.branch}${s.zone ? ' · Zone ' + s.zone : ''}</div>
+      m.bindPopup(`<div style="min-width:250px;font-family:-apple-system,BlinkMacSystemFont,'DM Sans',sans-serif;">
+        <div style="display:flex;align-items:center;gap:10px;padding-bottom:10px;border-bottom:2px solid #f1f5f9;margin-bottom:8px;">
+          <div style="width:36px;height:36px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;">${emoji}</div>
+          <div style="min-width:0;">
+            <div style="font-size:15px;font-weight:900;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.name}${adaBadge}</div>
+            <div style="font-size:10px;color:#64748b;font-weight:600;">${label} · ${s.branch}${s.zone ? ' · Zone ' + s.zone : ''}</div>
+          </div>
+        </div>
         ${navBtns(s.lat,s.lng,s.name,color)}
-      </div>`, { maxWidth:290 });
+      </div>`, { maxWidth:300 });
       _visibleMarkers.set(key, { marker:m, lat:s.lat, lng:s.lng });
     });
   }

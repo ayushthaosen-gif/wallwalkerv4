@@ -195,25 +195,81 @@ async function buildBusHudHtml(journey){
 
 // ── STOP INFO POPUP (tap a bus stop marker) ──
 async function buildStopInfoHtml(stopId, stopName, type='bus'){
-  const icon = type==='metro' ? '🚇' : '🚏';
+  const isMetro = type === 'metro';
+  const iconBg  = isMetro ? '#1e3a8a' : '#92400e';
+  const iconEmoji = isMetro ? '🚇' : '🚏';
+
   const data = await getStopTimings(stopId, type);
   if(!data || !data.services || !data.services.length){
-    return `<div style="min-width:200px;"><b>${icon} ${stopName}</b><br>
-      <small style="color:#94a3b8;">No schedule loaded yet.<br>Try again in a moment.</small></div>`;
+    return `
+      <div style="min-width:240px;font-family:-apple-system,BlinkMacSystemFont,'DM Sans',sans-serif;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:36px;height:36px;border-radius:50%;background:${iconBg};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;">${iconEmoji}</div>
+          <div>
+            <div style="font-size:15px;font-weight:900;color:#0f172a;">${stopName}</div>
+            <div style="font-size:10px;color:#94a3b8;">No schedule loaded · try again</div>
+          </div>
+        </div>
+      </div>`;
   }
-  const lines = data.services.slice(0,8).map(s=>`
-    <div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid #f8fafc;">
-      <div style="background:${s.color||'#d97706'};color:white;font-size:10px;font-weight:900;padding:2px 8px;border-radius:5px;min-width:54px;text-align:center;flex-shrink:0;">${s.routeName}</div>
-      <span style="font-size:11px;color:#475569;font-weight:600;">${s.nextTimes.slice(0,3).join('  ·  ')}</span>
-    </div>`).join('');
-  return `<div style="min-width:240px;max-width:300px;">
-    <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
-      <b style="font-size:13px;">${icon} ${stopName}</b>
-    </div>
-    <div style="font-size:9px;color:#94a3b8;margin-bottom:8px;font-weight:600;">${data.serviceCount} routes · next departures</div>
-    ${lines}
-    ${data.services.length>8?`<div style="font-size:10px;color:#94a3b8;padding-top:6px;font-weight:600;">+${data.services.length-8} more routes at this stop</div>`:''}
-  </div>`;
+
+  const now = new Date();
+  const nowMins = now.getHours() * 60 + now.getMinutes();
+  function minsUntil(t) {
+    if (!t) return null;
+    const [h, m] = t.split(':').map(Number);
+    const d = h * 60 + m - nowMins;
+    return d >= 0 ? d : null;
+  }
+
+  const rows = data.services.slice(0, 8).map(s => {
+    const lc = s.color || (isMetro ? '#1565c0' : '#d97706');
+    const times = (s.nextTimes || []).slice(0, 3);
+    const nd = minsUntil(times[0]);
+    const cdTxt   = nd === null ? '—' : nd === 0 ? 'Now' : `${nd} min`;
+    const cdColor = nd !== null && nd <= 2 ? '#dc2626' : nd !== null && nd <= 5 ? '#d97706' : '#475569';
+    const chips = times.map((t,i) =>
+      `<span style="background:${i===0?lc:'#f1f5f9'};color:${i===0?'white':'#64748b'};font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px;">${t}</span>`
+    ).join('');
+    return `
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f1f5f9;">
+        <div style="width:4px;min-height:36px;border-radius:4px;background:${lc};flex-shrink:0;align-self:stretch;"></div>
+        <div style="flex:1;min-width:0;overflow:hidden;">
+          <div style="font-size:12px;font-weight:900;color:${lc};letter-spacing:.3px;margin-bottom:3px;">${s.routeName}</div>
+          <div style="display:flex;gap:4px;">${chips}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;padding-left:2px;">
+          <div style="font-size:17px;font-weight:900;color:${cdColor};line-height:1;">${cdTxt}</div>
+          ${nd ? `<div style="font-size:9px;color:#94a3b8;margin-top:2px;">away</div>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+
+  const more = data.services.length > 8
+    ? `<div style="font-size:10px;color:#94a3b8;padding:6px 0 2px;font-weight:600;text-align:center;">+${data.services.length-8} more routes at this stop</div>`
+    : '';
+
+  // DTC link only for Delhi bus stops
+  const dtcLink = !isMetro
+    ? `<a href="https://otd.delhi.gov.in/" target="_blank" rel="noopener"
+        style="display:flex;align-items:center;justify-content:center;gap:5px;margin-top:8px;padding:7px 10px;
+               background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;text-decoration:none;
+               font-size:11px;font-weight:700;color:#c2410c;">
+        🔗 View all routes on DTC / OTD Delhi
+      </a>`
+    : '';
+
+  return `
+    <div style="min-width:270px;max-width:320px;font-family:-apple-system,BlinkMacSystemFont,'DM Sans',sans-serif;">
+      <div style="display:flex;align-items:center;gap:10px;padding-bottom:10px;border-bottom:2px solid #f1f5f9;margin-bottom:2px;">
+        <div style="width:36px;height:36px;border-radius:50%;background:${iconBg};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;">${iconEmoji}</div>
+        <div style="min-width:0;">
+          <div style="font-size:15px;font-weight:900;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${stopName}</div>
+          <div style="font-size:10px;color:#64748b;font-weight:600;">${data.serviceCount} route${data.serviceCount!==1?'s':''} · live departures</div>
+        </div>
+      </div>
+      ${rows}${more}${dtcLink}
+    </div>`;
 }
 
 window.BusEngine = {
