@@ -9,9 +9,11 @@ const API = window.location.hostname === 'localhost'
 const CITY_BBOXES = {
   delhi: [28.40, 76.84, 28.88, 77.35],
   dc:    [38.79, -77.12, 38.99, -76.91],
+  nyc:   [40.47, -74.26, 40.93, -73.70],
 };
 let detectedCity = null;
 let wmataInjected = false;
+let nycInjected = false;
 
 function detectCityFromCoords(lat, lng) {
   for (const [city, [a, b, c, d]] of Object.entries(CITY_BBOXES)) {
@@ -22,20 +24,57 @@ function detectCityFromCoords(lat, lng) {
 
 function applyCity(city, lat, lng) {
   if (detectedCity === city) return;
+  // Clear previous city's transit markers before switching
+  if (detectedCity && detectedCity !== city && typeof stationLayer !== 'undefined') {
+    stationLayer.clearLayers();
+    if (typeof _visibleMarkers !== 'undefined') _visibleMarkers.clear();
+    if (detectedCity === 'nyc') {
+      stopVehicleTracking();
+      ['btnNycLayers','btnSubwayNet','btnVehicles'].forEach(id => {
+        const b = document.getElementById(id); if (b) b.style.display = 'none';
+      });
+    }
+    if (detectedCity === 'delhi') {
+      stopDelhiVehicleTracking();
+      const b = document.getElementById('btnDelhiVehicles'); if (b) b.style.display = 'none';
+    }
+    if (detectedCity === 'dc') {
+      const b = document.getElementById('btnDcLayers'); if (b) b.style.display = 'none';
+    }
+  }
   detectedCity = city;
   localStorage.setItem('gw_city', city);
-  window._searchCountry = city === 'delhi' ? 'in' : city === 'dc' ? 'us' : '';
+  window._searchCountry = city === 'delhi' ? 'in' : (city === 'dc' || city === 'nyc') ? 'us' : '';
   console.log(`✅ City detected: ${city}`);
   if (city === 'dc') {
     injectWmataScripts();
     setTimeout(loadDcLayers, 1500);
     const dcBtn = document.getElementById('btnDcLayers');
     if (dcBtn) dcBtn.style.display = 'block';
-    // Fly to DC coords if map is still centred on Delhi default
     if (lat && map) {
       const c = map.getCenter();
       if (Math.abs(c.lat - 28.6139) < 0.5) map.flyTo([lat, lng], 14, { animate: true, duration: 1.5 });
     }
+  }
+  if (city === 'nyc') {
+    injectNycScripts();
+    setTimeout(loadNycLayers, 1500);
+    const nycBtn = document.getElementById('btnNycLayers');
+    if (nycBtn) nycBtn.style.display = 'block';
+    const netBtn = document.getElementById('btnSubwayNet');
+    if (netBtn) netBtn.style.display = 'block';
+    const vehBtn = document.getElementById('btnVehicles');
+    if (vehBtn) vehBtn.style.display = 'block';
+    if (lat && map) {
+      const c = map.getCenter();
+      if (Math.abs(c.lat - 28.6139) < 0.5) map.flyTo([lat, lng], 13, { animate: true, duration: 1.5 });
+    }
+  }
+  if (city === 'delhi') {
+    const delhiVehBtn = document.getElementById('btnDelhiVehicles');
+    if (delhiVehBtn) delhiVehBtn.style.display = 'block';
+    // Start live tracking (gracefully no-ops if DELHI_OTD_KEY not set)
+    startDelhiVehicleTracking();
   }
 }
 
@@ -52,6 +91,47 @@ function injectWmataScripts() {
   document.head.appendChild(l);
   console.log('📦 WMATA scripts injected');
   pollWmataData();
+}
+
+function injectNycScripts() {
+  if (nycInjected) return;
+  nycInjected = true;
+  window._nycReady = false;
+
+  // Chain loads in order: subway data → engine → bus stops → rail stations
+  function load(src, cb) {
+    if (document.querySelector(`script[src="${src}"]`)) { cb(); return; }
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = cb;
+    s.onerror = () => console.warn('⚠ Failed to load', src);
+    document.head.appendChild(s);
+  }
+
+  load('nyc_subway.js', () =>
+    load('nyc_engine.js', () =>
+      load('nyc_shapes.js', () =>
+        load('nyc_bus_stops.js', () =>
+          load('nyc_rail_stations.js', () => {
+            window._nycReady = true;
+            console.log('✅ NYC data ready — '
+              + Object.keys(window.NYC_SUBWAY?.stations||{}).length + ' subway stations, '
+              + Object.keys(window.NYC_BUS_STOPS||{}).length + ' bus stops, '
+              + Object.keys(window.NYC_RAIL_STATIONS||{}).length + ' rail stations, '
+              + Object.keys(window.NYC_SHAPES||{}).length + ' route shapes');
+            const loc = userLoc || (_adminCoords ? L.latLng(_adminCoords.lat, _adminCoords.lng) : null);
+            if (loc) showNearbyTransit(loc.lat, loc.lng);
+            // Draw subway network lines on the map
+            drawSubwayNetworkLayer();
+            // Start live vehicle tracking + load alerts
+            startVehicleTracking();
+            _loadAlerts();
+          })
+        )
+      )
+    )
+  );
+  console.log('📦 NYC scripts injecting');
 }
 
 // ── IP GEOLOCATION — 3 fallback APIs, fires immediately without GPS ──
@@ -188,11 +268,17 @@ function adminSetCity(city, lat, lng) {
   _adminCoords  = { lat, lng };
   detectedCity  = null; // reset so applyCity() runs even for same city
   localStorage.removeItem('gw_city');
+  // Auto-enable spoof so the chosen city is immediately the active location
+  _adminSpoofOn = true;
+  userLoc = L.latLng(lat, lng);
   applyCity(city, lat, lng);
   if (map) map.setView([lat, lng], 13);
-  if (_adminSpoofOn) userLoc = L.latLng(lat, lng);
-  showToast(`Admin: ${city === 'unknown' ? `${lat.toFixed(2)},${lng.toFixed(2)}` : city}`);
+  showToast(`Admin: ${city === 'unknown' ? `${lat.toFixed(2)},${lng.toFixed(2)}` : city} · GPS spoofed`);
   _updateAdminStatus();
+  // Trigger transit display — if NYC scripts are still loading the onload callback handles it
+  if (window._nycReady || city !== 'nyc') {
+    showNearbyTransit(lat, lng);
+  }
 }
 
 function adminSetCustomCoords() {
@@ -680,7 +766,11 @@ function _relTime(dateStr) {
   return new Date(dateStr).toLocaleDateString([], { month:'short', day:'numeric' });
 }
 
-async function loadHazardsFromDB() {
+let _lastHazardFetch = 0;
+async function loadHazardsFromDB(force) {
+  const now = Date.now();
+  if (!force && now - _lastHazardFetch < 5000) return; // debounce: 5s minimum between fetches
+  _lastHazardFetch = now;
   const loc = userLoc || (map ? map.getCenter() : null);
   const url  = loc
     ? `${API}/api/hazards?lat=${loc.lat}&lng=${loc.lng}&radius=20&limit=200`
@@ -761,16 +851,23 @@ async function loadHazardsFromDB() {
       list.appendChild(card);
     }
 
-    // Async fill road names (rate-limited — 1 per 300ms)
+    // Async fill road names — skip already-cached entries immediately, queue uncached ones at 150ms apart
     let delay = 0;
     for (const [locKey, grp] of groups) {
+      const cacheKey = `${grp.lat.toFixed(3)},${grp.lng.toFixed(3)}`;
       const elId = 'road_' + locKey.replace('.','_').replace(',','_');
-      setTimeout(async () => {
-        const name = await _reverseGeocode(grp.lat, grp.lng);
+      if (_geocodeCache.has(cacheKey)) {
+        // Already cached — update immediately, no delay
         const el = document.getElementById(elId);
-        if (el) el.textContent = '📍 ' + name;
-      }, delay);
-      delay += 300;
+        if (el) el.textContent = '📍 ' + _geocodeCache.get(cacheKey);
+      } else {
+        setTimeout(async () => {
+          const name = await _reverseGeocode(grp.lat, grp.lng);
+          const el = document.getElementById(elId);
+          if (el) el.textContent = '📍 ' + name;
+        }, delay);
+        delay += 150; // Nominatim allows ~1 req/s; 150ms keeps us safe and cuts total time in half
+      }
     }
   } catch(e) { console.warn('Hazard load failed:', e.message); }
 }
@@ -862,6 +959,19 @@ let lastSurfaceResult = null;
 let walkabilityBase = 100;
 let localHazards = [];
 
+// ── SPLASH DISMISS ──
+const _splashShownAt = Date.now();
+function _hideSplash() {
+  const el = document.getElementById('splash');
+  if (!el) return;
+  // Show for at least 1 400 ms so the animation plays fully
+  const remaining = Math.max(0, 1400 - (Date.now() - _splashShownAt));
+  setTimeout(() => {
+    el.classList.add('out');
+    setTimeout(() => el.remove(), 560);
+  }, remaining);
+}
+
 // ── INIT ──
 window.onload = () => {
   Env.init();
@@ -878,6 +988,7 @@ window.onload = () => {
   initPWA();
   checkInstallState();
   parseShareParams(); // #21 — auto-fill route from URL params
+  _hideSplash();      // dismiss loading screen once core init is done
 };
 
 // #21 — Parse shared route URL params
@@ -964,18 +1075,20 @@ async function loadDcLayers() {
         geometry:{ type:'Polygon', coordinates:[ e.geometry.map(p=>[p.lon,p.lat]) ] }
       }))};
       sessionStorage.setItem('dc_parks_geojson', JSON.stringify(geojson));
-    } catch(e) { console.warn('DC parks load failed:', e.message); return; }
+    } catch(e) { console.warn('DC parks load failed:', e.message); showToast('Parks load failed — tap 🌳 to retry'); return; }
   }
   dcParksLayer = L.geoJSON(geojson, {
     style:{ color:'#16a34a', weight:1.5, fillColor:'#22c55e', fillOpacity:.18 },
     onEachFeature:(f,l) => l.bindPopup(`<b>🌳 ${f.properties.name}</b>`)
   }).addTo(map);
+  showToast(`🌳 ${geojson.features.length} DC parks loaded`);
   console.log(`🌳 DC parks loaded: ${geojson.features.length}`);
 }
 
-function toggleSatellite() {
+function toggleSatellite(forceOn) {
   const btn = document.getElementById('btnSatellite');
-  if (!_satelliteOn) {
+  const turnOn = forceOn !== undefined ? forceOn : !_satelliteOn;
+  if (turnOn) {
     _osmTile?.remove();
     _satTile = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:19, attribution:'Esri' });
     _satTile.addTo(map); _satTile.bringToBack();
@@ -988,6 +1101,433 @@ function toggleSatellite() {
     if (btn) { btn.textContent='🛰 Sat'; btn.style.background='white'; btn.style.color='#0f172a'; }
     _satelliteOn = false;
   }
+  localStorage.setItem('gw_satellite', _satelliteOn ? '1' : '0');
+}
+
+// ── NYC LAYERS ──
+let nycParksLayer    = null;
+let nycLandmarkLayer = null;
+let nycSubwayLayer   = null;
+let nycNetworkLayer  = null;  // subway route polylines
+let nycVehicleLayer  = null;  // live train/bus positions
+let _vehicleTimer    = null;  // refresh interval handle
+let _nycAlerts       = [];    // cached alert objects {routeIds,stopIds,header,effectLabel}
+
+function drawSubwayNetworkLayer() {
+  if (!window.NYC_SHAPES || !window.NycEngine) return;
+  if (detectedCity !== 'nyc') return;
+  if (nycNetworkLayer) { nycNetworkLayer.addTo(map); return; } // re-show if hidden
+  nycNetworkLayer = L.layerGroup().addTo(map);
+  window.NycEngine.drawSubwayNetwork(map, nycNetworkLayer);
+  // Bring station markers above the network lines
+  if (stationLayer) stationLayer.bringToFront();
+}
+
+function toggleSubwayNetwork(show) {
+  if (!nycNetworkLayer) { drawSubwayNetworkLayer(); return; }
+  if (show === false) map.removeLayer(nycNetworkLayer);
+  else if (!map.hasLayer(nycNetworkLayer)) nycNetworkLayer.addTo(map);
+  else map.removeLayer(nycNetworkLayer);
+}
+
+// ── Live vehicle positions ──────────────────────────────────────────────────
+
+const _STATUS_LABEL = ['Arriving','At stop','En route'];
+
+async function _refreshVehicles() {
+  if (detectedCity !== 'nyc') return;
+  try {
+    const res  = await fetch('/api/nyc/vehicle-positions');
+    const data = await res.json();
+    if (!data.ok || !data.vehicles) return;
+
+    // Rebuild vehicle layer
+    if (!nycVehicleLayer) nycVehicleLayer = L.layerGroup().addTo(map);
+    else nycVehicleLayer.clearLayers();
+
+    const lineColors = window.NYC_SUBWAY?.lines || {};
+
+    data.vehicles.forEach(v => {
+      const color = (lineColors[v.routeId]?.color) || '#888';
+      const tc    = (lineColors[v.routeId]?.textColor) || '#fff';
+
+      // Arrow pointing in bearing direction + colored circle badge
+      const arrowSvg = v.bearing != null && v.bearing > 0
+        ? `<div style="position:absolute;top:-8px;left:50%;transform:translateX(-50%) rotate(${v.bearing}deg);font-size:10px;line-height:1;">▲</div>`
+        : '';
+
+      const ico = L.divIcon({
+        className: '',
+        html: `<div style="position:relative;width:22px;height:22px;">
+          ${arrowSvg}
+          <div style="background:${color};color:${tc};border:2px solid white;border-radius:50%;
+            width:20px;height:20px;line-height:20px;text-align:center;
+            font-size:10px;font-weight:800;box-shadow:0 2px 6px rgba(0,0,0,.4);
+            position:absolute;bottom:0;left:1px;">${v.routeId}</div>
+        </div>`,
+        iconSize: [22, 30],
+        iconAnchor: [11, 20],
+      });
+
+      const statusLabel = _STATUS_LABEL[v.status] || 'En route';
+      const dirLabel    = v.directionId === 0 ? ' · Uptown/Outbound' : v.directionId === 1 ? ' · Downtown/Inbound' : '';
+      const stopNote    = v.stopId ? `<div style="font-size:10px;color:#94a3b8;margin-top:2px;">Near stop ${v.stopId}</div>` : '';
+
+      const m = L.marker([v.lat, v.lng], { icon: ico, zIndexOffset: 200 });
+      m.bindPopup(`<div style="min-width:150px;">
+        <b style="color:${color};">🚇 Line ${v.routeId}</b>${dirLabel}
+        <div style="font-size:11px;color:#475569;margin-top:2px;">${statusLabel}</div>
+        ${stopNote}
+      </div>`, { maxWidth: 220 });
+      nycVehicleLayer.addLayer(m);
+    });
+
+    // Keep vehicles below station markers
+    if (stationLayer) stationLayer.bringToFront();
+
+    console.log(`🚇 ${data.vehicles.length} vehicles plotted`);
+  } catch(e) {
+    console.warn('Vehicle refresh failed:', e.message);
+  }
+}
+
+function startVehicleTracking() {
+  if (_vehicleTimer) return;
+  _refreshVehicles();
+  _vehicleTimer = setInterval(_refreshVehicles, 30000);
+}
+
+function stopVehicleTracking() {
+  if (_vehicleTimer) { clearInterval(_vehicleTimer); _vehicleTimer = null; }
+  if (nycVehicleLayer) { map.removeLayer(nycVehicleLayer); nycVehicleLayer = null; }
+}
+
+function toggleVehicles() {
+  if (_vehicleTimer) {
+    stopVehicleTracking();
+    const btn = document.getElementById('btnVehicles');
+    if (btn) { btn.style.background = 'white'; btn.style.color = '#475569'; }
+  } else {
+    startVehicleTracking();
+    const btn = document.getElementById('btnVehicles');
+    if (btn) { btn.style.background = '#1e293b'; btn.style.color = 'white'; }
+  }
+}
+
+// ════════════════════════════════════════════
+// DELHI OTD LIVE VEHICLE POSITIONS
+// ════════════════════════════════════════════
+
+// DMRC line color lookup by OTD GTFS route_id (case-insensitive substring match)
+const DELHI_METRO_ROUTE_COLORS = {
+  'RED':    '#e53935',
+  'YELLOW': '#fdd835',
+  'BLUE':   '#1565c0',
+  'GREEN':  '#43a047',
+  'VIOLET': '#8e24aa',
+  'MAGENTA':'#d81b60',
+  'PINK':   '#e91e63',
+  'ORANGE': '#fb8c00',
+  'AQUA':   '#00acc1',
+  'GRAY':   '#757575',
+  'GREY':   '#757575',
+  'RAPID':  '#00897b',
+};
+
+function _delhiRouteColor(routeId) {
+  const up = (routeId || '').toUpperCase();
+  for (const [key, color] of Object.entries(DELHI_METRO_ROUTE_COLORS)) {
+    if (up.startsWith(key) || up.includes(key)) return color;
+  }
+  return '#1565c0'; // fallback: DMRC blue
+}
+
+let delhiVehicleLayer = null;
+let _delhiVehicleTimer = null;
+
+async function _refreshDelhiVehicles() {
+  if (detectedCity !== 'delhi') return;
+  try {
+    const res  = await fetch('/api/delhi/vehicle-positions');
+    const data = await res.json();
+    if (!data.ok || !data.vehicles) {
+      if (data.error) console.warn('Delhi vehicles:', data.error);
+      return;
+    }
+
+    if (!delhiVehicleLayer) delhiVehicleLayer = L.layerGroup().addTo(map);
+    else delhiVehicleLayer.clearLayers();
+
+    data.vehicles.forEach(v => {
+      const color  = _delhiRouteColor(v.routeId);
+      // Shorten route label to 3 chars for badge
+      const label  = (v.routeId || '?').replace(/[\s_-]+/g, '').substring(0, 3).toUpperCase();
+
+      const arrowSvg = v.bearing
+        ? `<div style="position:absolute;top:-8px;left:50%;transform:translateX(-50%) rotate(${v.bearing}deg);font-size:10px;line-height:1;color:${color};">▲</div>`
+        : '';
+
+      const ico = L.divIcon({
+        className: '',
+        html: `<div style="position:relative;width:22px;height:22px;">
+          ${arrowSvg}
+          <div style="background:${color};color:${color === '#fdd835' ? '#333' : 'white'};border:2px solid white;border-radius:50%;
+            width:20px;height:20px;line-height:20px;text-align:center;
+            font-size:8px;font-weight:800;box-shadow:0 2px 6px rgba(0,0,0,.4);
+            position:absolute;bottom:0;left:1px;">${label}</div>
+        </div>`,
+        iconSize: [22, 30],
+        iconAnchor: [11, 20],
+      });
+
+      const statusLabel = _STATUS_LABEL[v.status] || 'En route';
+      const stopNote    = v.stopId ? `<div style="font-size:10px;color:#94a3b8;margin-top:2px;">Near stop ${v.stopId}</div>` : '';
+
+      const m = L.marker([v.lat, v.lng], { icon: ico, zIndexOffset: 200 });
+      m.bindPopup(`<div style="min-width:150px;">
+        <b style="color:${color};">🚇 ${v.routeId || 'Metro'}</b>
+        <div style="font-size:11px;color:#475569;margin-top:2px;">${statusLabel}</div>
+        ${stopNote}
+      </div>`, { maxWidth: 220 });
+      delhiVehicleLayer.addLayer(m);
+    });
+
+    if (stationLayer) stationLayer.bringToFront();
+    console.log(`🚇 ${data.vehicles.length} Delhi metro vehicles plotted`);
+  } catch(e) {
+    console.warn('Delhi vehicle refresh failed:', e.message);
+  }
+}
+
+function startDelhiVehicleTracking() {
+  if (_delhiVehicleTimer) return;
+  _refreshDelhiVehicles();
+  _delhiVehicleTimer = setInterval(_refreshDelhiVehicles, 30000);
+}
+
+function stopDelhiVehicleTracking() {
+  if (_delhiVehicleTimer) { clearInterval(_delhiVehicleTimer); _delhiVehicleTimer = null; }
+  if (delhiVehicleLayer) { map.removeLayer(delhiVehicleLayer); delhiVehicleLayer = null; }
+}
+
+function toggleDelhiVehicles() {
+  if (_delhiVehicleTimer) {
+    stopDelhiVehicleTracking();
+    const btn = document.getElementById('btnDelhiVehicles');
+    if (btn) { btn.style.background = 'white'; btn.style.color = '#475569'; }
+  } else {
+    startDelhiVehicleTracking();
+    const btn = document.getElementById('btnDelhiVehicles');
+    if (btn) { btn.style.background = '#1e293b'; btn.style.color = 'white'; }
+  }
+}
+
+// ── Service alerts ──────────────────────────────────────────────────────────
+
+async function _loadAlerts() {
+  if (detectedCity !== 'nyc') return;
+  try {
+    const res  = await fetch('/api/nyc/alerts');
+    const data = await res.json();
+    if (!data.ok) return;
+    _nycAlerts = data.alerts || [];
+    // Build route → alerts index for quick popup lookup
+    window._nycAlertsByRoute = {};
+    _nycAlerts.forEach(a => {
+      a.routeIds.forEach(r => {
+        if (!window._nycAlertsByRoute[r]) window._nycAlertsByRoute[r] = [];
+        window._nycAlertsByRoute[r].push(a);
+      });
+    });
+    const active = _nycAlerts.filter(a => a.effect !== 9).length;  // 9 = NO_EFFECT
+    if (active > 0) showToast(`🚨 ${active} active MTA service alert${active > 1 ? 's' : ''}`, 4000);
+    console.log(`🔔 ${_nycAlerts.length} MTA alerts loaded (${active} active)`);
+  } catch(e) {
+    console.warn('Alerts load failed:', e.message);
+  }
+}
+
+// Build alert HTML snippet for a station popup (given array of line IDs)
+function _alertHtmlForLines(lines) {
+  if (!window._nycAlertsByRoute || !lines) return '';
+  const seen = new Set();
+  const alerts = [];
+  lines.forEach(l => {
+    (window._nycAlertsByRoute[l] || []).forEach(a => {
+      const key = a.header + a.routeIds.join('');
+      if (!seen.has(key) && a.effect !== 9) { seen.add(key); alerts.push(a); }
+    });
+  });
+  if (!alerts.length) return '';
+  return alerts.slice(0, 2).map(a => `
+    <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:5px 8px;margin-top:5px;">
+      <div style="font-size:10px;font-weight:700;color:#dc2626;">⚠ ${a.effectLabel.replace(/_/g,' ')}</div>
+      <div style="font-size:10px;color:#7f1d1d;margin-top:1px;">${a.header}</div>
+    </div>`).join('');
+}
+
+// ════════════════════════════════════════════
+// DC WMATA LIVE ARRIVALS
+// ════════════════════════════════════════════
+
+const WMATA_LINE_COLORS_CLIENT = {
+  RD:'#E3222B', BL:'#0D5CA8', OR:'#E97F1B',
+  GR:'#0C8C44', YL:'#FBBF07', SV:'#9DAAB6',
+};
+
+async function _fetchDcTrainArrivals(stationCode, allCodes) {
+  const el = document.getElementById('arr_dc_' + stationCode);
+  if (!el) return;
+  try {
+    const codes = (allCodes && allCodes.length ? allCodes : [stationCode]).join(',');
+    const res  = await fetch('/api/dc/train-arrivals?codes=' + encodeURIComponent(codes));
+    const data = await res.json();
+    if (!el.isConnected) return;
+    if (!data.ok || !data.trains || !data.trains.length) {
+      el.innerHTML = '<span style="font-size:10px;color:#94a3b8;">No predictions available</span>';
+      return;
+    }
+    // Group by line, show next 2 per line
+    const byLine = {};
+    data.trains.forEach(t => {
+      if (!byLine[t.line]) byLine[t.line] = [];
+      if (byLine[t.line].length < 2) byLine[t.line].push(t);
+    });
+    let html = '<div style="display:flex;flex-direction:column;gap:3px;margin-top:4px;">';
+    Object.entries(byLine).forEach(([line, trains]) => {
+      const color = WMATA_LINE_COLORS_CLIENT[line] || '#888';
+      const tc    = line === 'YL' ? '#333' : '#fff';
+      trains.forEach(t => {
+        const when = t.min === 'ARR' ? 'Arriving' : t.min === 'BRD' ? 'Boarding' : `${t.min} min`;
+        html += `<div style="display:flex;align-items:center;gap:6px;">
+          <span style="background:${color};color:${tc};font-size:9px;font-weight:800;padding:2px 6px;border-radius:4px;white-space:nowrap;">${line}</span>
+          <span style="font-size:11px;color:#334155;flex:1;">${t.destination}</span>
+          <span style="font-size:11px;font-weight:700;color:${color};">${when}</span>
+        </div>`;
+      });
+    });
+    html += '</div>';
+    const age = Math.round(Date.now() / 1000 - (data.fetchedAt || Date.now() / 1000));
+    html += `<div style="font-size:9px;color:#94a3b8;margin-top:3px;">Live · ${age}s ago</div>`;
+    if (el.isConnected) el.innerHTML = html;
+  } catch(e) {
+    if (el && el.isConnected) el.innerHTML = '<span style="font-size:10px;color:#94a3b8;">Arrivals unavailable</span>';
+  }
+}
+
+async function _fetchDcBusArrivals(stopId) {
+  const el = document.getElementById('arr_dc_bus_' + stopId);
+  if (!el) return;
+  try {
+    const res  = await fetch('/api/dc/bus-arrivals?stop=' + encodeURIComponent(stopId));
+    const data = await res.json();
+    if (!el.isConnected) return;
+    if (!data.ok || !data.predictions || !data.predictions.length) {
+      el.innerHTML = '<span style="font-size:10px;color:#94a3b8;">No predictions</span>';
+      return;
+    }
+    const byRoute = {};
+    data.predictions.forEach(p => {
+      if (!byRoute[p.routeId]) byRoute[p.routeId] = [];
+      if (byRoute[p.routeId].length < 2) byRoute[p.routeId].push(p);
+    });
+    let html = '<div style="display:flex;flex-direction:column;gap:3px;margin-top:4px;">';
+    Object.entries(byRoute).forEach(([route, preds]) => {
+      const times = preds.map(p => p.minutes <= 0 ? 'Now' : p.minutes + ' min').join(', ');
+      html += `<div style="display:flex;align-items:center;gap:5px;">
+        <span style="background:#E97F1B;color:white;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:800;">${route}</span>
+        <span style="font-size:11px;color:#334155;">${times}</span>
+      </div>`;
+    });
+    html += '</div>';
+    const age = Math.round(Date.now() / 1000 - (data.fetchedAt || Date.now() / 1000));
+    html += `<div style="font-size:9px;color:#94a3b8;margin-top:3px;">Live · ${age}s ago</div>`;
+    if (el.isConnected) el.innerHTML = html;
+  } catch(e) {
+    if (el && el.isConnected) el.innerHTML = '<span style="font-size:10px;color:#94a3b8;">Arrivals unavailable</span>';
+  }
+}
+
+async function _loadDcIncidents() {
+  if (detectedCity !== 'dc') return;
+  try {
+    const res  = await fetch('/api/dc/incidents');
+    const data = await res.json();
+    if (!data.ok || !data.incidents) return;
+    // Build line → incidents index for popup injection
+    window._dcIncidentsByLine = {};
+    data.incidents.forEach(inc => {
+      inc.lines.forEach(l => {
+        if (!window._dcIncidentsByLine[l]) window._dcIncidentsByLine[l] = [];
+        window._dcIncidentsByLine[l].push(inc);
+      });
+    });
+    const active = data.incidents.length;
+    if (active > 0) showToast(`🚨 ${active} WMATA service alert${active > 1 ? 's' : ''}`, 4000);
+    console.log(`🔔 ${active} DC incidents loaded`);
+  } catch(e) {
+    console.warn('DC incidents load failed:', e.message);
+  }
+}
+
+const NYC_LANDMARKS = [
+  { name:'🗽 Statue of Liberty',   lat:40.6892, lng:-74.0445 },
+  { name:'🌇 Times Square',        lat:40.7580, lng:-73.9855 },
+  { name:'🌳 Central Park',        lat:40.7851, lng:-73.9683 },
+  { name:'🏙 Empire State Bldg',   lat:40.7484, lng:-73.9857 },
+  { name:'🌉 Brooklyn Bridge',     lat:40.7061, lng:-73.9969 },
+  { name:'🚉 Grand Central',       lat:40.7527, lng:-73.9772 },
+  { name:'🎭 Broadway District',   lat:40.7590, lng:-73.9845 },
+  { name:'🏛 Met Museum',          lat:40.7794, lng:-73.9632 },
+  { name:'💰 Wall Street',         lat:40.7074, lng:-74.0113 },
+  { name:'🌿 High Line',           lat:40.7480, lng:-74.0048 },
+  { name:'✈️ JFK Airport',         lat:40.6413, lng:-73.7781 },
+  { name:'✈️ LaGuardia Airport',   lat:40.7769, lng:-73.8740 },
+  { name:'🏟 Yankee Stadium',      lat:40.8296, lng:-73.9262 },
+  { name:'🎡 Coney Island',        lat:40.5755, lng:-73.9707 },
+];
+
+async function loadNycLayers() {
+  if (detectedCity !== 'nyc') return;
+
+  // Landmarks
+  if (!nycLandmarkLayer) {
+    nycLandmarkLayer = L.layerGroup().addTo(map);
+    NYC_LANDMARKS.forEach(lm => {
+      const ico = L.divIcon({ className:'', iconSize:[null,null],
+        html:`<div style="background:white;border:2px solid #1565c0;border-radius:8px;padding:2px 7px;font-size:10px;font-weight:800;color:#1565c0;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.2);">${lm.name}</div>` });
+      L.marker([lm.lat, lm.lng], { icon:ico }).addTo(nycLandmarkLayer)
+       .bindPopup(`<b>${lm.name}</b><br><button onclick="setDest(${lm.lat},${lm.lng},'${lm.name.replace(/'/,"\\'")}');closeModal('poiModal')" style="margin-top:6px;padding:4px 10px;background:#2563eb;color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px;">Navigate Here</button>`);
+    });
+  }
+
+  // Subway stops are drawn via refreshTransitOnView once _nycReady is true
+
+  // Parks via Overpass
+  if (nycParksLayer) return;
+  const cached = sessionStorage.getItem('nyc_parks_geojson');
+  let geojson;
+  if (cached) {
+    geojson = JSON.parse(cached);
+  } else {
+    try {
+      const q = `[out:json][timeout:25];way["leisure"="park"](40.55,-74.10,40.90,-73.75);out geom;`;
+      const r = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(q)}`, { signal: AbortSignal.timeout(15000) });
+      const d = await r.json();
+      geojson = { type:'FeatureCollection', features: d.elements.filter(e=>e.geometry).map(e => ({
+        type:'Feature',
+        properties:{ name: e.tags?.name || 'Park' },
+        geometry:{ type:'Polygon', coordinates:[ e.geometry.map(p=>[p.lon,p.lat]) ] }
+      }))};
+      sessionStorage.setItem('nyc_parks_geojson', JSON.stringify(geojson));
+    } catch(e) { console.warn('NYC parks load failed:', e.message); showToast('Parks load failed — tap 🗽 to retry'); return; }
+  }
+  nycParksLayer = L.geoJSON(geojson, {
+    style:{ color:'#16a34a', weight:1.5, fillColor:'#22c55e', fillOpacity:.18 },
+    onEachFeature:(f,l) => l.bindPopup(`<b>🌳 ${f.properties.name}</b>`)
+  }).addTo(map);
+  showToast(`🌳 ${geojson.features.length} NYC parks loaded`);
+  console.log(`🌳 NYC parks loaded: ${geojson.features.length}`);
 }
 
 // ── MAP ──
@@ -1000,6 +1540,8 @@ function initMap() {
   map = L.map('map', { zoomControl:false, attributionControl:false })
          .setView([28.6139, 77.2090], 13);
   _osmTile = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19 }).addTo(map);
+  // Restore satellite preference
+  if (localStorage.getItem('gw_satellite') === '1') setTimeout(() => toggleSatellite(true), 100);
   interactiveLayer.addTo(map);
   transitLayer.addTo(map);
   stationLayer.addTo(map);
@@ -1070,7 +1612,7 @@ function initSensors() {
     document.getElementById('vGps').textContent = 'Active ✓';
     fetchLiveEnv(userLoc.lat, userLoc.lng);
     showNearbyTransit(userLoc.lat, userLoc.lng);
-    loadHazardsFromDB();
+    loadHazardsFromDB(true); // force: GPS lock is authoritative, bypass debounce
 
     // #6 — off-route detection
     if (isLiveTracking && currentRouteCoords.length > 1 && activeDestLatLng) {
@@ -1186,6 +1728,8 @@ function pollWmataData() {
       WmataEngine.drawWmataMetroLines(stationLayer);
       const loc = userLoc || (detectedCity === 'dc' ? L.latLng(38.9072, -77.0369) : null);
       if (loc) WmataEngine.refreshWmataOnView(loc.lat, loc.lng, map.getZoom()||14, stationLayer);
+      // Load service incidents once WMATA data is ready
+      _loadDcIncidents();
     }
   }, 300);
 }
@@ -1273,6 +1817,98 @@ function refreshTransitOnView(lat, lng, zoom) {
     WmataEngine.refreshWmataOnView(lat, lng, zoom, stationLayer);
   }
 
+  // ── NYC Subway stations ──
+  if (detectedCity === 'nyc' && window._nycReady && typeof NycEngine !== 'undefined') {
+    NycEngine.getNearestStations(lat, lng, metroCount + 4, metroRadius + 0.5).forEach(s => {
+      const key = 'nyc_' + s.id;
+      if (_visibleMarkers.has(key)) return;
+      const color = NycEngine.lineColor(s.lines[0]);
+      const badgesHtml = s.lines.map(l => {
+        const c = NycEngine.lineColor(l);
+        const tc = ['N','Q','R','W'].includes(l) ? '#000' : '#fff';
+        return `<span style="background:${c};color:${tc};border-radius:50%;width:14px;height:14px;line-height:14px;text-align:center;font-size:9px;font-weight:700;display:inline-block;margin:1px;">${l}</span>`;
+      }).join('');
+      const ico = L.divIcon({ className:'', iconSize:[null,null],
+        html:`<div style="background:white;border:2.5px solid ${color};border-radius:6px;padding:2px 5px;font-size:9px;font-weight:800;color:${color};white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.3);">🚇 ${zoom>=15?s.name:s.name.split('/')[0].trim()}</div>` });
+      const m = L.marker([s.lat, s.lng], { icon:ico }).addTo(stationLayer);
+      m.on('click', e => { e.originalEvent._markerHandled = true; });
+      const adaTag = s.ada === 'full'    ? '<span style="font-size:9px;background:#e0f2fe;color:#0369a1;padding:1px 5px;border-radius:4px;margin-left:4px;">♿ Full</span>'
+                   : s.ada === 'partial' ? '<span style="font-size:9px;background:#fef9c3;color:#854d0e;padding:1px 5px;border-radius:4px;margin-left:4px;">♿ Partial</span>' : '';
+      const shimmer = `<div style="font-size:11px;color:#94a3b8;margin:6px 0 4px;font-style:italic;">Loading arrivals…</div>`;
+      const alertHtml = _alertHtmlForLines(s.lines);
+      m.bindPopup(`<div style="min-width:200px;">
+        <b>🚇 ${s.name}</b>${adaTag}
+        <div style="margin:4px 0 2px;">${badgesHtml}</div>
+        <div style="font-size:10px;color:#94a3b8;margin-bottom:4px;">${s.borough||'NYC'} · ${(s.dist*1000).toFixed(0)}m away</div>
+        ${alertHtml}
+        <div id="arr_${key}">${shimmer}</div>
+        ${navBtns(s.lat,s.lng,s.name,color)}
+      </div>`, { maxWidth:300 });
+      m.on('popupopen', () => _fetchSubwayArrivals(key, s.gtfs_stop_ids || [], s.lines));
+      _visibleMarkers.set(key, { marker:m, lat:s.lat, lng:s.lng });
+    });
+  }
+
+  // ── NYC Bus stops (static MTA data) ──
+  if (detectedCity === 'nyc' && window._nycReady && window.NYC_BUS_STOPS) {
+    if (zoom >= 15) {
+      const busRadius = zoom >= 17 ? 0.3 : zoom >= 16 ? 0.5 : 0.8;
+      Object.values(window.NYC_BUS_STOPS).forEach(s => {
+        const key = 'nycbus_' + s.id;
+        if (_visibleMarkers.has(key)) return;
+        const dist = Math.sqrt((s.lat-lat)**2 + (s.lng-lng)**2) * 111;
+        if (dist > busRadius) return;
+        if (!paddedBounds.contains(L.latLng(s.lat, s.lng))) return;
+        const routeLabel = (s.routes||[]).slice(0,3).join(', ');
+        const ico = L.divIcon({ className:'',
+          html:`<div style="background:white;border:2px solid #dc2626;border-radius:50%;width:${zoom>=17?22:18}px;height:${zoom>=17?22:18}px;display:flex;align-items:center;justify-content:center;font-size:11px;box-shadow:0 2px 6px rgba(0,0,0,.25);">🚌</div>`,
+          iconSize:[20,20], iconAnchor:[10,10] });
+        const m = L.marker([s.lat, s.lng], { icon:ico }).addTo(stationLayer);
+        m.on('click', e => { e.originalEvent._markerHandled = true; });
+        m.bindPopup(`<div style="min-width:180px;">
+          <b>🚌 ${s.name}</b>
+          <div style="font-size:10px;color:#94a3b8;margin:2px 0 4px;">MTA Bus${routeLabel ? ' · ' + routeLabel : ''}</div>
+          <div id="arr_${key}" style="font-size:11px;color:#94a3b8;margin:4px 0;font-style:italic;">Loading arrivals…</div>
+          ${navBtns(s.lat,s.lng,s.name,'#dc2626')}
+        </div>`, { maxWidth:270 });
+        m.on('popupopen', () => _fetchBusArrivals(key, s.id, s.routes || []));
+        _visibleMarkers.set(key, { marker:m, lat:s.lat, lng:s.lng });
+      });
+    } else if (zoom >= 13) {
+      const hintKey = 'nyc_bus_hint';
+      if (!_visibleMarkers.has(hintKey)) {
+        const ico = L.divIcon({ className:'', iconSize:[null,null],
+          html:`<div style="background:white;border:1.5px solid #dc2626;border-radius:8px;padding:3px 8px;font-size:10px;font-weight:700;color:#dc2626;box-shadow:0 1px 5px rgba(0,0,0,.2);white-space:nowrap;">🚌 Zoom in for bus stops</div>` });
+        const m = L.marker([lat, lng], { icon:ico, interactive:false }).addTo(stationLayer);
+        _visibleMarkers.set(hintKey, { marker:m, lat, lng });
+      }
+    }
+  }
+
+  // ── NYC Rail stations (LIRR + Metro-North) ──
+  if (detectedCity === 'nyc' && window._nycReady && window.NYC_RAIL_STATIONS) {
+    Object.values(window.NYC_RAIL_STATIONS).forEach(s => {
+      const key = 'nycrl_' + s.id;
+      if (_visibleMarkers.has(key)) return;
+      if (!paddedBounds.contains(L.latLng(s.lat, s.lng))) return;
+      const isLIRR = s.railroad === 'LIRR';
+      const color  = isLIRR ? '#9E5330' : '#1A5E38';
+      const emoji  = isLIRR ? '🚆' : '🚄';
+      const label  = isLIRR ? 'LIRR' : 'Metro-North';
+      const ico = L.divIcon({ className:'', iconSize:[null,null],
+        html:`<div style="background:${color};border:2px solid white;border-radius:6px;padding:2px 6px;font-size:9px;font-weight:800;color:white;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.35);">${emoji} ${zoom>=14?s.name:s.name.split(' ')[0]}</div>` });
+      const adaBadge = s.ada !== 'none' ? `<span style="font-size:9px;background:#e0f2fe;color:#0369a1;padding:1px 5px;border-radius:4px;margin-left:4px;">♿ ${s.ada}</span>` : '';
+      const m = L.marker([s.lat, s.lng], { icon:ico }).addTo(stationLayer);
+      m.on('click', e => { e.originalEvent._markerHandled = true; });
+      m.bindPopup(`<div style="min-width:190px;">
+        <b>${emoji} ${s.name}</b>${adaBadge}
+        <div style="font-size:10px;color:#94a3b8;margin:2px 0 4px;">${label} · ${s.branch}${s.zone ? ' · Zone ' + s.zone : ''}</div>
+        ${navBtns(s.lat,s.lng,s.name,color)}
+      </div>`, { maxWidth:290 });
+      _visibleMarkers.set(key, { marker:m, lat:s.lat, lng:s.lng });
+    });
+  }
+
   // Remove markers that have drifted outside padded bounds
   _visibleMarkers.forEach((entry, id) => {
     if (!paddedBounds.contains(L.latLng(entry.lat, entry.lng))) {
@@ -1286,6 +1922,121 @@ function refreshTransitOnView(lat, lng, zoom) {
 function showNearbyTransit(lat, lng) {
   const zoom = map.getZoom() || 14;
   refreshTransitOnView(lat, lng, zoom);
+}
+
+// (NYC bus stops now served from static nyc_bus_stops.js — no Overpass needed)
+
+// ── NYC LIVE ARRIVALS ──
+
+async function _fetchSubwayArrivals(key, gtfsStopIds, lines) {
+  const el = document.getElementById('arr_' + key);
+  if (!el) return;
+  try {
+    const params = new URLSearchParams({
+      gtfs_stop_ids: (gtfsStopIds || []).join(','),
+      lines: (lines || []).join(',')
+    });
+    const res = await fetch('/api/nyc/subway-arrivals?' + params);
+    const data = await res.json();
+    if (!el.isConnected) return; // popup closed
+    if (!data.ok || !data.arrivals || !data.arrivals.length) {
+      el.innerHTML = '<span style="font-size:10px;color:#94a3b8;">No arrivals data</span>';
+      return;
+    }
+    // Group by routeId, keep next 2 per route
+    const byRoute = {};
+    data.arrivals.forEach(a => {
+      if (!byRoute[a.routeId]) byRoute[a.routeId] = [];
+      if (byRoute[a.routeId].length < 2) byRoute[a.routeId].push(a);
+    });
+    let html = '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">';
+    Object.entries(byRoute).forEach(([routeId, arr]) => {
+      const color = (window.NycEngine && window.NycEngine.lineColor(routeId)) || '#888';
+      const textColor = ['N','Q','R','W'].includes(routeId) ? '#000' : '#fff';
+      const times = arr.map(a => a.minsAway <= 0 ? 'Now' : a.minsAway + ' min').join(', ');
+      html += `<div style="display:flex;align-items:center;gap:3px;">
+        <span style="background:${color};color:${textColor};border-radius:50%;width:18px;height:18px;line-height:18px;text-align:center;font-size:10px;font-weight:700;display:inline-block;">${routeId}</span>
+        <span style="font-size:11px;color:#334155;">${times}</span>
+      </div>`;
+    });
+    html += '</div>';
+    const age = Math.round(Date.now() / 1000 - (data.fetchedAt || Date.now() / 1000));
+    html += `<div style="font-size:9px;color:#94a3b8;margin-top:3px;">Live · ${age}s ago</div>`;
+    if (el.isConnected) el.innerHTML = html;
+  } catch (e) {
+    if (el && el.isConnected) el.innerHTML = '<span style="font-size:10px;color:#94a3b8;">Arrivals unavailable</span>';
+  }
+}
+
+async function _fetchBusArrivals(key, stopId, routes) {
+  const el = document.getElementById('arr_' + key);
+  if (!el) return;
+  try {
+    const params = new URLSearchParams({
+      stop_id: stopId,
+      routes: (routes || []).join(',')
+    });
+    const res = await fetch('/api/nyc/bus-arrivals?' + params);
+    const data = await res.json();
+    if (!el.isConnected) return;
+    if (!data.ok || !data.arrivals || !data.arrivals.length) {
+      el.innerHTML = '<span style="font-size:10px;color:#94a3b8;">No arrivals data</span>';
+      return;
+    }
+    const byRoute = {};
+    data.arrivals.forEach(a => {
+      if (!byRoute[a.routeId]) byRoute[a.routeId] = [];
+      if (byRoute[a.routeId].length < 2) byRoute[a.routeId].push(a);
+    });
+    let html = '<div style="display:flex;flex-direction:column;gap:3px;margin-top:4px;">';
+    Object.entries(byRoute).forEach(([routeId, arr]) => {
+      const times = arr.map(a => a.minsAway <= 0 ? 'Now' : a.minsAway + ' min').join(', ');
+      html += `<div style="display:flex;align-items:center;gap:4px;">
+        <span style="background:#dc2626;color:#fff;border-radius:4px;padding:1px 5px;font-size:10px;font-weight:700;">${routeId}</span>
+        <span style="font-size:11px;color:#334155;">${times}</span>
+      </div>`;
+    });
+    html += '</div>';
+    const age = Math.round(Date.now() / 1000 - (data.fetchedAt || Date.now() / 1000));
+    html += `<div style="font-size:9px;color:#94a3b8;margin-top:3px;">Live · ${age}s ago</div>`;
+    if (el.isConnected) el.innerHTML = html;
+  } catch (e) {
+    if (el && el.isConnected) el.innerHTML = '<span style="font-size:10px;color:#94a3b8;">Arrivals unavailable</span>';
+  }
+}
+
+// Fetch next-train wait from GTFS-RT and refine the NYC subway ETA display
+async function _refinNycSubwayEta(journey) {
+  if (!journey || !journey.from) return;
+  const gtfsIds = journey.from.gtfs_stop_ids || [];
+  const lines = journey.type === 'transfer'
+    ? [journey.line1, journey.line2]
+    : [journey.line];
+  if (!gtfsIds.length || !lines.length) return;
+  try {
+    const params = new URLSearchParams({ gtfs_stop_ids: gtfsIds.join(','), lines: lines.join(',') });
+    const res = await fetch('/api/nyc/subway-arrivals?' + params);
+    const data = await res.json();
+    if (!data.ok || !data.arrivals || !data.arrivals.length) return;
+    // Find next arrival for the journey line
+    const targetLine = journey.type === 'transfer' ? journey.line1 : journey.line;
+    const next = data.arrivals.find(a => a.routeId === targetLine);
+    if (!next || next.minsAway == null) return;
+    const waitMin = Math.max(0, next.minsAway);
+    const wIn  = journey.walkToStation  || 0;
+    const wOut = journey.walkFromStation || 0;
+    const rideMin = (journey.numStops || 6) * 2 + (journey.transfers || 0) * 4;
+    const lineLabel = journey.type === 'transfer' ? `${journey.line1}→${journey.line2}` : journey.line;
+    const totalMin = Math.round(wIn*12) + waitMin + rideMin + Math.round(wOut*12);
+    // Update comparison panel
+    const metaMel = document.getElementById('metaMetro');
+    if (metaMel) metaMel.textContent = `🚇 ${totalMin} min · line ${lineLabel} · wait ${waitMin} min`;
+    // Update HUD if route is active
+    const hudEl = document.getElementById('hudTime');
+    if (hudEl && window._activeNycJourney === journey) {
+      hudEl.textContent = `${totalMin} min`;
+    }
+  } catch (_) { /* silent */ }
 }
 
 // ── SURFACE AI + ENV UPDATE ──
@@ -1386,51 +2137,158 @@ function showGpsOption() {
   dd.classList.add('open');
 }
 
+// ── Search result normalizers (module-level so offline fallback can use them) ──
+function _normNominatim(item) {
+  const parts = (item.display_name || '').split(',');
+  return {
+    name: parts[0].trim(),
+    sub:  parts.slice(1, 3).join(', ').trim(),
+    lat:  parseFloat(item.lat),
+    lng:  parseFloat(item.lon),
+    pid:  'nom_' + item.place_id,
+  };
+}
+function _normPhoton(f) {
+  const p   = f.properties || {};
+  const addrParts = [
+    p.housenumber && p.street ? `${p.housenumber} ${p.street}` : p.street,
+    p.city || p.town || p.village,
+    p.state,
+    p.country,
+  ].filter(Boolean);
+  const name = p.name || addrParts[0] || 'Location';
+  const sub  = addrParts.slice(p.name ? 0 : 1).slice(0, 2).join(', ');
+  return {
+    name,
+    sub,
+    lat: f.geometry.coordinates[1],
+    lng: f.geometry.coordinates[0],
+    pid: 'ph_' + (p.osm_type || '') + (p.osm_id || ''),
+  };
+}
+function _normGoogle(item) {
+  return {
+    name: item.name,
+    sub:  item.address || '',
+    lat:  item.lat,
+    lng:  item.lng,
+    pid:  'gp_' + item.place_id,
+  };
+}
+// Remove items from `b` that are within 130 m of any item in `a`
+function _dedupResults(a, b) {
+  return b.filter(s =>
+    !a.some(p => L.latLng(p.lat, p.lng).distanceTo(L.latLng(s.lat, s.lng)) < 130)
+  );
+}
+// Render one normalised result row
+function _searchRow(item, field, cls = '') {
+  const distM   = userLoc ? L.latLng(item.lat, item.lng).distanceTo(userLoc) : null;
+  const distTxt = distM != null
+    ? (distM < 1000 ? Math.round(distM) + ' m' : (distM / 1000).toFixed(1) + ' km')
+    : '';
+  const safeName = item.name.replace(/'/g, "\\'");
+  const fn = field === 'from'
+    ? `setOrigin(${item.lat},${item.lng},'${safeName}')`
+    : `setDest(${item.lat},${item.lng},'${safeName}')`;
+  return `<div class="result-item${cls ? ' ' + cls : ''}" onclick="${fn}">
+    <div>
+      <div class="result-name">${item.name}</div>
+      ${item.sub ? `<div class="result-sub">${item.sub}</div>` : ''}
+    </div>
+    ${distTxt ? `<div class="result-dist">${distTxt}</div>` : ''}
+  </div>`;
+}
+
 async function doSearch(q, field) {
+  const dd = document.getElementById('resultsDropdown');
+
+  // Build local viewbox (Nominatim only)
+  let viewbox = null;
+  if (userLoc) {
+    const d = 0.15;  // ±0.15° ≈ 15 km
+    viewbox = `${userLoc.lng - d},${userLoc.lat + d},${userLoc.lng + d},${userLoc.lat - d}`;
+  } else if (detectedCity && CITY_BBOXES[detectedCity]) {
+    const [a, b, c, dv] = CITY_BBOXES[detectedCity];
+    viewbox = `${b},${c},${dv},${a}`;
+  }
+
+  const gpsRow = field === 'from'
+    ? `<div class="result-item" onclick="useMyLocation()">
+         <div><div class="result-name">📍 My Current Location</div><div class="result-sub">Use live GPS</div></div>
+         <div class="result-gps">GPS</div>
+       </div>`
+    : '';
+
   try {
-    const ref = userLoc ? `&lat=${userLoc.lat}&lon=${userLoc.lng}` : '';
-    const cc  = window._searchCountry ? `&countrycodes=${window._searchCountry}` : '';
-    const r   = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=6&addressdetails=1${ref}${cc}`);
-    const data = await r.json();
-    // Save to cache for offline fallback
-    localStorage.setItem('gw_search_cache_'+q.slice(0,10), JSON.stringify(data.slice(0,3)));
-    const dd  = document.getElementById('resultsDropdown');
-    if (!data.length) { closeDropdown(); return; }
-    let html = field==='from'
-      ? `<div class="result-item" onclick="useMyLocation()"><div><div class="result-name">📍 My Current Location</div><div class="result-sub">Use live GPS</div></div><div class="result-gps">GPS</div></div>`
-      : '';
-    html += data.map(item => {
-      const parts = item.display_name.split(',');
-      const name  = parts[0].trim();
-      const sub   = parts.slice(1,3).join(', ').trim();
-      const dist  = userLoc ? (L.latLng(item.lat,item.lon).distanceTo(userLoc)/1000).toFixed(1)+' km' : '--';
-      const fn    = field==='from'
-        ? `setOrigin(${item.lat},${item.lon},'${name.replace(/'/g,"\\'")}')`
-        : `setDest(${item.lat},${item.lon},'${name.replace(/'/g,"\\'")}')`;
-      return `<div class="result-item" onclick="${fn}">
-        <div><div class="result-name">${name}</div><div class="result-sub">${sub}</div></div>
-        <div class="result-dist">${dist}</div></div>`;
-    }).join('');
-    dd.innerHTML=html; dd.classList.add('open');
+    const locParam = userLoc ? `&lat=${userLoc.lat}&lon=${userLoc.lng}` : '';
+
+    // ── 1. Nominatim — local area only (viewbox + bounded) ──
+    const nomProm = viewbox
+      ? fetch(`https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&q=${encodeURIComponent(q)}&limit=3&viewbox=${viewbox}&bounded=1${locParam}`)
+          .then(r => r.json()).then(d => d.map(_normNominatim)).catch(() => [])
+      : Promise.resolve([]);
+
+    // ── 2. Photon by Komoot — OSM with Elasticsearch, far better address lookup ──
+    const photonParam = userLoc ? `&lat=${userLoc.lat}&lon=${userLoc.lng}` : '';
+    const photonProm = fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=7${photonParam}`)
+      .then(r => r.json()).then(d => (d.features || []).map(_normPhoton)).catch(() => []);
+
+    // ── 3. Google Places (proxied — best for businesses & exact addresses) ──
+    const gpParam = userLoc ? `&lat=${userLoc.lat}&lng=${userLoc.lng}` : '';
+    const googleProm = fetch(`/api/places/search?q=${encodeURIComponent(q)}${gpParam}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(d => Array.isArray(d) ? d.map(_normGoogle) : [])
+      .catch(() => []);
+
+    const [nomLocal, photonRaw, googleRaw] = await Promise.all([nomProm, photonProm, googleProm]);
+
+    // Merge photon + google, dedup against local then against each other
+    const photonDeduped = _dedupResults(nomLocal, photonRaw);
+    const googleDeduped = _dedupResults([...nomLocal, ...photonDeduped], googleRaw);
+
+    // Sort merged results by distance when user location is known
+    const worldData = [...photonDeduped, ...googleDeduped]
+      .sort((a, b) => {
+        if (!userLoc) return 0;
+        return L.latLng(a.lat, a.lng).distanceTo(userLoc)
+             - L.latLng(b.lat, b.lng).distanceTo(userLoc);
+      })
+      .slice(0, 8);
+
+    if (!nomLocal.length && !worldData.length) { closeDropdown(); return; }
+
+    // Cache for offline fallback (normalised format)
+    localStorage.setItem('gw_search_cache_' + q.slice(0, 10),
+      JSON.stringify([...nomLocal, ...worldData].slice(0, 5)));
+
+    let html = gpsRow;
+
+    if (nomLocal.length) {
+      html += `<div class="result-section">📍 Near you</div>`;
+      html += nomLocal.map(i => _searchRow(i, field)).join('');
+    }
+
+    if (worldData.length) {
+      html += `<div class="result-section">🔍 Results</div>`;
+      html += worldData.map(i => _searchRow(i, field, 'result-world')).join('');
+    }
+
+    dd.innerHTML = html;
+    dd.classList.add('open');
+
   } catch {
-    // Offline fallback — use cached results
+    // Offline fallback — use cached normalised results
     const cached = getCachedSearchResults(q);
-    if (!cached.length) return;
-    const dd = document.getElementById('resultsDropdown');
-    let html = field==='from'
-      ? `<div class="result-item" onclick="useMyLocation()"><div><div class="result-name">📍 My Current Location</div><div class="result-sub">Use live GPS</div></div><div class="result-gps">GPS</div></div>`
-      : '';
+    if (!cached.length) { closeDropdown(); return; }
+    let html = gpsRow + `<div class="result-section">📴 Cached</div>`;
     html += cached.map(item => {
-      const parts = item.display_name.split(',');
-      const name  = parts[0].trim();
-      const sub   = parts.slice(1,3).join(', ').trim();
-      const fn    = field==='from'
-        ? `setOrigin(${item.lat},${item.lon},'${name.replace(/'/g,"\\'")}')`
-        : `setDest(${item.lat},${item.lon},'${name.replace(/'/g,"\\'")}')`;
-      return `<div class="result-item" onclick="${fn}">
-        <div><div class="result-name">📴 ${name}</div><div class="result-sub">${sub} · Cached</div></div></div>`;
+      // Support both old Nominatim format and new normalised format
+      const norm = item.pid ? item : _normNominatim({ ...item, lon: item.lng || item.lon });
+      return _searchRow(norm, field, 'result-world');
     }).join('');
-    dd.innerHTML=html; dd.classList.add('open');
+    dd.innerHTML = html;
+    dd.classList.add('open');
   }
 }
 
@@ -1470,7 +2328,7 @@ function tryPrepare() {
 // ── ROUTE COMPARISON ──
 function prepareComparison(fromLL, toLL) {
   clearRoute(false);
-  walkabilityBase = 100; cachedMetroPlan = null; window._cachedBusJourney = null;
+  walkabilityBase = 100; cachedMetroPlan = null; window._cachedBusJourney = null; window._cachedNycJourney = null;
 
   const baseDist  = (fromLL.distanceTo(toLL) / 1000) * 1.3;
   const hazardPen = localHazards.reduce((a, h) => a + Math.abs(Env.HAZARD_SCORE_MAP[h.type] || 5), 0);
@@ -1498,9 +2356,47 @@ function prepareComparison(fromLL, toLL) {
   const busEl    = document.getElementById('nearestBusInfo');
   const busLabel = document.getElementById('busOptLabel');
 
-  // ── METRO ──
+  // ── NYC SUBWAY / DELHI METRO ──
   let metroFound = false;
-  if (isModeEnabled('metro') && typeof MetroEngine !== 'undefined' && typeof METRO_DATA !== 'undefined') {
+  let nycSubwayFound = false;
+
+  // If in NYC but scripts haven't finished loading yet, show a loading placeholder
+  if (isModeEnabled('metro') && detectedCity === 'nyc' && !window._nycReady) {
+    document.getElementById('opt-metro').style.display = 'flex';
+    document.getElementById('metaMetro').textContent   = '🚇 Loading transit data…';
+    document.getElementById('scoreMetro').textContent  = '—';
+    // Re-run prepareComparison once scripts are ready
+    const _waitFrom = fromLL, _waitTo = toLL;
+    const _nycLoadPoll = setInterval(() => {
+      if (window._nycReady) { clearInterval(_nycLoadPoll); prepareComparison(_waitFrom, _waitTo); }
+    }, 300);
+  }
+
+  if (isModeEnabled('metro') && detectedCity === 'nyc' && typeof NycEngine !== 'undefined') {
+    const journey = NycEngine.planJourney(fromLL.lat, fromLL.lng, toLL.lat, toLL.lng);
+    if (journey && journey.type !== 'suggestion') {
+      window._cachedNycJourney = journey;
+      const wIn  = journey.walkToStation  || 0;
+      const wOut = journey.walkFromStation || 0;
+      const rideMin = (journey.numStops || 6) * 2 + (journey.transfers || 0) * 4;
+      const approxMin = Math.round(wIn*12) + rideMin + Math.round(wOut*12);
+      const lineLabel = journey.type === 'transfer'
+        ? `${journey.line1}→${journey.line2}`
+        : journey.line;
+      document.getElementById('opt-metro').style.display = 'flex';
+      document.getElementById('metaMetro').textContent   = `🚇 ${approxMin} min · line ${lineLabel} · ${journey.numStops||'?'} stops`;
+      document.getElementById('scoreMetro').textContent  = 90;
+      if (busEl) { busEl.innerHTML=`🚇 <b>${journey.from.name}</b> → <b>${journey.to.name}</b>`; busEl.style.display='block'; }
+      nycSubwayFound = true;
+      metroFound = true;
+      // Async: refine ETA with live next-train wait time
+      _refinNycSubwayEta(journey);
+    } else {
+      document.getElementById('opt-metro').style.display = 'none';
+    }
+  }
+
+  if (!nycSubwayFound && isModeEnabled('metro') && typeof MetroEngine !== 'undefined' && typeof METRO_DATA !== 'undefined') {
     const nf = MetroEngine.getNearestMetroStations(fromLL.lat, fromLL.lng, 3, 2.5);
     const nt = MetroEngine.getNearestMetroStations(toLL.lat, toLL.lng, 3, 2.5);
     outer: for (const f of nf) {
@@ -1521,7 +2417,7 @@ function prepareComparison(fromLL, toLL) {
         }
       }
     }
-  } else {
+  } else if (!nycSubwayFound) {
     document.getElementById('opt-metro').style.display = 'none';
   }
 
@@ -1594,6 +2490,7 @@ function prepareComparison(fromLL, toLL) {
   L.marker(toLL).addTo(interactiveLayer).bindPopup(`<b>To:</b> ${activeDestName}`);
   map.flyTo(toLL, 14);
   document.getElementById('routeCard').classList.add('active');
+  document.getElementById('searchBox').style.display = 'none';
 }
 
 
@@ -1658,7 +2555,26 @@ function showHud(type, route, fromLL) {
   document.getElementById('cntBridge').textContent = routeCoordsData.bridges.length;
   document.getElementById('cntUnder').textContent  = routeCoordsData.underpasses.length;
 
-  walkabilityBase = rd.score;
+  // Refine walkability score from actual OSM step data
+  if (type === 'walk' || type === 'safe') {
+    const totalDist = steps.reduce((s, st) => s + (st.distance || 0), 0) || 1;
+    let penalty = 0;
+    steps.forEach(st => {
+      const w = (st.distance || 0) / totalDist;
+      const name = (st.name || '').toLowerCase();
+      const ref  = (st.ref  || '').toLowerCase();
+      // Penalise busy roads / highways
+      if (/motorway|trunk|primary/.test(st.road_class || '')) penalty += w * 25;
+      else if (/secondary|tertiary/.test(st.road_class || ''))  penalty += w * 10;
+      // Penalise if step has no footway / crossing is missing
+      if (!name && !ref) penalty += w * 4;
+    });
+    // Crossings add minor score boost — more structure = safer walk
+    const crossingBonus = Math.min(8, routeCoordsData.crossings.length * 1.5);
+    walkabilityBase = Math.max(35, Math.min(100, rd.score - Math.round(penalty) + Math.round(crossingBonus)));
+  } else {
+    walkabilityBase = rd.score;
+  }
   updateHudScore();
   document.getElementById('hudScore').style.color =
     type==='safe'                            ? 'var(--safe)'    :
@@ -1707,8 +2623,9 @@ function showHud(type, route, fromLL) {
   const bShare = document.getElementById('btnShare');
   if (bShare) bShare.style.display = 'block';
   if (document.getElementById('voiceToggle')?.checked && 'speechSynthesis' in window) {
-    const label = isTransitMode ? 'metro route' : type==='safe' ? 'safest walk' : 'shortest walk';
-    speechSynthesis.speak(new SpeechSynthesisUtterance(`Route: ${label}. ${Math.ceil(rd.dist*12)} minutes.`));
+    const label = isTransitMode ? 'transit route' : type==='safe' ? 'safest walk' : 'shortest walk';
+    const minDisplay = document.getElementById('hudTime')?.textContent?.replace(' min','') || Math.ceil(rd.dist*12);
+    speechSynthesis.speak(new SpeechSynthesisUtterance(`Route: ${label}. ${minDisplay} minutes.`));
   }
 }
 
@@ -1725,6 +2642,61 @@ async function buildTransitView(coords, steps, rd) {
       <span>🚶</span><span style="flex:1;text-transform:capitalize;">${act} ${road}</span>
       <span style="color:#2563eb;font-weight:800;">${Math.round(s.distance)}m</span></div>`;
   }).join('');
+
+  // ── NYC SUBWAY ──
+  if (window._cachedNycJourney && detectedCity === 'nyc') {
+    const journey = window._cachedNycJourney;
+    const wIn  = journey.walkToStation  || 0;
+    const wOut = journey.walkFromStation || 0;
+
+    // Walk legs as dashed blue polylines
+    const p1 = Math.max(1, Math.min(Math.floor(coords.length * (wIn / (rd.dist + 0.01))), coords.length - 2));
+    const p2 = Math.max(p1 + 1, Math.min(Math.floor(coords.length * (1 - wOut / (rd.dist + 0.01))), coords.length - 1));
+    L.polyline(coords.slice(0, p1), { color:'#2563eb', weight:5, dashArray:'8,8' }).addTo(transitLayer);
+    L.polyline(coords.slice(p2),    { color:'#2563eb', weight:5, dashArray:'8,8' }).addTo(transitLayer);
+
+    // Subway line segment — color of line
+    if (typeof NycEngine !== 'undefined') {
+      const lineColor = journey.type === 'transfer' ? NycEngine.lineColor(journey.line1) : NycEngine.lineColor(journey.line);
+      L.polyline(coords.slice(p1, p2 + 1), { color:lineColor, weight:8, opacity:.9 }).addTo(transitLayer);
+
+      const mkStn = (ll, label, c) => {
+        const ico = L.divIcon({ className:'', iconSize:[null,null],
+          html:`<div style="background:${c};border:2px solid white;border-radius:4px;padding:2px 5px;font-size:10px;font-weight:800;color:white;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.3);">${label}</div>` });
+        return L.marker(ll, { icon:ico });
+      };
+      mkStn([journey.from.lat, journey.from.lng], `🚇 ${journey.from.name}`, '#1565c0').addTo(stationLayer);
+      mkStn([journey.to.lat,   journey.to.lng],   `🚇 ${journey.to.name}`,   '#8e24aa').addTo(stationLayer);
+    }
+
+    map.fitBounds(L.polyline(coords).getBounds(), { padding:[50,50] });
+    const walkMin = Math.round(wIn*12);
+    const exitMin = Math.round(wOut*12);
+    const rideMin = (journey.numStops || 6) * 2 + (journey.transfers || 0) * 4;
+    document.getElementById('hudTime').textContent = `${walkMin + rideMin + exitMin} min`;
+    // Mark as active so live ETA refiner can update HUD
+    window._activeNycJourney = journey;
+    // Async refine with live next-train wait
+    _refinNycSubwayEta(journey);
+
+    const journeyHtml = typeof NycEngine !== 'undefined'
+      ? NycEngine.buildJourneyHtml(journey)
+      : '<div style="padding:12px">NYC subway route found.</div>';
+
+    tw.innerHTML = `
+      <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;margin-bottom:8px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Subway (${(wIn*1000).toFixed(0)}m)</div>
+        ${mkS(steps.slice(0, Math.max(1, Math.floor(n * .15))))}
+      </div>
+      <div style="background:#e8f0fe;padding:4px;border-radius:10px;border-left:4px solid #1565c0;margin-bottom:8px;">
+        ${journeyHtml}
+      </div>
+      <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Destination (${(wOut*1000).toFixed(0)}m)</div>
+        ${mkS(steps.slice(Math.floor(n * .85)))}
+      </div>`;
+    return;
+  }
 
   // ── METRO ──
   if (cachedMetroPlan) {
@@ -1962,12 +2934,13 @@ function clearRoute(clearInputs) {
   if (userMarker) userMarker.addTo(map);
   if (originMarker) originMarker.addTo(map);
   if (clearInputs) {
+    document.getElementById('searchBox').style.display = '';
     document.getElementById('inputFrom').value=''; document.getElementById('inputTo').value='';
     activeOriginLatLng=null; activeOriginName=''; activeDestLatLng=null; activeDestName='';
     if (originMarker) { map.removeLayer(originMarker); originMarker=null; }
     document.getElementById('nearestBusInfo').style.display='none';
-    cachedMetroPlan=null; window._cachedBusJourney=null;
-    window._cachedWmataPlan=null; window._cachedWmataBus=null;
+    cachedMetroPlan=null; window._cachedBusJourney=null; window._cachedNycJourney=null;
+    window._cachedWmataPlan=null; window._cachedWmataBus=null; window._activeNycJourney=null;
     // #3 — clear marker registry
     stationLayer.clearLayers(); _visibleMarkers.clear();
     // #6 — clear route coords
@@ -2134,9 +3107,10 @@ async function toggleHeatmap() {
   } catch(e) { showToast('Could not load heatmap'); }
 }
 
-// Offline search cache helper
+// Offline search cache helper — returns normalised {name,sub,lat,lng,pid} array
 function getCachedSearchResults(q) {
-  try { return JSON.parse(localStorage.getItem('gw_search_cache_'+q.slice(0,10))) || []; } catch { return []; }
+  try { return JSON.parse(localStorage.getItem('gw_search_cache_' + q.slice(0, 10))) || []; }
+  catch { return []; }
 }
 
 // ── UTILS ──

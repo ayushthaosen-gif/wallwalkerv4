@@ -8,4 +8,10 @@ services:
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: MTA_API_KEY
+        sync: false
+      - key: WMATA_API_KEY
+        sync: false
+      - key: DELHI_OTD_KEY
+        sync: false
     autoDeploy: true

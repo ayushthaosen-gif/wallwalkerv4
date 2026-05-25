@@ -61,28 +61,62 @@ function mergeWmataRoutes() {
   }
 })();
 
-// ── LINE COLOR HELPER ──
+// ── LINE COLOR HELPERS ──
+// Convert WMATA REST line codes (RD/BL/OR/GR/YL/SV) or legacy lowercase names → color
+const _WMATA_CODE_MAP = { RD:'red', BL:'blue', OR:'orange', GR:'green', YL:'yellow', SV:'silver' };
 function wmataLineColor(lineStr) {
   if (!lineStr) return '#888';
-  const first = lineStr.split(',')[0].trim().toLowerCase();
-  return WMATA_LINE_COLORS[first] || '#888';
+  const first = lineStr.split(',')[0].trim();
+  const lc = _WMATA_CODE_MAP[first.toUpperCase()] || first.toLowerCase();
+  return WMATA_LINE_COLORS[lc] || '#888';
+}
+function wmataLineBadge(lineCode) {
+  const color = wmataLineColor(lineCode);
+  const name  = (_WMATA_CODE_MAP[lineCode.toUpperCase()] || lineCode).toUpperCase();
+  const tc    = (name === 'YELLOW') ? '#333' : 'white';
+  return `<span style="background:${color};color:${tc};font-size:9px;font-weight:800;padding:2px 7px;border-radius:4px;">${lineCode}</span>`;
+}
+// Detect whether WMATA_STATIONS is new code-keyed format (has .code field) or legacy name-keyed
+function _wmataIsNewFormat() {
+  if (typeof WMATA_STATIONS === 'undefined') return false;
+  const first = Object.values(WMATA_STATIONS)[0];
+  return first && typeof first.code === 'string';
 }
 
 // ── NEAREST METRO STATIONS ──
+// Supports both old name-keyed format and new code-keyed format from build_wmata.js
 function getNearestWmataStations(lat, lng, n = 5, maxKm = 2.0) {
   if (!wmataDataReady()) return [];
+  const newFmt = _wmataIsNewFormat();
   return Object.entries(WMATA_STATIONS)
-    .map(([name, s]) => ({
-      id:   name,
-      name,
-      lat:  s.lat,
-      lng:  s.lng,
-      line: s.line,
-      lines: s.lines,
-      addr: s.addr,
-      url:  s.url,
-      dist: wmataHav(lat, lng, s.lat, s.lng),
-    }))
+    .map(([key, s]) => {
+      if (newFmt) {
+        return {
+          id:            s.code,
+          name:          s.name,
+          lat:           s.lat,
+          lng:           s.lng,
+          lines:         (s.lines || []).join(', '),   // e.g. "RD" or "BL, OR, SV"
+          linesArr:      s.lines || [],
+          transferCodes: s.transferCodes || [],
+          addr:          s.address || '',
+          dist:          wmataHav(lat, lng, s.lat, s.lng),
+        };
+      } else {
+        return {
+          id:            key,
+          name:          key,
+          lat:           s.lat,
+          lng:           s.lng,
+          lines:         s.lines || s.line || '',
+          linesArr:      (s.lines || s.line || '').split(',').map(l => l.trim()).filter(Boolean),
+          transferCodes: [],
+          addr:          s.addr || '',
+          url:           s.url  || '',
+          dist:          wmataHav(lat, lng, s.lat, s.lng),
+        };
+      }
+    })
     .filter(s => s.dist <= maxKm)
     .sort((a, b) => a.dist - b.dist)
     .slice(0, n);
@@ -155,27 +189,44 @@ function drawWmataBusRoute(routeId, layer) {
 // ── METRO STATION POPUP HTML ──
 function buildWmataStationPopup(station) {
   const color = wmataLineColor(station.lines);
-  const lineLabels = (station.lines || '').split(',').map(l => {
-    const lc = l.trim().toLowerCase();
-    const c = WMATA_LINE_COLORS[lc] || '#888';
-    return `<span style="background:${c};color:${lc==='yellow'?'#333':'white'};font-size:9px;font-weight:800;padding:2px 7px;border-radius:4px;">${l.trim().toUpperCase()}</span>`;
-  }).join(' ');
+  const lineLabels = (station.linesArr || (station.lines||'').split(','))
+    .map(l => wmataLineBadge(l.trim())).join(' ');
+
+  // Alert snippet (if incidents loaded)
+  let alertHtml = '';
+  if (window._dcIncidentsByLine) {
+    const affected = (station.linesArr || []).flatMap(l => window._dcIncidentsByLine[l] || []);
+    const unique = [...new Map(affected.map(a => [a.description, a])).values()].slice(0, 2);
+    alertHtml = unique.map(a => `
+      <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:5px 8px;margin-bottom:5px;">
+        <div style="font-size:10px;font-weight:700;color:#dc2626;">⚠ Service Alert</div>
+        <div style="font-size:10px;color:#7f1d1d;margin-top:1px;">${a.description}</div>
+      </div>`).join('');
+  }
+
+  // Live arrivals div — populated by _fetchDcTrainArrivals on popupopen
+  const hasCode = !!station.id && station.id.length <= 4 && /^[A-Z]\d/.test(station.id);
+  const arrHtml = hasCode
+    ? `<div id="arr_dc_${station.id}" style="font-size:11px;color:#94a3b8;margin:6px 0 4px;font-style:italic;">Loading arrivals…</div>`
+    : '';
 
   return `
-    <div style="min-width:220px;max-width:280px;">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-        <div style="width:18px;height:18px;border-radius:50%;background:${color};flex-shrink:0;"></div>
+    <div style="min-width:220px;max-width:290px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
+        <div style="width:16px;height:16px;border-radius:50%;background:${color};flex-shrink:0;"></div>
         <b style="font-size:13px;line-height:1.2;">🚇 ${station.name}</b>
       </div>
-      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;">${lineLabels}</div>
-      ${station.addr ? `<div style="font-size:11px;color:#64748b;margin-bottom:8px;">📍 ${station.addr}</div>` : ''}
-      <div style="display:flex;gap:6px;">
+      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px;">${lineLabels}</div>
+      ${station.addr ? `<div style="font-size:11px;color:#64748b;margin-bottom:5px;">📍 ${station.addr}</div>` : ''}
+      ${alertHtml}
+      ${arrHtml}
+      <div style="display:flex;gap:6px;margin-top:6px;">
         <button onclick="poiNavigateTo(${station.lat},${station.lng},'${station.name.replace(/'/g,"\\'")}');map.closePopup();"
-          style="flex:1;background:#0D5CA8;color:white;border:none;border-radius:8px;padding:7px 8px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;">🧭 Navigate Here</button>
+          style="flex:1;background:#0D5CA8;color:white;border:none;border-radius:8px;padding:7px 8px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;">🧭 Go</button>
         <button onclick="poiSetFrom(${station.lat},${station.lng},'${station.name.replace(/'/g,"\\'")}');map.closePopup();"
-          style="flex:1;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:7px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:#475569;">📍 Start Here</button>
+          style="flex:1;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:7px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:#475569;">📍 From</button>
       </div>
-      ${station.url ? `<a href="${station.url}" target="_blank" style="display:block;text-align:center;font-size:10px;color:#0D5CA8;margin-top:6px;text-decoration:none;">WMATA Station Info →</a>` : ''}
+      ${station.url ? `<a href="${station.url}" target="_blank" style="display:block;text-align:center;font-size:10px;color:#0D5CA8;margin-top:5px;text-decoration:none;">WMATA Info →</a>` : ''}
     </div>`;
 }
 
@@ -205,15 +256,16 @@ function buildWmataBusStopPopup(stop) {
   }
 
   return `
-    <div style="min-width:200px;max-width:260px;">
+    <div style="min-width:200px;max-width:270px;">
       <b style="font-size:13px;">🚏 ${stop.name}</b>
-      <div style="font-size:10px;color:#94a3b8;margin:3px 0 8px;">Stop ID: ${stop.id} · WMATA Metrobus</div>
+      <div style="font-size:10px;color:#94a3b8;margin:3px 0 6px;">Stop ${stop.id} · WMATA Metrobus</div>
       ${routeInfo}
-      <div style="display:flex;gap:6px;margin-top:8px;">
+      <div id="arr_dc_bus_${stop.id}" style="font-size:11px;color:#94a3b8;margin:5px 0;font-style:italic;">Loading arrivals…</div>
+      <div style="display:flex;gap:6px;margin-top:6px;">
         <button onclick="poiNavigateTo(${stop.lat},${stop.lng},'${stop.name.replace(/'/g,"\\'")}');map.closePopup();"
-          style="flex:1;background:#E97F1B;color:white;border:none;border-radius:8px;padding:7px 8px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;">🧭 Navigate Here</button>
+          style="flex:1;background:#E97F1B;color:white;border:none;border-radius:8px;padding:7px 8px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;">🧭 Go</button>
         <button onclick="poiSetFrom(${stop.lat},${stop.lng},'${stop.name.replace(/'/g,"\\'")}');map.closePopup();"
-          style="flex:1;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:7px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:#475569;">📍 Start Here</button>
+          style="flex:1;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:7px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:#475569;">📍 From</button>
       </div>
     </div>`;
 }
@@ -241,17 +293,23 @@ function refreshWmataOnView(lat, lng, zoom, stationLayer) {
   const busRadius   = zoom >= 16 ? 0.3 : zoom >= 15 ? 0.5 : zoom >= 14 ? 0.7 : 0;
   const busCount    = zoom >= 16 ? 12  : zoom >= 15 ? 8   : 5;
 
-  // Metro stations (always show when in DC area)
+  // Metro stations
   getNearestWmataStations(lat, lng, 8, metroRadius).forEach(s => {
     const color = wmataLineColor(s.lines);
+    const isDark = (s.linesArr||[]).some(l => ['YL','yellow'].includes(l));
     const ico = L.divIcon({
       className: '',
-      html: `<div style="background:${color};border:3px solid white;border-radius:6px;padding:3px 7px;font-size:${zoom>=15?'11':'10'}px;font-weight:900;color:${s.line==='yellow'?'#333':'white'};white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.4);">🚇 ${zoom>=15?s.name:s.name.split(' ')[0]}</div>`,
+      html: `<div style="background:${color};border:3px solid white;border-radius:6px;padding:3px 7px;font-size:${zoom>=15?'11':'10'}px;font-weight:900;color:${isDark?'#333':'white'};white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.4);">🚇 ${zoom>=15?s.name:s.name.split(' ')[0]}</div>`,
       iconSize: [null, null],
     });
     const marker = L.marker([s.lat, s.lng], { icon: ico, zIndexOffset: 500 }).addTo(stationLayer);
     marker.on('click', e => { e.originalEvent._handled = true; });
     marker.bindPopup(buildWmataStationPopup(s), { maxWidth: 300 });
+    // Live arrivals on popup open (only when station has a WMATA code)
+    if (s.id && /^[A-Z]\d/.test(s.id) && typeof _fetchDcTrainArrivals === 'function') {
+      const allCodes = [s.id, ...(s.transferCodes || [])].filter(Boolean);
+      marker.on('popupopen', () => _fetchDcTrainArrivals(s.id, allCodes));
+    }
   });
 
   // Bus stops (only when zoomed in)
@@ -266,6 +324,9 @@ function refreshWmataOnView(lat, lng, zoom, stationLayer) {
       const marker = L.marker([s.lat, s.lng], { icon: ico }).addTo(stationLayer);
       marker.on('click', e => { e.originalEvent._handled = true; });
       marker.bindPopup(buildWmataBusStopPopup(s), { maxWidth: 280 });
+      if (typeof _fetchDcBusArrivals === 'function') {
+        marker.on('popupopen', () => _fetchDcBusArrivals(s.id));
+      }
     });
   }
 
