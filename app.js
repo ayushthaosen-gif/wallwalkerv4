@@ -785,6 +785,9 @@ async function loadHazardsFromDB(force) {
     }
     localHazards = hazards;
 
+    // Feed lighting/canopy hazards into Env so estimates work across sessions
+    if (typeof Env !== 'undefined') Env.seedReportsFromHazards(hazards);
+
     // Map markers
     hazardLayer.clearLayers();
     hazards.forEach(h => {
@@ -2988,20 +2991,47 @@ async function processPhoto(event) {
   reader.onload = async ev => {
     const img = new Image();
     img.onload = async () => {
-      const cv=document.getElementById('photoCanvas'), ctx=cv.getContext('2d');
-      cv.width=400; cv.height=(img.height/img.width)*400;
-      ctx.drawImage(img,0,0,cv.width,cv.height);
-      const b64 = cv.toDataURL('image/jpeg',.7).split(',')[1];
-      st.textContent = 'AI analysing…';
+      const cv = document.getElementById('photoCanvas'), ctx = cv.getContext('2d');
+      cv.width = 400; cv.height = (img.height / img.width) * 400;
+      ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      const b64 = cv.toDataURL('image/jpeg', .7).split(',')[1];
+      st.textContent = '🔍 AI analysing…';
       try {
-        const res  = await fetch('/api/vision',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image_b64:b64})});
+        const res  = await fetch(`${API}/api/vision`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_b64: b64 }),
+        });
         const data = await res.json();
-        const label = data.label || 'Unknown hazard';
-        st.textContent = `✔ ${label}`;
-        setTimeout(() => { quickHazard(`📸 ${label}`); st.textContent=''; closeModal('hazardModal'); }, 1500);
-      } catch {
-        st.textContent = '⚠ AI offline — saved as Photo Hazard';
-        setTimeout(() => { quickHazard('📸 Photo Hazard'); st.textContent=''; closeModal('hazardModal'); }, 1200);
+
+        if (data.error) throw new Error(data.error);
+
+        if (!data.relevant || !data.hazard) {
+          // Not a walkability hazard — don't log anything
+          st.style.color = '#94a3b8';
+          st.textContent = '🤷 No walkability hazard detected';
+          setTimeout(() => { st.textContent = ''; st.style.color = ''; }, 3000);
+          return;
+        }
+
+        // Show what was detected with short description
+        const display = data.label ? `${data.hazard} — ${data.label}` : data.hazard;
+        st.style.color = '#16a34a';
+        st.textContent = `✔ ${display}`;
+
+        // Log the classified hazard type (not a generic "📸 …" label)
+        setTimeout(() => {
+          quickHazard(data.hazard);
+          st.textContent = '';
+          st.style.color = '';
+          closeModal('hazardModal');
+        }, 1800);
+
+      } catch (err) {
+        console.warn('Vision error:', err.message);
+        st.style.color = '#dc2626';
+        st.textContent = '⚠ AI offline — tap a hazard type manually';
+        setTimeout(() => { st.textContent = ''; st.style.color = ''; }, 3000);
       }
     };
     img.src = ev.target.result;

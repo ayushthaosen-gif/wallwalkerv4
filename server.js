@@ -340,20 +340,68 @@ app.post('/api/vision', async (req, res) => {
   if (!image_b64) return res.status(400).json({ error: 'image_b64 required' });
   const key = process.env.GEMINI_API_KEY;
   if (!key) return res.status(500).json({ error: 'GEMINI_API_KEY not set' });
+
+  const PROMPT = `You are a walkability hazard detector for a pedestrian safety app.
+Analyse the image and decide if it shows a pedestrian walkability issue.
+
+Return ONLY valid JSON — no markdown, no explanation — in this exact shape:
+{
+  "relevant": true or false,
+  "hazard": <one value from the list below, or null>,
+  "label": <description under 8 words, or null>
+}
+
+Allowed hazard values (use EXACTLY as written):
+  "🚧 Construction"      — construction work or roadworks blocking path
+  "⛔ Closed Gate"       — gate, barrier, bollard, chain blocking pedestrian route
+  "🚷 No Footpath"       — no pavement; people forced onto road or dirt
+  "🚗 Cars Blocking"     — vehicles parked on footpath / sidewalk
+  "🌊 Waterlogging"      — flooding, puddles, waterlogged road
+  "🪨 Broken Pavement"   — cracked tiles, potholes, rubble, broken surface
+  "🌳 Good Canopy"       — tree-lined path with clear shade
+  "☀️ No Shade"          — open exposed path with no shade
+  "💡 Good Lighting"     — well-lit street lamps clearly visible at night
+  "🔦 No Lighting"       — dark path, no street lighting visible
+  "🚶 Good Footpath"     — wide, clear, well-maintained footpath
+
+Rules:
+- relevant=false if the image is NOT about pedestrian infrastructure (food, faces, indoors unrelated to walking, vehicles on a highway, etc.)
+- relevant=true only for outdoor pedestrian conditions or hazards
+- Choose the SINGLE best matching hazard type
+- label should be a short factual description of what you see
+- If unsure, set relevant=false rather than guessing`;
+
   try {
     const { GoogleGenAI } = require('@google/genai');
-    const ai     = new GoogleGenAI({ apiKey: key });
-    const model  = ai.getGenerativeModel({ model: 'gemini-2.5-flash' });
-    const result = await model.generateContent({
+    const ai = new GoogleGenAI({ apiKey: key });
+
+    const result = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
       contents: [{
+        role: 'user',
         parts: [
           { inlineData: { data: image_b64, mimeType: 'image/jpeg' } },
-          { text: 'Walkability analyst: What hazard, surface type, or footpath condition is in this image? ONE label max 6 words. Examples: "Broken pavement", "No footpath dirt road", "Good wide footpath", "Waterlogging on road". No explanation.' },
+          { text: PROMPT },
         ],
       }],
+      config: { responseMimeType: 'application/json' },
     });
-    const label = result.response.text()?.trim() || 'Unknown hazard';
-    res.json({ label });
+
+    const raw = (result.text || '').trim();
+    let parsed = {};
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      // Gemini sometimes wraps JSON in ```json ``` — strip it
+      const m = raw.match(/\{[\s\S]*\}/);
+      if (m) { try { parsed = JSON.parse(m[0]); } catch { /* fall through */ } }
+    }
+
+    res.json({
+      relevant: !!parsed.relevant,
+      hazard:   parsed.relevant ? (parsed.hazard   || null) : null,
+      label:    parsed.relevant ? (parsed.label    || null) : null,
+    });
   } catch (e) {
     console.error('Gemini vision error:', e.message);
     res.status(500).json({ error: e.message });

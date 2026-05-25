@@ -92,10 +92,11 @@ function initLightSensor() {
 
 function luxToLighting(lux) {
   if (lux === null || lux === undefined) return 'unknown';
-  // Typical ranges: outdoor day >1000, cloudy ~100, indoor 50-500, street lit ~10-50, dark <5
-  if (lux > 200) return 'day';      // daylight — not a night concern
-  if (lux > 30)  return 'good';     // well-lit street
-  if (lux > 5)   return 'dim';      // dim street
+  // Typical ranges: outdoor day >10000, cloudy ~1000, indoor 50-500, street lit ~10-50, dark <5
+  // Threshold set at 500 so overcast afternoon (~100 lux) is NOT misread as "well-lit street"
+  if (lux > 500) return 'day';      // daylight — not a night concern
+  if (lux > 30)  return 'good';     // well-lit street / indoor bright
+  if (lux > 5)   return 'dim';      // dim street lamp
   return 'none';                     // dark
 }
 
@@ -104,7 +105,7 @@ function luxToLighting(lux) {
 // Uses: time of day + season + community reports + tree tile overlay
 // Full satellite NDVI would need a backend — this is a best-effort client approach
 // ─────────────────────────────────────────────────────────────
-function estimateCanopyFromReports(lat, lng, radiusKm = 0.3) {
+function estimateCanopyFromReports(lat, lng, radiusKm = 0.1) {
   if (!_communityReports.length) return 'unknown';
 
   const nearby = _communityReports.filter(r => {
@@ -175,16 +176,26 @@ function analyzeSurface(arrZ, arrX, arrY) {
   const varY = arrY && arrY.length ? variance(arrY) : 0;
   const totalVar = varZ + varX * 0.3 + varY * 0.3;
 
-  const jerk = arrZ.slice(1).map((v, i) => Math.abs(v - arrZ[i]));
+  // Use resultant magnitude for jerk so pocket/bag carry still works regardless of axis orientation
+  const mag = arrZ.map((z, i) => {
+    const x = arrX && arrX[i] != null ? arrX[i] : 0;
+    const y = arrY && arrY[i] != null ? arrY[i] : 0;
+    return Math.sqrt(z*z + x*x + y*y);
+  });
+  const jerk = mag.slice(1).map((v, i) => Math.abs(v - mag[i]));
   const meanJerk = mean(jerk);
 
-  // Peak spacing regularity (cadence)
+  // Peak spacing regularity (cadence) — use magnitude so axis orientation doesn't matter
+  const peakThreshold = mean(mag) + 1.5; // adaptive: 1.5 m/s² above mean
   const peaks = [];
-  for (let i = 1; i < arrZ.length - 1; i++) {
-    if (arrZ[i] > arrZ[i-1] && arrZ[i] > arrZ[i+1] && arrZ[i] > 10.5) peaks.push(i);
+  for (let i = 1; i < mag.length - 1; i++) {
+    if (mag[i] > mag[i-1] && mag[i] > mag[i+1] && mag[i] > peakThreshold) peaks.push(i);
   }
   const peakGaps = peaks.slice(1).map((p, i) => p - peaks[i]);
   const peakRegularity = peakGaps.length > 2 ? variance(peakGaps) : 999;
+
+  // Guard: need at least 3 valid step peaks to claim any confidence
+  const hasSteps = peaks.length >= 3;
 
   let surface, quality, surfaceClass, footpathType;
 
@@ -194,16 +205,17 @@ function analyzeSurface(arrZ, arrX, arrY) {
     surface = 'Cement / Paver Blocks'; quality = 'Fair'; surfaceClass = 'medium';
   } else if (totalVar < 9 && meanJerk < 2.5) {
     surface = 'Broken Pavement'; quality = 'Poor'; surfaceClass = 'rough';
-  } else if (totalVar >= 9 || meanJerk >= 2.5) {
-    surface = 'Dirt / Rubble'; quality = 'Very Poor'; surfaceClass = 'rough';
   } else {
-    surface = 'Unknown'; quality = 'Unknown'; surfaceClass = 'unknown';
+    // totalVar >= 9 || meanJerk >= 2.5 — catches all remaining cases
+    surface = 'Dirt / Rubble'; quality = 'Very Poor'; surfaceClass = 'rough';
   }
 
   footpathType = classifyFootpathFromInstruction('', surfaceClass);
   const fw = SURFACE_WIDTH[surfaceClass];
   const ft = FOOTPATH_TYPE[footpathType];
-  const confidence = Math.min(99, Math.round(60 + (arrZ.length / 60) * 20 + (peakRegularity < 50 ? 15 : 0)));
+  const confidence = hasSteps
+    ? Math.min(99, Math.round(60 + (arrZ.length / 60) * 20 + (peakRegularity < 50 ? 15 : 0)))
+    : Math.min(50, Math.round(30 + (arrZ.length / 60) * 10)); // low confidence if no step peaks detected
 
   return {
     surface, quality, surfaceClass, footpathType,
@@ -257,7 +269,8 @@ function buildSurfaceReadoutHtml(surfaceResult, lat, lng) {
     lightKey = _currentLighting;
   } else {
     const rep = estimateLightingFromReports(lat, lng);
-    lightKey = rep || (isNightTime() ? 'dim' : 'day');
+    // Default to 'unknown' at night — don't assume 'dim', could be completely dark
+    lightKey = rep || (isNightTime() ? 'unknown' : 'day');
   }
   const lightInfo = LIGHTING[lightKey];
 
@@ -295,6 +308,37 @@ function buildSurfaceReadoutHtml(surfaceResult, lat, lng) {
 // ─────────────────────────────────────────────────────────────
 // COMMUNITY REPORT INTEGRATION
 // ─────────────────────────────────────────────────────────────
+
+/**
+ * Seed _communityReports from DB hazards loaded by app.js.
+ * Called once after loadHazardsFromDB so historical lighting/canopy
+ * data isn't lost on every page refresh.
+ */
+function seedReportsFromHazards(hazardsArray) {
+  if (!Array.isArray(hazardsArray)) return;
+  // Only env-relevant hazard types matter for canopy/lighting estimation
+  const ENV_TYPES = ['Good Canopy', 'No Shade', 'Exposed', 'Good Lighting', 'No Lighting', 'Dim'];
+  let seeded = 0;
+  hazardsArray.forEach(h => {
+    if (!h.lat || !h.lng || !h.type) return;
+    if (!ENV_TYPES.some(t => h.type.includes(t))) return;
+    // Avoid duplicate IDs
+    if (h.id && _communityReports.some(r => r.id === h.id)) return;
+    _communityReports.push({
+      id:   h.id || null,
+      type: h.type,
+      lat:  h.lat,
+      lng:  h.lng,
+      ts:   h.created_at ? new Date(h.created_at).getTime() : Date.now(),
+    });
+    seeded++;
+  });
+  if (seeded > 0) {
+    console.log(`🌿 Env: seeded ${seeded} community reports from DB`);
+    onEnvironmentChanged();
+  }
+}
+
 function addEnvironmentReport(type, lat, lng) {
   _communityReports.push({ type, lat, lng, ts: Date.now() });
   // Update lighting/canopy state
@@ -348,6 +392,7 @@ window.Env = {
   buildSurfaceReadoutHtml,
   computeWalkabilityScore,
   addEnvironmentReport,
+  seedReportsFromHazards,
   enrichStep,
   classifyFootpathFromInstruction,
   isNightTime,
