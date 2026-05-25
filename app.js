@@ -2812,15 +2812,15 @@ function showHud(type, route, fromLL) {
     // For auto/cycle prepend a mode header card
     let modeHeader = '';
     if (type === 'auto') {
-      modeHeader = `<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;">
-        <div style="width:38px;height:38px;border-radius:50%;background:#c2410c;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">🛺</div>
-        <div><div style="font-size:13px;font-weight:800;color:#c2410c;">Auto Rickshaw</div>
-        <div style="font-size:11px;color:#92400e;">Driving route · ${routeActualKm.toFixed(1)} km</div></div></div>`;
+      modeHeader = `<div style="border-left:3px solid #c2410c;padding:8px 10px;margin-bottom:8px;display:flex;align-items:center;gap:10px;background:#f8fafc;border-radius:0 6px 6px 0;">
+        <span style="font-size:20px;">🛺</span>
+        <div><div style="font-size:13px;font-weight:700;color:#c2410c;">Auto Rickshaw</div>
+        <div style="font-size:11px;color:var(--muted);">Driving route · ${routeActualKm.toFixed(1)} km</div></div></div>`;
     } else if (type === 'cycle') {
-      modeHeader = `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;">
-        <div style="width:38px;height:38px;border-radius:50%;background:#16a34a;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">🚲</div>
-        <div><div style="font-size:13px;font-weight:800;color:#16a34a;">Cycling Route</div>
-        <div style="font-size:11px;color:#166534;">Bike route · ${routeActualKm.toFixed(1)} km</div></div></div>`;
+      modeHeader = `<div style="border-left:3px solid #16a34a;padding:8px 10px;margin-bottom:8px;display:flex;align-items:center;gap:10px;background:#f8fafc;border-radius:0 6px 6px 0;">
+        <span style="font-size:20px;">🚲</span>
+        <div><div style="font-size:13px;font-weight:700;color:#16a34a;">Cycling Route</div>
+        <div style="font-size:11px;color:var(--muted);">Bike route · ${routeActualKm.toFixed(1)} km</div></div></div>`;
     }
     stepsBox.innerHTML = modeHeader + itinHtml;
   }
@@ -3657,11 +3657,9 @@ function updateHudModeSwitcher(activeType) {
   if (modes.length > 1) {
     sw.style.display = 'flex';
     sw.innerHTML = modes.map(m => `
-      <button onclick="pickRoute('${m.type}')"
-        style="padding:6px 14px;border-radius:20px;border:2px solid ${m.color};
-               background:${m.type===activeType?m.color:'white'};
-               color:${m.type===activeType?'white':m.color};
-               font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;transition:all .2s;">
+      <button class="hud-mode-tab${m.type===activeType?' active':''}"
+        onclick="pickRoute('${m.type}')"
+        style="${m.type===activeType?'color:'+m.color+';border-bottom-color:'+m.color+';':''}">
         ${m.label}
       </button>`).join('');
   } else {
