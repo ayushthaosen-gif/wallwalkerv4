@@ -2434,7 +2434,10 @@ function prepareComparison(fromLL, toLL) {
     walk:       { dist: baseDist,       score: baseScore,                  mode:'walk' },
     safe:       { dist: baseDist*1.15,  score: Math.min(98,baseScore+12), mode:'safe' },
     transit:    { dist: baseDist,       score: 80,                         mode:'transit' },
+    bus:        { dist: baseDist,       score: 78,                         mode:'bus' },
     multimodal: { dist: baseDist,       score: 90,                         mode:'multimodal' },
+    auto:       { dist: baseDist,       score: 65,                         mode:'auto' },
+    cycle:      { dist: baseDist,       score: 82,                         mode:'cycle' },
   };
 
   // Walk options — always shown if walk enabled
@@ -2491,6 +2494,7 @@ function prepareComparison(fromLL, toLL) {
     }
   }
 
+  // ── DELHI METRO ──
   if (!nycSubwayFound && isModeEnabled('metro') && typeof MetroEngine !== 'undefined' && typeof METRO_DATA !== 'undefined') {
     const nf = MetroEngine.getNearestMetroStations(fromLL.lat, fromLL.lng, 3, 2.5);
     const nt = MetroEngine.getNearestMetroStations(toLL.lat, toLL.lng, 3, 2.5);
@@ -2512,12 +2516,32 @@ function prepareComparison(fromLL, toLL) {
         }
       }
     }
-  } else if (!nycSubwayFound) {
+  }
+
+  // ── DC WMATA METRO ──
+  if (!metroFound && isModeEnabled('metro') && detectedCity === 'dc' &&
+      typeof WmataEngine !== 'undefined' && WmataEngine.wmataDataReady()) {
+    const plan = WmataEngine.planWmataMetroJourney(fromLL.lat, fromLL.lng, toLL.lat, toLL.lng);
+    if (plan) {
+      window._cachedWmataPlan = plan;
+      const approxMin = Math.round(plan.walkInKm*12) + 8 + Math.round(plan.walkOutKm*12);
+      const lineUC = plan.line ? plan.line.charAt(0).toUpperCase() + plan.line.slice(1) : 'Metro';
+      document.getElementById('opt-metro').style.display = 'flex';
+      document.getElementById('metaMetro').textContent   = `🚇 ${approxMin} min · ${lineUC} Line`;
+      document.getElementById('scoreMetro').textContent  = 90;
+      if (busEl) { busEl.innerHTML=`🚇 <b>${plan.board.name}</b> → <b>${plan.alight.name}</b>`; busEl.style.display='block'; }
+      metroFound = true;
+    }
+  }
+
+  if (!metroFound && !nycSubwayFound) {
     document.getElementById('opt-metro').style.display = 'none';
   }
 
   // ── BUS ──
   let busFound = false;
+
+  // ── DELHI BUS ──
   if (isModeEnabled('bus') && typeof BusEngine !== 'undefined' && BusEngine.busDataReady()) {
     const bj = BusEngine.findBusRoutes(fromLL.lat, fromLL.lng, toLL.lat, toLL.lng);
     if (bj && bj.type === 'direct') {
@@ -2536,12 +2560,62 @@ function prepareComparison(fromLL, toLL) {
       document.getElementById('scoreBus').textContent   = simData.transit.score;
       if (busLabel) busLabel.textContent = '🚌 Bus';
     }
-  } else {
-    document.getElementById('opt-bus').style.display = isModeEnabled('bus') ? 'flex' : 'none';
-    if (isModeEnabled('bus')) {
-      document.getElementById('metaBus').textContent  = `🚌 ${Math.ceil(simData.transit.dist*4)+8} min`;
-      document.getElementById('scoreBus').textContent = simData.transit.score;
+  }
+
+  // ── DC WMATA BUS ──
+  if (!busFound && isModeEnabled('bus') && detectedCity === 'dc' &&
+      typeof WmataEngine !== 'undefined' && WmataEngine.wmataRoutesReady()) {
+    const bj = WmataEngine.findWmataBusRoute(fromLL.lat, fromLL.lng, toLL.lat, toLL.lng);
+    if (bj) {
+      window._cachedWmataBus = bj;
+      const opt = bj.options[0];
+      const approxMin = Math.round(bj.walkInKm*12) + 15 + Math.round(bj.walkOutKm*12);
+      document.getElementById('opt-bus').style.display = 'flex';
+      document.getElementById('metaBus').textContent   = `🚌 ${opt.routeId} · ${approxMin} min`;
+      document.getElementById('scoreBus').textContent  = 75;
+      if (busLabel) busLabel.textContent = `🚌 ${opt.routeId}`;
+      if (!metroFound && busEl) { busEl.innerHTML=`🚌 <b>${opt.routeId}</b> · Board: ${opt.boardStop.name}`; busEl.style.display='block'; }
+      busFound = true;
     }
+  }
+
+  // ── NYC MTA BUS ──
+  if (!busFound && isModeEnabled('bus') && detectedCity === 'nyc' && window._nycReady) {
+    const bj = _findNycBusRoute(fromLL.lat, fromLL.lng, toLL.lat, toLL.lng);
+    if (bj) {
+      window._cachedNycBus = bj;
+      const approxMin = Math.round(bj.walkInKm*12) + 15 + Math.round(bj.walkOutKm*12);
+      document.getElementById('opt-bus').style.display = 'flex';
+      document.getElementById('metaBus').textContent   = `🚌 ${bj.routeName} · ${approxMin} min`;
+      document.getElementById('scoreBus').textContent  = 72;
+      if (busLabel) busLabel.textContent = `🚌 ${bj.routeName}`;
+      if (!metroFound && busEl) { busEl.innerHTML=`🚌 <b>${bj.routeName}</b> · Board: ${bj.boardStop.name}`; busEl.style.display='block'; }
+      busFound = true;
+    }
+  }
+
+  // ── NYC COMMUTER RAIL (LIRR / Metro-North) in metro slot when no subway found ──
+  if (!metroFound && isModeEnabled('metro') && detectedCity === 'nyc' && window._nycReady) {
+    const rj = _findNycRailRoute(fromLL.lat, fromLL.lng, toLL.lat, toLL.lng);
+    if (rj) {
+      window._cachedNycRail = rj;
+      const approxMin = Math.round(rj.walkInKm*12) + 20 + Math.round(rj.walkOutKm*12);
+      const rrLabel = rj.railroad === 'MNR' ? 'Metro-North' : 'LIRR';
+      document.getElementById('opt-metro').style.display = 'flex';
+      document.getElementById('metaMetro').textContent   = `🚆 ${approxMin} min · ${rrLabel} · ${rj.branch}`;
+      document.getElementById('scoreMetro').textContent  = 85;
+      metroFound = true;
+    }
+  }
+
+  // ── FALLBACK: generic bus if mode enabled but no route found ──
+  if (!busFound && isModeEnabled('bus')) {
+    document.getElementById('opt-bus').style.display = 'flex';
+    document.getElementById('metaBus').textContent   = `🚌 ${Math.ceil(simData.transit.dist*4)+8} min`;
+    document.getElementById('scoreBus').textContent  = simData.transit.score;
+    if (busLabel) busLabel.textContent = '🚌 Bus';
+  } else if (!busFound) {
+    document.getElementById('opt-bus').style.display = 'none';
   }
 
   // ── MULTIMODAL (long distances) ──
@@ -2571,14 +2645,26 @@ function prepareComparison(fromLL, toLL) {
     simData.multimodal.score = Math.min(95, baseScore + 15);
   }
 
-  // ── AUTO-RICKSHAW estimate ──
+  // ── AUTO-RICKSHAW ──
+  const autoMin = Math.ceil(baseDist / 0.5); // ~30 km/h city average
   if (isModeEnabled('auto')) {
-    // Show as info in nearest bus strip if no other transit
-    const autoMin = Math.ceil(baseDist / 0.5); // ~30 km/h in city
-    if (!metroFound && !busFound && busEl) {
-      busEl.innerHTML = `🛺 Auto ~${autoMin} min · 🚶 Walk ~${Math.ceil(baseDist*12)} min`;
-      busEl.style.display = 'block';
-    }
+    simData.auto.dist = baseDist;
+    document.getElementById('opt-auto').style.display = 'flex';
+    document.getElementById('metaAuto').textContent = `~${autoMin} min · ${baseDist.toFixed(1)} km`;
+    document.getElementById('scoreAuto').textContent = 65;
+  } else {
+    document.getElementById('opt-auto').style.display = 'none';
+  }
+
+  // ── CYCLE ──
+  const cycleMin = Math.ceil(baseDist * 60 / 15); // ~15 km/h cycling
+  if (isModeEnabled('cycle')) {
+    simData.cycle.dist = baseDist;
+    document.getElementById('opt-cycle').style.display = 'flex';
+    document.getElementById('metaCycle').textContent = `~${cycleMin} min · ${baseDist.toFixed(1)} km`;
+    document.getElementById('scoreCycle').textContent = 82;
+  } else {
+    document.getElementById('opt-cycle').style.display = 'none';
   }
 
   interactiveLayer.clearLayers();
@@ -2599,7 +2685,12 @@ async function pickRoute(type) {
   if (!from || !activeDestLatLng) { showToast('Set both locations first'); return; }
   showToast('Calculating route…');
   try {
-    const url = `https://routing.openstreetmap.de/routed-foot/route/v1/foot/${from.lng},${from.lat};${activeDestLatLng.lng},${activeDestLatLng.lat}?overview=full&geometries=geojson&steps=true`;
+    // Choose routing profile based on mode
+    let profile;
+    if      (type === 'auto')  profile = 'routed-car/route/v1/driving';
+    else if (type === 'cycle') profile = 'routed-bike/route/v1/bike';
+    else                       profile = 'routed-foot/route/v1/foot';
+    const url = `https://routing.openstreetmap.de/${profile}/${from.lng},${from.lat};${activeDestLatLng.lng},${activeDestLatLng.lat}?overview=full&geometries=geojson&steps=true`;
     const res = await fetch(url);
     const d   = await res.json();
     showHud(type, d.routes[0], from);
@@ -2622,16 +2713,21 @@ function showHud(type, route, fromLL) {
   routeCoordsData = { footpaths:[], bridges:[], underpasses:[], crossings:[] };
   let itinHtml = '';
 
+  // Mode-specific step verbs and icons
+  const _startVerb = type==='auto' ? 'Start driving' : type==='cycle' ? 'Start cycling' : 'Start walking';
+  const _contVerb  = type==='auto' ? 'Drive'          : type==='cycle' ? 'Cycle'          : 'Continue';
+  const _modeIcon  = type==='auto' ? '🛺'             : type==='cycle' ? '🚲'             : null;
+
   steps.forEach((step, i) => {
     const loc  = [step.maneuver.location[1], step.maneuver.location[0]];
     const road = step.name ? `onto ${step.name}` : 'forward';
     const dir  = step.maneuver.modifier ? step.maneuver.modifier.replace('-',' ') : '';
-    const act  = step.maneuver.type==='turn' ? `Turn ${dir}` : (i===0 ? 'Start walking' : 'Continue');
+    const act  = step.maneuver.type==='turn' ? `Turn ${dir}` : (i===0 ? _startVerb : _contVerb);
     const instr = `${act} ${road}`.trim();
     const low   = instr.toLowerCase();
 
-    // Enrich with footpath type from Env
-    const enriched = Env.enrichStep(instr, null);
+    // Enrich with footpath type from Env (walking only — skip for driving/cycling)
+    const enriched = _modeIcon ? { emoji: _modeIcon } : Env.enrichStep(instr, null);
 
     let classKey = 'footpaths';
     if      (low.includes('bridge')||low.includes('flyover')) { routeCoordsData.bridges.push(loc);    classKey='bridges'; }
@@ -2672,35 +2768,65 @@ function showHud(type, route, fromLL) {
   }
   updateHudScore();
   document.getElementById('hudScore').style.color =
-    type==='safe'                            ? 'var(--safe)'    :
-    (type==='transit'||type==='multimodal')  ? 'var(--transit)' : 'var(--primary)';
+    type==='safe'                                         ? 'var(--safe)'    :
+    (type==='transit'||type==='multimodal'||type==='bus') ? 'var(--transit)' :
+    type==='auto'                                         ? '#c2410c'        :
+    type==='cycle'                                        ? '#16a34a'        :
+    'var(--primary)';
 
   const estSteps = Math.round((rd.dist*1000)/0.762);
   const estCals  = Math.round((rd.dist*1000)*0.05);
 
-  const isTransitMode = type === 'transit' || type === 'multimodal';
-  if (isTransitMode) {
+  // bus also uses the transit view (departure board + real walk legs)
+  const isTransitMode = type === 'transit' || type === 'multimodal' || type === 'bus';
+
+  // HUD time by mode
+  const routeDurMin = route.duration ? Math.round(route.duration / 60) : null;
+  if (type === 'auto') {
+    document.getElementById('hudTime').textContent = `${routeDurMin || Math.ceil(rd.dist / 0.5)} min`;
+    document.getElementById('hudTime').style.color = '#c2410c';
+  } else if (type === 'cycle') {
+    document.getElementById('hudTime').textContent = `${routeDurMin || Math.ceil(rd.dist * 60 / 15)} min`;
+    document.getElementById('hudTime').style.color = '#16a34a';
+  } else if (isTransitMode) {
     document.getElementById('hudTime').textContent = `${Math.ceil(rd.dist*4)+8} min`;
     document.getElementById('hudTime').style.color = 'var(--transit)';
   } else {
     document.getElementById('hudTime').textContent = `${Math.ceil(rd.dist*12)} min`;
     document.getElementById('hudTime').style.color = 'var(--text)';
   }
-  document.getElementById('hudDist').textContent  = `${rd.dist.toFixed(2)} km`;
+
+  const routeActualKm = route.legs[0].distance ? (route.legs[0].distance / 1000) : rd.dist;
+  document.getElementById('hudDist').textContent  = `${routeActualKm.toFixed(2)} km`;
   document.getElementById('hudSteps').textContent = estSteps.toLocaleString();
   document.getElementById('hudCals').textContent  = estCals.toLocaleString();
 
   const stepsBox    = document.getElementById('stepsBox');
   const transitWrap = document.getElementById('transitWrap');
-  if (!isTransitMode) {
-    stepsBox.innerHTML = itinHtml; stepsBox.style.display='block'; transitWrap.style.display='none';
-  } else {
+
+  if (isTransitMode) {
     stepsBox.style.display='none'; transitWrap.style.display='block';
-    buildTransitView(coords, steps, rd);
+    buildTransitView(coords, steps, rd, type);
+  } else {
+    transitWrap.style.display='none'; stepsBox.style.display='block';
+    // For auto/cycle prepend a mode header card
+    let modeHeader = '';
+    if (type === 'auto') {
+      modeHeader = `<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;">
+        <div style="width:38px;height:38px;border-radius:50%;background:#c2410c;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">🛺</div>
+        <div><div style="font-size:13px;font-weight:800;color:#c2410c;">Auto Rickshaw</div>
+        <div style="font-size:11px;color:#92400e;">Driving route · ${routeActualKm.toFixed(1)} km</div></div></div>`;
+    } else if (type === 'cycle') {
+      modeHeader = `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;">
+        <div style="width:38px;height:38px;border-radius:50%;background:#16a34a;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">🚲</div>
+        <div><div style="font-size:13px;font-weight:800;color:#16a34a;">Cycling Route</div>
+        <div style="font-size:11px;color:#166534;">Bike route · ${routeActualKm.toFixed(1)} km</div></div></div>`;
+    }
+    stepsBox.innerHTML = modeHeader + itinHtml;
   }
 
   if (!isTransitMode) {
-    const color = type==='safe' ? '#7c3aed' : '#2563eb';
+    const color = type==='safe' ? '#7c3aed' : type==='auto' ? '#c2410c' : type==='cycle' ? '#16a34a' : '#2563eb';
     const dash  = type==='walk' ? '10,8' : '';
     const poly  = L.polyline(coords, { color, weight:6, opacity:.9, dashArray:dash }).addTo(interactiveLayer);
     const oIco  = L.divIcon({ className:'',
@@ -2718,42 +2844,130 @@ function showHud(type, route, fromLL) {
   const bShare = document.getElementById('btnShare');
   if (bShare) bShare.style.display = 'block';
   if (document.getElementById('voiceToggle')?.checked && 'speechSynthesis' in window) {
-    const label = isTransitMode ? 'transit route' : type==='safe' ? 'safest walk' : 'shortest walk';
+    const label = isTransitMode ? 'transit route' : type==='auto' ? 'auto rickshaw route' : type==='cycle' ? 'cycling route' : type==='safe' ? 'safest walk' : 'shortest walk';
     const minDisplay = document.getElementById('hudTime')?.textContent?.replace(' min','') || Math.ceil(rd.dist*12);
     speechSynthesis.speak(new SpeechSynthesisUtterance(`Route: ${label}. ${minDisplay} minutes.`));
   }
 }
 
-// ── TRANSIT VIEW ──
-async function buildTransitView(coords, steps, rd) {
-  const tw = document.getElementById('transitWrap');
-  const n  = steps.length;
+// ── NYC MTA BUS ROUTE FINDER ──
+// Finds a NYC MTA bus route connecting two locations via shared route IDs on nearby stops.
+function _findNycBusRoute(fromLat, fromLng, toLat, toLng) {
+  if (!window.NYC_BUS_STOPS) return null;
+  const nearStop = (lat, lng, n, maxKm) => {
+    const res = [];
+    Object.values(window.NYC_BUS_STOPS).forEach(s => {
+      const d = Math.sqrt((s.lat - lat) ** 2 + (s.lng - lng) ** 2) * 111;
+      if (d <= maxKm) res.push({ ...s, dist: d });
+    });
+    res.sort((a, b) => a.dist - b.dist);
+    return res.slice(0, n);
+  };
+  const fromStops = nearStop(fromLat, fromLng, 10, 0.6);
+  const toStops   = nearStop(toLat,   toLng,   10, 0.6);
+  if (!fromStops.length || !toStops.length) return null;
+  const toRouteMap = {};
+  toStops.forEach(s => (s.routes || []).forEach(r => { if (!toRouteMap[r]) toRouteMap[r] = s; }));
+  for (const fs of fromStops) {
+    for (const r of (fs.routes || [])) {
+      if (toRouteMap[r]) {
+        const ts = toRouteMap[r];
+        return { routeName: r, boardStop: fs, alightStop: ts, walkInKm: fs.dist, walkOutKm: ts.dist };
+      }
+    }
+  }
+  return null;
+}
 
-  const mkS = list => list.map(s => {
-    const road = s.name ? `onto ${s.name}` : 'forward';
-    const dir  = s.maneuver.modifier ? s.maneuver.modifier.replace('-',' ') : '';
-    const act  = s.maneuver.type==='turn' ? `Turn ${dir}` : 'Continue';
-    return `<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,.04);font-size:11px;font-weight:600;">
-      <span>🚶</span><span style="flex:1;text-transform:capitalize;">${act} ${road}</span>
-      <span style="color:#2563eb;font-weight:800;">${Math.round(s.distance)}m</span></div>`;
-  }).join('');
+// ── NYC RAIL STATION FINDER ──
+// Finds LIRR / Metro-North stations near both ends on the same branch.
+function _findNycRailRoute(fromLat, fromLng, toLat, toLng) {
+  if (!window.NYC_RAIL_STATIONS) return null;
+  const nearRail = (lat, lng, maxKm) => {
+    const res = [];
+    Object.values(window.NYC_RAIL_STATIONS).forEach(s => {
+      const d = Math.sqrt((s.lat - lat) ** 2 + (s.lng - lng) ** 2) * 111;
+      if (d <= maxKm) res.push({ ...s, dist: d });
+    });
+    res.sort((a, b) => a.dist - b.dist);
+    return res;
+  };
+  const fromStations = nearRail(fromLat, fromLng, 3.0);
+  const toStations   = nearRail(toLat,   toLng,   3.0);
+  if (!fromStations.length || !toStations.length) return null;
+  // Try same railroad + branch
+  for (const fs of fromStations) {
+    for (const ts of toStations) {
+      if (fs.id !== ts.id && fs.railroad === ts.railroad && fs.branch === ts.branch) {
+        return { railroad: fs.railroad, branch: fs.branch, boardStation: fs, alightStation: ts,
+                 walkInKm: fs.dist, walkOutKm: ts.dist };
+      }
+    }
+  }
+  // Fallback: same railroad, any branch
+  for (const fs of fromStations) {
+    for (const ts of toStations) {
+      if (fs.id !== ts.id && fs.railroad === ts.railroad) {
+        return { railroad: fs.railroad, branch: fs.branch || '', boardStation: fs, alightStation: ts,
+                 walkInKm: fs.dist, walkOutKm: ts.dist };
+      }
+    }
+  }
+  return null;
+}
+
+// ── WALK ROUTE HELPER ──
+// Fetches real walking directions between two lat/lng points.
+async function _fetchWalkRoute(fromLL, toLL) {
+  try {
+    const url = `https://routing.openstreetmap.de/routed-foot/route/v1/foot/${fromLL.lng},${fromLL.lat};${toLL.lng},${toLL.lat}?overview=false&steps=true`;
+    const r = await fetch(url);
+    const d = await r.json();
+    return d.routes?.[0]?.legs?.[0]?.steps || [];
+  } catch { return []; }
+}
+
+// ── TRANSIT VIEW ──
+async function buildTransitView(coords, steps, rd, type) {
+  const tw = document.getElementById('transitWrap');
+
+  // Helper: render a list of OSRM walk steps as HTML rows
+  const mkS = (list, distLabel) => {
+    if (!list || !list.length) return `<div style="font-size:11px;color:#94a3b8;padding:4px 0;">${distLabel || 'Short walk'}</div>`;
+    return list.map(s => {
+      const road = s.name ? `onto ${s.name}` : 'forward';
+      const dir  = s.maneuver?.modifier ? s.maneuver.modifier.replace('-',' ') : '';
+      const act  = s.maneuver?.type==='turn' ? `Turn ${dir}` : 'Continue';
+      return `<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,.04);font-size:11px;font-weight:600;">
+        <span>🚶</span><span style="flex:1;text-transform:capitalize;">${act} ${road}</span>
+        <span style="color:#2563eb;font-weight:800;">${Math.round(s.distance)}m</span></div>`;
+    }).join('');
+  };
+
+  // Common: user origin and destination for walk leg fetching
+  const userFrom = activeOriginLatLng || userLoc;
+  const userDest = activeDestLatLng;
+
+  // Gate: metro-type sections (transit/multimodal) vs bus-type sections
+  const _isMetroType = (type === 'transit' || type === 'multimodal');
+  const _isBusType   = (type === 'bus');
 
   // ── NYC SUBWAY ──
-  if (window._cachedNycJourney && detectedCity === 'nyc') {
+  if (_isMetroType && window._cachedNycJourney && detectedCity === 'nyc') {
     const journey = window._cachedNycJourney;
     const wIn  = journey.walkToStation  || 0;
     const wOut = journey.walkFromStation || 0;
 
-    // Walk legs as dashed blue polylines
-    const p1 = Math.max(1, Math.min(Math.floor(coords.length * (wIn / (rd.dist + 0.01))), coords.length - 2));
-    const p2 = Math.max(p1 + 1, Math.min(Math.floor(coords.length * (1 - wOut / (rd.dist + 0.01))), coords.length - 1));
-    L.polyline(coords.slice(0, p1), { color:'#2563eb', weight:5, dashArray:'8,8' }).addTo(transitLayer);
-    L.polyline(coords.slice(p2),    { color:'#2563eb', weight:5, dashArray:'8,8' }).addTo(transitLayer);
+    // Walk legs as dashed straight lines to/from actual station coords
+    const originCoord = coords[0];
+    const destCoord   = coords[coords.length - 1];
+    L.polyline([originCoord, [journey.from.lat, journey.from.lng]], { color:'#2563eb', weight:5, dashArray:'8,8' }).addTo(transitLayer);
+    L.polyline([[journey.to.lat, journey.to.lng], destCoord],        { color:'#2563eb', weight:5, dashArray:'8,8' }).addTo(transitLayer);
 
-    // Subway line segment — color of line
+    // Subway line segment — straight colored line between stations (shapes loaded separately)
     if (typeof NycEngine !== 'undefined') {
       const lineColor = journey.type === 'transfer' ? NycEngine.lineColor(journey.line1) : NycEngine.lineColor(journey.line);
-      L.polyline(coords.slice(p1, p2 + 1), { color:lineColor, weight:8, opacity:.9 }).addTo(transitLayer);
+      L.polyline([[journey.from.lat, journey.from.lng], [journey.to.lat, journey.to.lng]], { color:lineColor, weight:8, opacity:.9 }).addTo(transitLayer);
 
       const mkStn = (ll, label, c) => {
         const ico = L.divIcon({ className:'', iconSize:[null,null],
@@ -2764,7 +2978,10 @@ async function buildTransitView(coords, steps, rd) {
       mkStn([journey.to.lat,   journey.to.lng],   `🚇 ${journey.to.name}`,   '#8e24aa').addTo(stationLayer);
     }
 
-    map.fitBounds(L.polyline(coords).getBounds(), { padding:[50,50] });
+    map.fitBounds(L.latLngBounds([
+      originCoord, destCoord,
+      [journey.from.lat, journey.from.lng], [journey.to.lat, journey.to.lng]
+    ]), { padding:[50,50] });
     const walkMin = Math.round(wIn*12);
     const exitMin = Math.round(wOut*12);
     const rideMin = (journey.numStops || 6) * 2 + (journey.transfers || 0) * 4;
@@ -2778,32 +2995,136 @@ async function buildTransitView(coords, steps, rd) {
       ? NycEngine.buildJourneyHtml(journey)
       : '<div style="padding:12px">NYC subway route found.</div>';
 
+    // Fetch real walk legs
+    const walkInSteps  = userFrom ? await _fetchWalkRoute(userFrom, { lat: journey.from.lat, lng: journey.from.lng }) : [];
+    const walkOutSteps = userDest ? await _fetchWalkRoute({ lat: journey.to.lat, lng: journey.to.lng }, userDest) : [];
+
     tw.innerHTML = `
       <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;margin-bottom:8px;">
-        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Subway (${(wIn*1000).toFixed(0)}m)</div>
-        ${mkS(steps.slice(0, Math.max(1, Math.floor(n * .15))))}
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Subway (${(wIn*1000).toFixed(0)}m · ~${walkMin}min)</div>
+        ${mkS(walkInSteps, `${(wIn*1000).toFixed(0)}m walk`)}
       </div>
       <div style="background:#e8f0fe;padding:4px;border-radius:10px;border-left:4px solid #1565c0;margin-bottom:8px;">
         ${journeyHtml}
       </div>
       <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;">
-        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Destination (${(wOut*1000).toFixed(0)}m)</div>
-        ${mkS(steps.slice(Math.floor(n * .85)))}
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Destination (${(wOut*1000).toFixed(0)}m · ~${exitMin}min)</div>
+        ${mkS(walkOutSteps, `${(wOut*1000).toFixed(0)}m walk`)}
       </div>`;
     return;
   }
 
-  // ── METRO ──
-  if (cachedMetroPlan) {
+  // ── DC WMATA METRO ──
+  if (_isMetroType && window._cachedWmataPlan && detectedCity === 'dc') {
+    const plan = window._cachedWmataPlan;
+    const { board, alight, color, walkInKm, walkOutKm } = plan;
+    const { html: wmataMetroHtml, approxMin: wmataMetroMin } =
+      typeof WmataEngine !== 'undefined' ? WmataEngine.buildWmataMetroHudHtml(plan) : { html:'', approxMin:30 };
+
+    // Map: dashed walk lines + solid metro line between stations
+    const wmOrigin = coords[0];
+    const wmDest   = coords[coords.length - 1];
+    if (board?.lat)  L.polyline([wmOrigin, [board.lat, board.lng]],     { color:'#2563eb', weight:5, dashArray:'8,8' }).addTo(transitLayer);
+    if (alight?.lat) L.polyline([[alight.lat, alight.lng], wmDest],      { color:'#2563eb', weight:5, dashArray:'8,8' }).addTo(transitLayer);
+    if (board?.lat && alight?.lat)
+      L.polyline([[board.lat, board.lng], [alight.lat, alight.lng]], { color: color || '#0D5CA8', weight:7, opacity:.9 }).addTo(transitLayer);
+    const mkStn = (ll, label, c) => {
+      const ico = L.divIcon({ className:'', iconSize:[null,null],
+        html:`<div style="background:${c};border:2px solid white;border-radius:4px;padding:2px 5px;font-size:10px;font-weight:800;color:white;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.3);">${label}</div>` });
+      return L.marker(ll, { icon:ico });
+    };
+    if (board?.lat)  mkStn([board.lat,  board.lng],  `🚇 ${board.name}`,  color || '#0D5CA8').addTo(stationLayer);
+    if (alight?.lat) mkStn([alight.lat, alight.lng], `🚇 ${alight.name}`, '#8e24aa').addTo(stationLayer);
+    map.fitBounds(L.latLngBounds([
+      wmOrigin, wmDest,
+      ...(board?.lat  ? [[board.lat,  board.lng]]  : []),
+      ...(alight?.lat ? [[alight.lat, alight.lng]] : [])
+    ]), { padding:[50,50] });
+    document.getElementById('hudTime').textContent = `${wmataMetroMin} min`;
+
+    const walkInSteps  = (userFrom && board?.lat)  ? await _fetchWalkRoute(userFrom, { lat: board.lat,  lng: board.lng })  : [];
+    const walkOutSteps = (userDest && alight?.lat) ? await _fetchWalkRoute({ lat: alight.lat, lng: alight.lng }, userDest) : [];
+    const walkInMin  = Math.round(walkInKm  * 12);
+    const walkOutMin = Math.round(walkOutKm * 12);
+
+    tw.innerHTML = `
+      <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;margin-bottom:8px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Metro Station (${(walkInKm*1000).toFixed(0)}m · ~${walkInMin}min)</div>
+        ${mkS(walkInSteps, `${(walkInKm*1000).toFixed(0)}m walk`)}
+      </div>
+      <div style="background:#e8f0fe;padding:12px;border-radius:10px;border-left:4px solid ${color||'#0D5CA8'};margin-bottom:8px;">
+        ${wmataMetroHtml}
+      </div>
+      <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Destination (${(walkOutKm*1000).toFixed(0)}m · ~${walkOutMin}min)</div>
+        ${mkS(walkOutSteps, `${(walkOutKm*1000).toFixed(0)}m walk`)}
+      </div>`;
+    return;
+  }
+
+  // ── NYC COMMUTER RAIL (LIRR / Metro-North) ──
+  if (_isMetroType && window._cachedNycRail && detectedCity === 'nyc') {
+    const rj = window._cachedNycRail;
+    const { railroad, branch, boardStation, alightStation, walkInKm, walkOutKm } = rj;
+    const rrLabel = railroad === 'MNR' ? 'Metro-North' : 'LIRR';
+    const rrColor = railroad === 'MNR' ? '#0066CC' : '#003DA5';
+    const approxMin = Math.round(walkInKm*12) + 20 + Math.round(walkOutKm*12);
+    document.getElementById('hudTime').textContent = `${approxMin} min`;
+
+    L.polyline(coords, { color: rrColor, weight:7, opacity:.9 }).addTo(transitLayer);
+    const mkStn = (ll, label, c) => {
+      const ico = L.divIcon({ className:'', iconSize:[null,null],
+        html:`<div style="background:${c};border:2px solid white;border-radius:4px;padding:2px 5px;font-size:10px;font-weight:800;color:white;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.3);">${label}</div>` });
+      return L.marker(ll, { icon:ico });
+    };
+    mkStn([boardStation.lat, boardStation.lng],  `🚆 ${boardStation.name}`,  rrColor).addTo(stationLayer);
+    mkStn([alightStation.lat, alightStation.lng], `🚆 ${alightStation.name}`, '#8e24aa').addTo(stationLayer);
+    map.fitBounds(L.latLngBounds([...coords,
+      [boardStation.lat, boardStation.lng], [alightStation.lat, alightStation.lng]
+    ]), { padding:[50,50] });
+
+    const walkInSteps  = userFrom ? await _fetchWalkRoute(userFrom, { lat: boardStation.lat,  lng: boardStation.lng })  : [];
+    const walkOutSteps = userDest ? await _fetchWalkRoute({ lat: alightStation.lat, lng: alightStation.lng }, userDest) : [];
+    const walkInMin  = Math.round(walkInKm  * 12);
+    const walkOutMin = Math.round(walkOutKm * 12);
+
+    const railCard = `
+      <div style="background:white;padding:12px;border-radius:12px;border:1px solid #e2e8f0;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:38px;height:38px;border-radius:50%;background:${rrColor};display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">🚆</div>
+          <div style="flex:1;">
+            <div style="font-size:13px;font-weight:800;color:${rrColor};">${rrLabel} · ${branch} Branch</div>
+            <div style="font-size:11px;color:#64748b;">${boardStation.name} → ${alightStation.name}</div>
+            <div style="font-size:10px;color:#94a3b8;">Zone ${boardStation.zone||'?'} → Zone ${alightStation.zone||'?'}</div>
+          </div>
+          <div style="text-align:right;"><div style="font-size:18px;font-weight:900;color:${rrColor};">~${approxMin}</div><div style="font-size:10px;color:#64748b;">min</div></div>
+        </div>
+      </div>`;
+
+    tw.innerHTML = `
+      <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;margin-bottom:8px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to ${boardStation.name} (${(walkInKm*1000).toFixed(0)}m · ~${walkInMin}min)</div>
+        ${mkS(walkInSteps, `${(walkInKm*1000).toFixed(0)}m walk`)}
+      </div>
+      ${railCard}
+      <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk from ${alightStation.name} (${(walkOutKm*1000).toFixed(0)}m · ~${walkOutMin}min)</div>
+        ${mkS(walkOutSteps, `${(walkOutKm*1000).toFixed(0)}m walk`)}
+      </div>`;
+    return;
+  }
+
+  // ── DELHI METRO ──
+  if (_isMetroType && cachedMetroPlan) {
     const { plan, boardStop, alightStop, walkInKm, walkOutKm } = cachedMetroPlan;
     const { html:metroHtml, approxMin, totalMetroStops } =
       await MetroEngine.buildMetroHudHtml(plan, activeOriginName, activeDestName, walkInKm, walkOutKm);
 
-    const p1 = Math.max(1, Math.min(Math.floor(coords.length*(walkInKm/(rd.dist+.01))), coords.length-2));
-    const p2 = Math.max(p1+1, Math.min(Math.floor(coords.length*(1-walkOutKm/(rd.dist+.01))), coords.length-1));
-
-    L.polyline(coords.slice(0,p1), { color:'#2563eb', weight:5, dashArray:'8,8' }).addTo(transitLayer);
-    L.polyline(coords.slice(p2),   { color:'#2563eb', weight:5, dashArray:'8,8' }).addTo(transitLayer);
+    // Map: straight dashed walk lines to/from actual station coords + metro route shape
+    const originCoord = coords[0];
+    const destCoord   = coords[coords.length - 1];
+    L.polyline([originCoord, [boardStop.lat, boardStop.lng]],  { color:'#2563eb', weight:5, dashArray:'8,8' }).addTo(transitLayer);
+    L.polyline([[alightStop.lat, alightStop.lng], destCoord],   { color:'#2563eb', weight:5, dashArray:'8,8' }).addTo(transitLayer);
     MetroEngine.drawMetroRoute(plan, transitLayer);
 
     const mkStn = (ll, label, c) => {
@@ -2813,71 +3134,201 @@ async function buildTransitView(coords, steps, rd) {
     };
     mkStn([boardStop.lat,boardStop.lng], `🚇 ${boardStop.name}`, '#1565c0').addTo(stationLayer);
     mkStn([alightStop.lat,alightStop.lng], `🚇 ${alightStop.name}`, '#8e24aa').addTo(stationLayer);
-    map.fitBounds(L.latLngBounds([...coords,[boardStop.lat,boardStop.lng],[alightStop.lat,alightStop.lng]]), { padding:[50,50] });
+    map.fitBounds(L.latLngBounds([
+      originCoord, destCoord,
+      [boardStop.lat, boardStop.lng], [alightStop.lat, alightStop.lng]
+    ]), { padding:[50,50] });
     document.getElementById('hudTime').textContent = `${approxMin} min`;
+
+    // Fetch real walk legs to/from metro stations
+    const walkInSteps  = userFrom ? await _fetchWalkRoute(userFrom, { lat: boardStop.lat, lng: boardStop.lng }) : [];
+    const walkOutSteps = userDest ? await _fetchWalkRoute({ lat: alightStop.lat, lng: alightStop.lng }, userDest) : [];
+    const walkInMin    = Math.round(walkInKm * 12);
+    const walkOutMin   = Math.round(walkOutKm * 12);
 
     tw.innerHTML = `
       <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;margin-bottom:8px;">
-        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Metro (${(walkInKm*1000).toFixed(0)}m)</div>
-        ${mkS(steps.slice(0,Math.max(1,Math.floor(n*.15))))}
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Metro Station (${(walkInKm*1000).toFixed(0)}m · ~${walkInMin}min)</div>
+        ${mkS(walkInSteps, `${(walkInKm*1000).toFixed(0)}m walk`)}
       </div>
       <div style="background:#e8f0fe;padding:12px;border-radius:10px;border-left:4px solid #1565c0;margin-bottom:8px;">
         <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#1565c0;margin-bottom:8px;">🚇 Delhi Metro · ${totalMetroStops} stops · ~${approxMin} min</div>
         ${metroHtml}
       </div>
       <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;">
-        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Destination (${(walkOutKm*1000).toFixed(0)}m)</div>
-        ${mkS(steps.slice(Math.floor(n*.85)))}
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Destination (${(walkOutKm*1000).toFixed(0)}m · ~${walkOutMin}min)</div>
+        ${mkS(walkOutSteps, `${(walkOutKm*1000).toFixed(0)}m walk`)}
       </div>`;
     return;
   }
 
-  // ── BUS ──
-  const p1 = Math.floor(coords.length*.15);
-  const p2 = Math.floor(coords.length*.82);
-  L.polyline(coords.slice(0,p1),  { color:'#2563eb', weight:5, dashArray:'8,8' }).addTo(transitLayer);
-  L.polyline(coords.slice(p2),    { color:'#2563eb', weight:5, dashArray:'8,8' }).addTo(transitLayer);
-  map.fitBounds(L.polyline(coords).getBounds(), { padding:[50,50] });
+  // ── DC WMATA BUS ──
+  if (_isBusType && window._cachedWmataBus && detectedCity === 'dc') {
+    const bj = window._cachedWmataBus;
+    const { html: wmataBusHtml, approxMin: wmataBusMin, routeId, boardStop: wBoardStop, alightStop: wAlightStop } =
+      typeof WmataEngine !== 'undefined' ? WmataEngine.buildWmataBusHudHtml(bj) : { html:'', approxMin:30 };
+    document.getElementById('hudTime').textContent = `${wmataBusMin} min`;
+    const wBoardLL  = wBoardStop?.lat  ? { lat: wBoardStop.lat,  lng: wBoardStop.lng  } : null;
+    const wAlightLL = wAlightStop?.lat ? { lat: wAlightStop.lat, lng: wAlightStop.lng } : null;
 
-  const busJourney = window._cachedBusJourney;
-  let busCardHtml = '';
-
-  if (busJourney && busJourney.type === 'direct') {
-    const built = await BusEngine.buildBusHudHtml(busJourney);
-    busCardHtml = built.html;
-    L.polyline(coords.slice(Math.max(0,p1-1),p2+1), { color:built.agencyColor, weight:8, opacity:.9 }).addTo(transitLayer);
+    // Draw route shape on map
+    if (typeof WmataEngine !== 'undefined' && routeId) WmataEngine.drawWmataBusRoute(routeId, transitLayer);
+    if (wBoardLL)  L.polyline([coords[0], [wBoardLL.lat,  wBoardLL.lng]],  { color:'#2563eb', weight:5, dashArray:'8,8' }).addTo(transitLayer);
+    if (wAlightLL) L.polyline([[wAlightLL.lat, wAlightLL.lng], coords[coords.length-1]], { color:'#2563eb', weight:5, dashArray:'8,8' }).addTo(transitLayer);
     const mkLbl = (ll, label, c) => {
       const ico = L.divIcon({ className:'', iconSize:[null,null],
         html:`<div style="background:${c};border:2px solid white;border-radius:6px;padding:2px 6px;font-size:9px;font-weight:800;color:white;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,.3);">${label}</div>` });
       return L.marker(ll, { icon:ico });
     };
-    if (built.boardStop?.lat) mkLbl([built.boardStop.lat,built.boardStop.lng], `🚏 ${built.boardStop.name}`, built.agencyColor).addTo(stationLayer);
-    if (built.alightStop?.lat) mkLbl([built.alightStop.lat,built.alightStop.lng], `🚏 ${built.alightStop.name}`, '#475569').addTo(stationLayer);
-    document.getElementById('hudTime').textContent = `${built.approxMin} min`;
-  } else {
-    const eta  = Math.floor(Math.random()*8)+4;
-    const next = new Date(Date.now()+eta*60000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-    const ns   = getNearestBusStops(coords[p1][0], coords[p1][1], 1, 0.8);
-    const sn   = ns.length ? ns[0].name : 'Nearest Bus Stop';
-    L.polyline(coords.slice(Math.max(0,p1-1),p2+1), { color:'#d97706', weight:8, opacity:.9 }).addTo(transitLayer);
-    busCardHtml = `<div style="background:white;padding:12px;border-radius:10px;border:1px solid #e2e8f0;margin-bottom:8px;">
-      <div style="display:flex;align-items:center;gap:10px;">
-        <span style="font-size:24px;">🚌</span>
-        <div style="flex:1;"><div style="font-size:13px;font-weight:800;color:#d97706;">DTC / DIMTS Bus</div><div style="font-size:10px;color:#64748b;">Board near: ${sn}</div></div>
-        <div style="text-align:right;"><div style="font-size:12px;font-weight:800;color:#dc2626;">~${eta} min</div><div style="font-size:10px;color:#64748b;">Next: ${next}</div></div>
-      </div></div>`;
+    if (wBoardLL)  mkLbl([wBoardLL.lat,  wBoardLL.lng],  `🚏 ${wBoardStop.name}`,  '#E97F1B').addTo(stationLayer);
+    if (wAlightLL) mkLbl([wAlightLL.lat, wAlightLL.lng], `🚏 ${wAlightStop.name}`, '#475569').addTo(stationLayer);
+    map.fitBounds(L.polyline(coords).getBounds(), { padding:[50,50] });
+
+    const walkInSteps  = (userFrom && wBoardLL)  ? await _fetchWalkRoute(userFrom, wBoardLL)  : [];
+    const walkOutSteps = (userDest && wAlightLL) ? await _fetchWalkRoute(wAlightLL, userDest) : [];
+    const walkInMin  = Math.round(bj.walkInKm  * 12);
+    const walkOutMin = Math.round(bj.walkOutKm * 12);
+    const bName = wBoardStop?.name  || 'Bus Stop';
+    const aName = wAlightStop?.name || 'Bus Stop';
+
+    tw.innerHTML = `
+      <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;margin-bottom:8px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Bus Stop — ${bName} (${(bj.walkInKm*1000).toFixed(0)}m · ~${walkInMin}min)</div>
+        ${mkS(walkInSteps, `${(bj.walkInKm*1000).toFixed(0)}m walk`)}
+      </div>
+      <div style="background:#fff7ed;padding:4px;border-radius:10px;border-left:4px solid #E97F1B;margin-bottom:8px;">
+        ${wmataBusHtml}
+      </div>
+      <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk from ${aName} to Destination (${(bj.walkOutKm*1000).toFixed(0)}m · ~${walkOutMin}min)</div>
+        ${mkS(walkOutSteps, `${(bj.walkOutKm*1000).toFixed(0)}m walk`)}
+      </div>`;
+    return;
   }
 
-  tw.innerHTML = `
-    <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;margin-bottom:8px;">
-      <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Stop</div>
-      ${mkS(steps.slice(0,Math.max(1,Math.floor(n*.15))))}
-    </div>
-    ${busCardHtml}
-    <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;">
-      <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Destination</div>
-      ${mkS(steps.slice(Math.floor(n*.85)))}
-    </div>`;
+  // ── NYC MTA BUS ──
+  if (_isBusType && window._cachedNycBus && detectedCity === 'nyc') {
+    const bj = window._cachedNycBus;
+    const { routeName, boardStop: nBoardStop, alightStop: nAlightStop, walkInKm: nWalkIn, walkOutKm: nWalkOut } = bj;
+    const approxMin = Math.round(nWalkIn*12) + 15 + Math.round(nWalkOut*12);
+    document.getElementById('hudTime').textContent = `${approxMin} min`;
+
+    L.polyline(coords, { color:'#CC0000', weight:6, opacity:.85 }).addTo(transitLayer);
+    const mkLbl = (ll, label, c) => {
+      const ico = L.divIcon({ className:'', iconSize:[null,null],
+        html:`<div style="background:${c};border:2px solid white;border-radius:6px;padding:2px 6px;font-size:9px;font-weight:800;color:white;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,.3);">${label}</div>` });
+      return L.marker(ll, { icon:ico });
+    };
+    mkLbl([nBoardStop.lat,  nBoardStop.lng],  `🚏 ${nBoardStop.name}`,  '#CC0000').addTo(stationLayer);
+    mkLbl([nAlightStop.lat, nAlightStop.lng], `🚏 ${nAlightStop.name}`, '#475569').addTo(stationLayer);
+    map.fitBounds(L.latLngBounds([...coords, [nBoardStop.lat, nBoardStop.lng], [nAlightStop.lat, nAlightStop.lng]]), { padding:[50,50] });
+
+    const walkInSteps  = userFrom ? await _fetchWalkRoute(userFrom, { lat: nBoardStop.lat,  lng: nBoardStop.lng })  : [];
+    const walkOutSteps = userDest ? await _fetchWalkRoute({ lat: nAlightStop.lat, lng: nAlightStop.lng }, userDest) : [];
+    const walkInMin  = Math.round(nWalkIn  * 12);
+    const walkOutMin = Math.round(nWalkOut * 12);
+
+    const mtaBusCard = `
+      <div style="background:white;padding:12px;border-radius:12px;border:1px solid #e2e8f0;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:38px;height:38px;border-radius:50%;background:#CC0000;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">🚌</div>
+          <div style="flex:1;">
+            <div style="font-size:13px;font-weight:800;color:#CC0000;">MTA Bus · Route ${routeName}</div>
+            <div style="font-size:11px;color:#64748b;">${nBoardStop.name} → ${nAlightStop.name}</div>
+          </div>
+          <div style="text-align:right;"><div style="font-size:18px;font-weight:900;color:#CC0000;">~${approxMin}</div><div style="font-size:10px;color:#64748b;">min</div></div>
+        </div>
+      </div>`;
+
+    tw.innerHTML = `
+      <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;margin-bottom:8px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Bus Stop — ${nBoardStop.name} (${(nWalkIn*1000).toFixed(0)}m · ~${walkInMin}min)</div>
+        ${mkS(walkInSteps, `${(nWalkIn*1000).toFixed(0)}m walk`)}
+      </div>
+      ${mtaBusCard}
+      <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk from ${nAlightStop.name} to Destination (${(nWalkOut*1000).toFixed(0)}m · ~${walkOutMin}min)</div>
+        ${mkS(walkOutSteps, `${(nWalkOut*1000).toFixed(0)}m walk`)}
+      </div>`;
+    return;
+  }
+
+  // ── DELHI BUS (+ generic bus fallback) ──
+  if (_isBusType) {
+    const busJourney = window._cachedBusJourney;
+    let busCardHtml = '';
+    let busWalkInKm = 0, busWalkOutKm = 0;
+    let busBoardLL = null, busAlightLL = null;
+
+    if (busJourney && busJourney.type === 'direct') {
+      const built = await BusEngine.buildBusHudHtml(busJourney);
+      busCardHtml   = built.html;
+      busWalkInKm   = busJourney.walkInKm  || 0;
+      busWalkOutKm  = busJourney.walkOutKm || 0;
+      busBoardLL    = built.boardStop?.lat  ? { lat: built.boardStop.lat,  lng: built.boardStop.lng  } : null;
+      busAlightLL   = built.alightStop?.lat ? { lat: built.alightStop.lat, lng: built.alightStop.lng } : null;
+
+      // Map: dashed walk legs + solid bus route
+      const allPts = [...(busBoardLL ? [[busBoardLL.lat,busBoardLL.lng]] : []),
+                      ...(busAlightLL ? [[busAlightLL.lat,busAlightLL.lng]] : [])];
+      map.fitBounds(L.latLngBounds([...coords, ...allPts]), { padding:[50,50] });
+      if (busBoardLL)  L.polyline([coords[0], [busBoardLL.lat,busBoardLL.lng]],  { color:'#2563eb', weight:5, dashArray:'8,8' }).addTo(transitLayer);
+      if (busAlightLL) L.polyline([[busAlightLL.lat,busAlightLL.lng], coords[coords.length-1]], { color:'#2563eb', weight:5, dashArray:'8,8' }).addTo(transitLayer);
+      L.polyline(coords, { color:built.agencyColor, weight:8, opacity:.9 }).addTo(transitLayer);
+      const mkLbl = (ll, label, c) => {
+        const ico = L.divIcon({ className:'', iconSize:[null,null],
+          html:`<div style="background:${c};border:2px solid white;border-radius:6px;padding:2px 6px;font-size:9px;font-weight:800;color:white;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,.3);">${label}</div>` });
+        return L.marker(ll, { icon:ico });
+      };
+      if (busBoardLL)  mkLbl([busBoardLL.lat,  busBoardLL.lng],  `🚏 ${built.boardStop.name}`,  built.agencyColor).addTo(stationLayer);
+      if (busAlightLL) mkLbl([busAlightLL.lat, busAlightLL.lng], `🚏 ${built.alightStop.name}`, '#475569').addTo(stationLayer);
+      document.getElementById('hudTime').textContent = `${built.approxMin} min`;
+    } else {
+      // No bus data found — show generic nearest-stop card
+      map.fitBounds(L.polyline(coords).getBounds(), { padding:[50,50] });
+      L.polyline(coords, { color:'#d97706', weight:6, opacity:.85 }).addTo(transitLayer);
+      const midCoord = coords[Math.floor(coords.length/2)] || coords[0];
+      const ns = typeof getNearestBusStops === 'function' ? getNearestBusStops(midCoord[0], midCoord[1], 1, 0.8) : [];
+      const sn = ns.length ? ns[0].name : 'Nearest Bus Stop';
+      busCardHtml = `<div style="background:white;padding:12px;border-radius:10px;border:1px solid #e2e8f0;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:38px;height:38px;border-radius:50%;background:#d97706;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">🚌</div>
+          <div style="flex:1;">
+            <div style="font-size:13px;font-weight:800;color:#d97706;">DTC / DIMTS Bus</div>
+            <div style="font-size:10px;color:#64748b;">Board near: ${sn}</div>
+          </div>
+        </div></div>`;
+    }
+
+    // Fetch real walk directions to/from bus stops
+    const busWalkInSteps  = (userFrom && busBoardLL)  ? await _fetchWalkRoute(userFrom, busBoardLL)  : [];
+    const busWalkOutSteps = (userDest && busAlightLL)  ? await _fetchWalkRoute(busAlightLL, userDest) : [];
+    const busWalkInMin    = Math.round(busWalkInKm  * 12);
+    const busWalkOutMin   = Math.round(busWalkOutKm * 12);
+    const boardName  = busJourney?.boardStop?.name  || 'Bus Stop';
+    const alightName = busJourney?.alightStop?.name || 'Bus Stop';
+
+    tw.innerHTML = `
+      <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;margin-bottom:8px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Bus Stop — ${boardName} (${(busWalkInKm*1000).toFixed(0)}m · ~${busWalkInMin}min)</div>
+        ${mkS(busWalkInSteps, `${(busWalkInKm*1000).toFixed(0)}m walk`)}
+      </div>
+      ${busCardHtml}
+      <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk from ${alightName} to Destination (${(busWalkOutKm*1000).toFixed(0)}m · ~${busWalkOutMin}min)</div>
+        ${mkS(busWalkOutSteps, `${(busWalkOutKm*1000).toFixed(0)}m walk`)}
+      </div>`;
+    return;
+  }
+
+  // ── METRO FALLBACK (no data found for metro type) ──
+  map.fitBounds(L.polyline(coords).getBounds(), { padding:[50,50] });
+  L.polyline(coords, { color:'#1565c0', weight:6, opacity:.7, dashArray:'8,8' }).addTo(transitLayer);
+  tw.innerHTML = `<div style="padding:16px;color:#64748b;font-size:13px;text-align:center;">
+    <div style="font-size:24px;margin-bottom:8px;">🚇</div>
+    <div style="font-weight:700;color:#1e293b;margin-bottom:4px;">No transit route found</div>
+    <div style="font-size:11px;">No metro or subway connection found between these locations.</div>
+  </div>`;
 }
 
 // ── LIVE NAV ──
@@ -3097,6 +3548,7 @@ function clearRoute(clearInputs) {
     document.getElementById('nearestBusInfo').style.display='none';
     cachedMetroPlan=null; window._cachedBusJourney=null; window._cachedNycJourney=null;
     window._cachedWmataPlan=null; window._cachedWmataBus=null; window._activeNycJourney=null;
+    window._cachedNycBus=null; window._cachedNycRail=null;
     // #3 — clear marker registry
     stationLayer.clearLayers(); _visibleMarkers.clear();
     // #6 — clear route coords
