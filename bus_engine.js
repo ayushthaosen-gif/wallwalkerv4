@@ -249,15 +249,29 @@ async function buildStopInfoHtml(stopId, stopName, type='bus'){
     ? `<div style="font-size:10px;color:#94a3b8;padding:6px 0 2px;font-weight:600;text-align:center;">+${data.services.length-8} more routes at this stop</div>`
     : '';
 
-  // DTC link only for Delhi bus stops
-  const dtcLink = !isMetro
-    ? `<a href="https://otd.delhi.gov.in/" target="_blank" rel="noopener"
-        style="display:flex;align-items:center;justify-content:center;gap:5px;margin-top:8px;padding:7px 10px;
-               background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;text-decoration:none;
-               font-size:11px;font-weight:700;color:#c2410c;">
-        🔗 View all routes on DTC / OTD Delhi
-      </a>`
-    : '';
+  // DTC timetable links — only for Delhi bus stops
+  const dtcLink = !isMetro ? `
+    <div style="margin-top:10px;border-top:1px solid #f1f5f9;padding-top:8px;">
+      <div style="font-size:9px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">DTC Timetables</div>
+      <div style="display:flex;flex-direction:column;gap:4px;">
+        <a href="https://dtc.delhi.gov.in/dtc/bus-scheduletime-table" target="_blank" rel="noopener"
+           style="display:flex;align-items:center;gap:6px;padding:6px 8px;background:#fff7ed;border:1px solid #fed7aa;border-radius:7px;text-decoration:none;font-size:11px;font-weight:700;color:#c2410c;">
+          📋 All DTC schedules &amp; timetables
+        </a>
+        <a href="https://dtc.delhi.gov.in/sites/default/files/DTC/dtc_bus_schedule_time_table_may_2026_3.pdf" target="_blank" rel="noopener"
+           style="display:flex;align-items:center;gap:6px;padding:6px 8px;background:#fef2f2;border:1px solid #fecaca;border-radius:7px;text-decoration:none;font-size:11px;font-weight:700;color:#b91c1c;">
+          📄 Main timetable PDF — May 2026
+        </a>
+        <a href="https://dtc.delhi.gov.in/sites/default/files/2025-11/time_table_of_dtc_night_bus_services-nov-2025.pdf" target="_blank" rel="noopener"
+           style="display:flex;align-items:center;gap:6px;padding:6px 8px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:7px;text-decoration:none;font-size:11px;font-weight:700;color:#15803d;">
+          🌙 Night bus timetable PDF
+        </a>
+        <a href="https://dtc.delhi.gov.in/sites/default/files/DTC/dtc_devi_time_table_may_2026.pdf" target="_blank" rel="noopener"
+           style="display:flex;align-items:center;gap=6px;padding:6px 8px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:7px;text-decoration:none;font-size:11px;font-weight:700;color:#1d4ed8;">
+          ⚡ DEVI (electric bus) timetable PDF
+        </a>
+      </div>
+    </div>` : '';
 
   return `
     <div style="min-width:270px;max-width:320px;font-family:-apple-system,BlinkMacSystemFont,'DM Sans',sans-serif;">
