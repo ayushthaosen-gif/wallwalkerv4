@@ -7,7 +7,7 @@
 
 // #16 — cache key includes deploy timestamp so Render rebuilds always bust stale cache
 // IMPORTANT: bump this string on every deploy (or set via build script)
-const CACHE_VER = '2025-05-13-v1';
+const CACHE_VER = '2026-05-25-v1';
 const CACHE    = `gaitway-${CACHE_VER}`;
 const PRECACHE = [
   './',
@@ -20,6 +20,9 @@ const PRECACHE = [
   './wmata_engine.js',
   './transit_loader.js',
   './wmata_loader.js',
+  './nyc_engine.js',
+  './nyc_subway.js',
+  './nyc_shapes.js',
   './manifest.json',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
@@ -52,9 +55,10 @@ self.addEventListener('fetch', e => {
   // Skip non-GET and cross-origin API calls
   if (e.request.method !== 'GET') return;
 
-  // Network-only: API calls, routing, tile servers, nominatim
+  // Network-only: API calls, routing, tile servers, geocoding
   if (url.includes('/api/') ||
       url.includes('nominatim') ||
+      url.includes('photon.komoot') ||
       url.includes('routing.openstreetmap') ||
       url.includes('open-meteo') ||
       url.includes('air-quality-api') ||
