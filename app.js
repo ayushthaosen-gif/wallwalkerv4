@@ -778,7 +778,11 @@ async function loadHazardsFromDB(force) {
   try {
     const res = await fetch(url);
     const hazards = await res.json();
-    if (!Array.isArray(hazards)) return;
+    if (!Array.isArray(hazards)) {
+      console.warn('Hazard load: unexpected response', hazards);
+      if (!res.ok) showToast(`⚠️ Hazards unavailable — DB error`, 4000);
+      return;
+    }
     localHazards = hazards;
 
     // Map markers
@@ -874,12 +878,18 @@ async function loadHazardsFromDB(force) {
 
 async function saveHazardToDB(type, lat, lng, extra={}) {
   try {
-    await fetch(`${API}/api/hazards`, {
-      method: 'POST',
+    const res  = await fetch(`${API}/api/hazards`, {
+      method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type, lat, lng, user_id: userId, ...extra })
+      body:    JSON.stringify({ type, lat, lng, user_id: userId, ...extra }),
     });
-  } catch(e) { console.warn('Hazard save failed (offline)'); }
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return { ok: true, id: data.id };
+  } catch(e) {
+    console.warn('Hazard save failed:', e.message);
+    return { ok: false, error: e.message };
+  }
 }
 
 async function saveRouteToDB(routeData) {
@@ -2841,28 +2851,54 @@ function stopLive() {
 }
 
 // ── HAZARD MARKING ──
-function quickHazard(type) {
+async function quickHazard(type) {
   const loc = userLoc;
   if (!loc) { showToast('Waiting for GPS…'); return; }
   closeModal('hazardModal');
-  const ico = L.divIcon({ className:'',
-    html:`<div style="background:#dc2626;width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 0 0 4px rgba(220,38,38,.3);"></div>`,
+
+  // Pending marker — pulsing ring, slightly translucent until DB confirms
+  const icoPending = L.divIcon({ className:'',
+    html:`<div style="background:#f97316;width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 0 0 5px rgba(249,115,22,.35);opacity:.8;"></div>`,
     iconSize:[14,14], iconAnchor:[7,7] });
-  L.marker(loc,{icon:ico}).addTo(hazardLayer).bindPopup(`<b>${type}</b>`).openPopup();
-  localHazards.push({ type, lat:loc.lat, lng:loc.lng, ts:Date.now() });
+  const pendingMarker = L.marker(loc, { icon: icoPending, zIndexOffset: 500 })
+    .addTo(hazardLayer).bindPopup(`<b>${type}</b> — saving…`).openPopup();
+
+  // Update local state immediately for UX
+  localHazards.push({ type, lat: loc.lat, lng: loc.lng, ts: Date.now() });
   Env.addEnvironmentReport(type, loc.lat, loc.lng);
   updateHudScore();
   addIntelCard(type, loc.lat, loc.lng);
-  showToast(`Logged: ${type}`);
   refreshVaultStats();
-  // Save to DB with environment context
-  saveHazardToDB(type, loc.lat, loc.lng, {
+
+  // Save to DB — await the result
+  const result = await saveHazardToDB(type, loc.lat, loc.lng, {
     surface:        lastSurfaceResult?.surface || null,
     canopy:         Env.getCanopy(),
     lighting:       Env.getLighting(),
     footpath_type:  lastSurfaceResult?.footpathType || null,
     footpath_width: lastSurfaceResult?.width || null,
   });
+
+  // Replace pending marker with final marker
+  hazardLayer.removeLayer(pendingMarker);
+  if (result.ok) {
+    const icoSaved = L.divIcon({ className:'',
+      html:`<div style="background:#dc2626;width:10px;height:10px;border-radius:50%;border:2px solid white;opacity:.75;"></div>`,
+      iconSize:[10,10], iconAnchor:[5,5] });
+    L.marker(loc, { icon: icoSaved }).addTo(hazardLayer).bindPopup(`<b>${type}</b>`);
+    showToast(`✅ ${type} saved`);
+    // Sync full list from DB so everyone on this device sees the latest
+    setTimeout(() => loadHazardsFromDB(true), 600);
+  } else {
+    // DB save failed — keep orange marker to signal it's unsynced
+    const icoFailed = L.divIcon({ className:'',
+      html:`<div style="background:#f97316;width:10px;height:10px;border-radius:50%;border:2px solid white;opacity:.75;" title="Not synced"></div>`,
+      iconSize:[10,10], iconAnchor:[5,5] });
+    L.marker(loc, { icon: icoFailed }).addTo(hazardLayer)
+      .bindPopup(`<b>${type}</b><br><small style="color:#f97316;">⚠ Not saved to server</small>`);
+    showToast(`⚠️ ${type} logged locally — not synced to server`, 5000);
+    console.warn('Hazard DB save failed:', result.error);
+  }
 }
 
 function addIntelCard(type, lat, lng) {
