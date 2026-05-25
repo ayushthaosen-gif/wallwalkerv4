@@ -3,7 +3,9 @@
 // ── API CONFIG ──
 const API = window.location.hostname === 'localhost'
   ? 'http://localhost:3000'
-  : '';  // Same origin on Render — empty string works
+  : window.location.hostname.includes('github.io')
+    ? 'https://wallwalkerv4.onrender.com'   // GitHub Pages → Render backend
+    : '';  // Same origin on Render
 
 // ── CITY DETECTION — decides which transit data to load ──
 const CITY_BBOXES = {
