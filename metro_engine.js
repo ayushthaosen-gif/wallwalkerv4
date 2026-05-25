@@ -196,27 +196,91 @@ async function buildMetroHudHtml(legs, originName, destName, walkInKm, walkOutKm
 
 // ── STOP INFO POPUP for metro station ──
 async function buildMetroStopInfoHtml(stopId, stopName){
-  // Use client-side data from window.METRO_STOP_TIMES
   if (typeof BusEngine !== 'undefined') {
     const data = await BusEngine.getStopTimings(stopId, 'metro');
     if (data && data.services && data.services.length) {
-      const lines = data.services.map(s=>`
-        <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f8fafc;">
-          <div style="width:14px;height:14px;border-radius:50%;background:${s.color||'#1565c0'};flex-shrink:0;"></div>
-          <span style="font-size:12px;font-weight:700;flex:1;color:#0f172a;">${s.routeName}</span>
-          <span style="font-size:11px;font-weight:800;color:#1565c0;">${s.nextTimes.slice(0,3).join('  ·  ')}</span>
-        </div>`).join('');
-      return `<div style="min-width:240px;max-width:300px;">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
-          <b style="font-size:13px;">🚇 ${stopName}</b>
-        </div>
-        <div style="font-size:9px;color:#94a3b8;margin-bottom:8px;font-weight:600;">${data.serviceCount} lines · next trains</div>
-        ${lines}
-      </div>`;
+
+      const now = new Date();
+      const nowMins = now.getHours() * 60 + now.getMinutes();
+
+      function minsUntil(timeStr) {
+        if (!timeStr) return null;
+        const [h, m] = timeStr.split(':').map(Number);
+        const diff = h * 60 + m - nowMins;
+        return diff >= 0 ? diff : null;
+      }
+
+      const rows = data.services.map(s => {
+        // Parse "MAGENTA_Janak Puri West to Botanical Garden"
+        const uscore = s.routeName.indexOf('_');
+        const lineKey  = uscore > -1 ? s.routeName.slice(0, uscore).trim() : '';
+        const routePart = uscore > -1 ? s.routeName.slice(uscore + 1) : s.routeName;
+        // Show destination only (after " to ")
+        const toIdx = routePart.toLowerCase().indexOf(' to ');
+        const dest  = toIdx > -1 ? routePart.slice(toIdx + 4).trim() : routePart;
+
+        const lineColor = parseLineColor(lineKey || s.routeName) || s.color || '#1565c0';
+        const lineName  = lineKey
+          ? lineKey.charAt(0) + lineKey.slice(1).toLowerCase() + ' Line'
+          : extractLineName(s.routeName);
+
+        const times = (s.nextTimes || []).slice(0, 3);
+        const nextDiff = minsUntil(times[0]);
+        const countdownTxt   = nextDiff === null ? '—'
+                             : nextDiff === 0    ? 'Now'
+                             : `${nextDiff} min`;
+        const countdownColor = (nextDiff !== null && nextDiff <= 2)  ? '#dc2626'
+                             : (nextDiff !== null && nextDiff <= 5)  ? '#d97706'
+                             : lineColor;
+
+        const timeChips = times.map((t, i) =>
+          `<span style="
+            background:${i === 0 ? lineColor : '#f1f5f9'};
+            color:${i === 0 ? 'white' : '#64748b'};
+            font-size:10px;font-weight:700;
+            padding:2px 7px;border-radius:5px;letter-spacing:.2px;
+          ">${t}</span>`
+        ).join('');
+
+        return `
+          <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f1f5f9;">
+            <div style="width:4px;min-height:38px;border-radius:4px;background:${lineColor};flex-shrink:0;align-self:stretch;"></div>
+            <div style="flex:1;min-width:0;overflow:hidden;">
+              <div style="font-size:9px;font-weight:800;color:${lineColor};text-transform:uppercase;letter-spacing:.6px;margin-bottom:1px;">${lineName}</div>
+              <div style="font-size:13px;font-weight:800;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">→ ${dest}</div>
+              <div style="display:flex;gap:4px;margin-top:4px;">${timeChips}</div>
+            </div>
+            <div style="text-align:right;flex-shrink:0;padding-left:4px;">
+              <div style="font-size:17px;font-weight:900;color:${countdownColor};line-height:1;">${countdownTxt}</div>
+              ${nextDiff !== null && nextDiff > 0
+                ? `<div style="font-size:9px;color:#94a3b8;margin-top:2px;">away</div>` : ''}
+            </div>
+          </div>`;
+      }).join('');
+
+      return `
+        <div style="min-width:270px;max-width:330px;font-family:-apple-system,BlinkMacSystemFont,'DM Sans',sans-serif;">
+          <div style="display:flex;align-items:center;gap:10px;padding-bottom:10px;border-bottom:2px solid #f1f5f9;margin-bottom:2px;">
+            <div style="width:36px;height:36px;border-radius:50%;background:#1e3a8a;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;">🚇</div>
+            <div style="min-width:0;">
+              <div style="font-size:16px;font-weight:900;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${stopName}</div>
+              <div style="font-size:10px;color:#64748b;font-weight:600;">${data.serviceCount} line${data.serviceCount !== 1 ? 's' : ''} · live departures</div>
+            </div>
+          </div>
+          ${rows}
+        </div>`;
     }
   }
-  return `<div style="min-width:200px;"><b>🚇 ${stopName}</b><br>
-    <small style="color:#94a3b8;">Schedule loading…<br>Try tapping again shortly.</small></div>`;
+  return `
+    <div style="min-width:220px;padding:4px;font-family:-apple-system,BlinkMacSystemFont,'DM Sans',sans-serif;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="width:32px;height:32px;border-radius:50%;background:#1e3a8a;display:flex;align-items:center;justify-content:center;font-size:16px;">🚇</div>
+        <div>
+          <div style="font-size:14px;font-weight:800;color:#0f172a;">${stopName}</div>
+          <div style="font-size:10px;color:#94a3b8;">Schedule loading…</div>
+        </div>
+      </div>
+    </div>`;
 }
 
 window.MetroEngine = {
