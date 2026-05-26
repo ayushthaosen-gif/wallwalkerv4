@@ -929,6 +929,13 @@ const _visibleMarkers = new Map(); // stopId → L.Marker
 let currentRouteCoords = [];
 let offRouteCount = 0;
 
+// HUD snap state: 'full' | 'half' | 'peek'
+let hudSnap = 'full';
+
+// Live nav step tracking
+let _routeSteps   = [];
+let _liveStepIdx  = 0;
+
 // Hazard heatmap layer
 let heatLayer = null;
 
@@ -1703,6 +1710,24 @@ function initSensors() {
       const remM = Math.ceil(userLoc.distanceTo(activeDestLatLng) / 83);
       const etaEl = document.getElementById('liveEta');
       if (etaEl) etaEl.textContent = remM + ' min left';
+      // Advance to next step when within 20m of the next maneuver
+      if (_routeSteps.length && _liveStepIdx < _routeSteps.length - 1) {
+        const nextStep = _routeSteps[_liveStepIdx + 1];
+        const nextLL   = L.latLng(nextStep.maneuver.location[1], nextStep.maneuver.location[0]);
+        if (userLoc.distanceTo(nextLL) < 20) {
+          _liveStepIdx++;
+          _updateLiveStepCard();
+          if (navigator.vibrate) navigator.vibrate(40); // haptic on turn
+          const instr = _routeSteps[_liveStepIdx];
+          if (document.getElementById('voiceToggle')?.checked && 'speechSynthesis' in window) {
+            const dir  = instr.maneuver.modifier ? instr.maneuver.modifier.replace('-',' ') : '';
+            const act  = instr.maneuver.type==='turn' ? `Turn ${dir}` : 'Continue';
+            const road = instr.name ? `onto ${instr.name}` : '';
+            speechSynthesis.cancel();
+            speechSynthesis.speak(new SpeechSynthesisUtterance(`${act} ${road}`.trim()));
+          }
+        }
+      }
     }
   });
 
@@ -2212,6 +2237,7 @@ function initSearchBoxes() {
   });
   fromInput.addEventListener('focus', () => { if (!fromInput.value) showGpsOption(); });
 
+  toInput.addEventListener('focus', () => { if (!toInput.value.trim()) showDestHistory(); });
   toInput.addEventListener('input', () => {
     clearTimeout(searchTimerTo);
     const v = toInput.value.trim();
@@ -2405,6 +2431,7 @@ function setOrigin(lat, lon, name) {
 function setDest(lat, lon, name) {
   activeDestLatLng = L.latLng(lat, lon); activeDestName = name;
   document.getElementById('inputTo').value = name;
+  _saveDestHistory(name, lat, lon);
   closeDropdown(); tryPrepare();
 }
 
@@ -2424,6 +2451,15 @@ function tryPrepare() {
 function prepareComparison(fromLL, toLL) {
   clearRoute(false);
   walkabilityBase = 100; cachedMetroPlan = null; window._cachedBusJourney = null; window._cachedNycJourney = null;
+
+  // Loading skeleton — show card immediately with shimmer placeholders
+  document.getElementById('routeCard').classList.add('active');
+  ['Walk','Safe','Metro','Bus','Auto','Cycle','Multimodal'].forEach(m => {
+    const meta = document.getElementById(`meta${m}`);
+    if (meta) meta.innerHTML = '<span class="shimmer-line" style="width:90px;height:11px;display:inline-block;vertical-align:middle;border-radius:4px;"></span>';
+    const score = document.getElementById(`score${m}`);
+    if (score) score.textContent = '—';
+  });
 
   const baseDist  = (fromLL.distanceTo(toLL) / 1000) * 1.3;
   const hazardPen = localHazards.reduce((a, h) => a + Math.abs(Env.HAZARD_SCORE_MAP[h.type] || 5), 0);
@@ -2672,6 +2708,7 @@ function prepareComparison(fromLL, toLL) {
   map.flyTo(toLL, 14);
   document.getElementById('routeCard').classList.add('active');
   document.getElementById('searchBox').style.display = 'none';
+  _updateCompareStrip(null); // build compare strip once all options are populated
 }
 
 
@@ -2700,11 +2737,8 @@ async function pickRoute(type) {
 // ── HUD ──
 function showHud(type, route, fromLL) {
   const hud = document.getElementById('hud');
-  hud.classList.add('active'); isMinimized = false; hud.classList.remove('mini');
-  const btnLbl  = document.getElementById('btnMiniToggle');
-  const restore = document.getElementById('hudRestoreBtn');
-  if (btnLbl)  btnLbl.textContent  = '▼ Min';
-  if (restore) restore.classList.remove('visible');
+  hud.classList.add('active');
+  setHudSnap('full');
 
   const rd     = simData[type] || simData[currentRouteMode] || simData.walk;
   const steps  = route.legs[0].steps;
@@ -2767,6 +2801,23 @@ function showHud(type, route, fromLL) {
     walkabilityBase = rd.score;
   }
   updateHudScore();
+
+  // Score in plain English
+  const _scoreText = (s, t) => {
+    if (t==='auto')  return 'Driving route · traffic may vary';
+    if (t==='cycle') return 'Cycling route · check road surface';
+    if (s >= 85) return 'Excellent route · minimal hazards';
+    if (s >= 70) return 'Good route · some obstacles ahead';
+    if (s >= 55) return 'Fair route · check hazard map';
+    return 'Challenging · multiple hazards';
+  };
+  const _stEl = document.getElementById('hudScoreText');
+  if (_stEl) _stEl.textContent = _scoreText(walkabilityBase, type);
+
+  // Store steps for live turn-by-turn
+  _routeSteps  = steps;
+  _liveStepIdx = 0;
+
   document.getElementById('hudScore').style.color =
     type==='safe'                                         ? 'var(--safe)'    :
     (type==='transit'||type==='multimodal'||type==='bus') ? 'var(--transit)' :
@@ -2800,6 +2851,18 @@ function showHud(type, route, fromLL) {
   document.getElementById('hudDist').textContent  = `${routeActualKm.toFixed(2)} km`;
   document.getElementById('hudSteps').textContent = estSteps.toLocaleString();
   document.getElementById('hudCals').textContent  = estCals.toLocaleString();
+
+  // Arrival time
+  const _hudTimeMin = (() => {
+    if (type==='auto')  return routeDurMin || Math.ceil(rd.dist / 0.5);
+    if (type==='cycle') return routeDurMin || Math.ceil(rd.dist * 60 / 15);
+    if (isTransitMode)  return Math.ceil(rd.dist*4)+8;
+    return Math.ceil(rd.dist*12);
+  })();
+  const _arrival = new Date(Date.now() + _hudTimeMin * 60000);
+  const _arrivalStr = _arrival.toLocaleTimeString([], { hour:'numeric', minute:'2-digit' });
+  const _arrEl = document.getElementById('hudArrival');
+  if (_arrEl) _arrEl.textContent = `Arrive ~${_arrivalStr}`;
 
   const stepsBox    = document.getElementById('stepsBox');
   const transitWrap = document.getElementById('transitWrap');
@@ -2840,6 +2903,7 @@ function showHud(type, route, fromLL) {
   updateSurfaceReadout();
   updateScoreBreakdown(); // #22
   updateHudModeSwitcher(type); // #7
+  _updateCompareStrip(type); // compare strip active state
   // #21 — show share button
   const bShare = document.getElementById('btnShare');
   if (bShare) bShare.style.display = 'block';
@@ -3341,7 +3405,12 @@ function startLive() {
   document.getElementById('liveBar').style.display='flex';
   document.getElementById('btnStart').style.display='none';
   document.getElementById('btnStop').style.display='block';
-  if (!isMinimized) toggleMini();
+  setHudSnap('half');
+  // Show live step card
+  _liveStepIdx = 0;
+  _updateLiveStepCard();
+  const _sc = document.getElementById('liveStepCard');
+  if (_sc) _sc.classList.add('active');
   map.flyTo(from, 19, { animate:true, duration:1.5 });
   if (typeof DeviceMotionEvent!=='undefined' && typeof DeviceMotionEvent.requestPermission==='function') {
     DeviceMotionEvent.requestPermission().then(s => { if(s==='granted') window.addEventListener('devicemotion',handleMotion,true); }).catch(()=>{});
@@ -3360,7 +3429,9 @@ function stopLive() {
   document.getElementById('liveBar').style.display='none';
   document.getElementById('btnStart').style.display='block';
   document.getElementById('btnStop').style.display='none';
-  if (isMinimized) toggleMini();
+  setHudSnap('full');
+  const _sc = document.getElementById('liveStepCard');
+  if (_sc) _sc.classList.remove('active');
   const finalSteps = liveSteps;
   const finalCals  = Math.round(liveSteps * 0.04);
   showToast(`Walk done! ${finalSteps} steps · ${finalCals} kcal`);
@@ -3610,31 +3681,61 @@ function poiReportHazard() {
   openModal('hazardModal');
 }
 
-function toggleMini() {
-  isMinimized = !isMinimized;
+// ── HUD 3-STATE SNAP ──
+function setHudSnap(state) {
+  hudSnap    = state;
+  isMinimized = state !== 'full'; // backward compat
   const hud     = document.getElementById('hud');
   const btnLbl  = document.getElementById('btnMiniToggle');
   const restore = document.getElementById('hudRestoreBtn');
 
-  hud.classList.toggle('mini', isMinimized);
+  hud.classList.remove('snap-peek', 'snap-half');
+  if (state === 'peek') hud.classList.add('snap-peek');
+  else if (state === 'half') hud.classList.add('snap-half');
 
-  if (isMinimized) {
-    // Update button label
-    if (btnLbl) { btnLbl.textContent = '▲ Max'; }
-    // Show floating restore bubble with current time/dist
+  if (state === 'peek') {
+    if (btnLbl) btnLbl.textContent = '▲ Max';
     if (restore) {
       const time = document.getElementById('hudTime')?.textContent || '';
       const dist = document.getElementById('hudDist')?.textContent || '';
-      const label = document.getElementById('hudRestoreLabel');
-      if (label) label.textContent = `🚶 ${time} · ${dist} · tap to expand`;
+      restore.textContent = `🚶 ${time} · ${dist} · tap to expand`;
       restore.classList.add('visible');
     }
+  } else if (state === 'half') {
+    if (btnLbl) btnLbl.textContent = '▼ Min';
+    if (restore) restore.classList.remove('visible');
   } else {
-    // Maximised
-    if (btnLbl) { btnLbl.textContent = '▼ Min'; }
+    if (btnLbl) btnLbl.textContent = '▼ Min';
     if (restore) restore.classList.remove('visible');
   }
 }
+
+// Pill handle tap → cycles full→half→peek→full
+function toggleMini() {
+  if (hudSnap === 'full')       setHudSnap('half');
+  else if (hudSnap === 'half')  setHudSnap('peek');
+  else                          setHudSnap('full');
+}
+
+// Swipe-down on pill handle to snap down; swipe-up to snap up
+(function _initPillSwipe() {
+  let _ty0 = 0;
+  document.addEventListener('touchstart', e => {
+    if (e.target.closest('.pill-handle')) _ty0 = e.touches[0].clientY;
+  }, { passive: true });
+  document.addEventListener('touchend', e => {
+    if (!e.target.closest('.pill-handle')) return;
+    const dy = e.changedTouches[0].clientY - _ty0;
+    if (Math.abs(dy) < 30) return; // too small — treat as tap
+    if (dy > 0) { // swipe down
+      if (hudSnap === 'full')      setHudSnap('half');
+      else if (hudSnap === 'half') setHudSnap('peek');
+    } else { // swipe up
+      if (hudSnap === 'peek')      setHudSnap('half');
+      else if (hudSnap === 'half') setHudSnap('full');
+    }
+  }, { passive: true });
+})();
 
 function toggleTrees() {
   if (treeLayer) { map.removeLayer(treeLayer); treeLayer=null; showToast('Tree cover hidden'); }
@@ -3717,6 +3818,94 @@ async function toggleHeatmap() {
 function getCachedSearchResults(q) {
   try { return JSON.parse(localStorage.getItem('gw_search_cache_' + q.slice(0, 10))) || []; }
   catch { return []; }
+}
+
+// ── LIVE STEP CARD ──
+function _updateLiveStepCard() {
+  const step = _routeSteps[_liveStepIdx];
+  if (!step) return;
+  const dir  = step.maneuver.modifier ? step.maneuver.modifier.replace('-',' ') : '';
+  const act  = step.maneuver.type==='turn' ? `Turn ${dir}` :
+               _liveStepIdx===0            ? 'Start walking' : 'Continue';
+  const road = step.name ? `onto ${step.name}` : 'forward';
+  const dist = step.distance > 0 ? `${Math.round(step.distance)}m` : '';
+  const nextStep = _routeSteps[_liveStepIdx + 1];
+  const nextDesc = nextStep
+    ? `Then: ${nextStep.maneuver.type==='turn' ? 'turn '+( nextStep.maneuver.modifier||'') : 'continue'}`
+    : 'Arriving at destination';
+  const dirEl  = document.getElementById('liveStepDir');
+  const distEl = document.getElementById('liveStepDist');
+  if (dirEl)  dirEl.textContent  = `${act} ${road}`.trim();
+  if (distEl) distEl.textContent = dist ? `In ${dist} · ${nextDesc}` : nextDesc;
+}
+
+// ── SEARCH HISTORY ──
+function _getDestHistory() {
+  try { return JSON.parse(localStorage.getItem('gw_dest_history') || '[]'); } catch { return []; }
+}
+function _saveDestHistory(name, lat, lng) {
+  let h = _getDestHistory().filter(x => x.name !== name);
+  h.unshift({ name, lat, lng });
+  localStorage.setItem('gw_dest_history', JSON.stringify(h.slice(0, 5)));
+}
+function showDestHistory() {
+  const h = _getDestHistory();
+  if (!h.length) return;
+  const dd = document.getElementById('resultsDropdown');
+  dd.innerHTML = `<div class="result-section">Recent</div>` +
+    h.map(x => {
+      const safe = x.name.replace(/'/g, "\\'");
+      return `<div class="result-item" onclick="setDest(${x.lat},${x.lng},'${safe}')">
+        <div><div class="result-name">🕐 ${x.name}</div></div>
+      </div>`;
+    }).join('');
+  dd.classList.add('open');
+}
+
+// ── ROUTE COMPARE STRIP ──
+function _updateCompareStrip(activeType) {
+  const strip = document.getElementById('routeCompareStrip');
+  if (!strip) return;
+  const modes = [
+    { type:'walk',       icon:'🚶', label:'Walk' },
+    { type:'safe',       icon:'🛡️', label:'Safe' },
+    { type:'transit',    icon:'🚇', label:'Metro' },
+    { type:'bus',        icon:'🚌', label:'Bus' },
+    { type:'multimodal', icon:'⚡', label:'Multi' },
+    { type:'auto',       icon:'🛺', label:'Auto' },
+    { type:'cycle',      icon:'🚲', label:'Cycle' },
+  ];
+  const chips = modes.filter(m => {
+    const el = document.getElementById('opt-' + (m.type==='transit'?'metro':m.type==='safe'?'safe':m.type));
+    return el && el.style.display !== 'none';
+  }).map(m => {
+    const metaEl = document.getElementById('meta' + m.label.charAt(0).toUpperCase() + m.label.slice(1));
+    const scoreEl = document.getElementById('score' + m.label.charAt(0).toUpperCase() + m.label.slice(1));
+    const time   = metaEl ? metaEl.textContent.split('·')[0].trim() : '—';
+    const score  = scoreEl ? scoreEl.textContent : '—';
+    const active = m.type === activeType ? ' active-chip' : '';
+    return `<div class="compare-chip${active}" onclick="pickRoute('${m.type}')">
+      <span class="chip-icon">${m.icon}</span>
+      <span class="chip-time">${time}</span>
+      <span class="chip-score">${score}</span>
+    </div>`;
+  });
+  if (chips.length > 1) {
+    strip.innerHTML = chips.join('');
+    strip.style.display = 'flex';
+  } else {
+    strip.style.display = 'none';
+  }
+}
+
+// switchTab helper for intel empty state CTA
+function switchTab(tabId) {
+  document.querySelectorAll('.bottom-nav .nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  const nav = document.querySelector(`[data-target="${tabId}"]`);
+  const tab = document.getElementById(tabId);
+  if (nav) nav.classList.add('active');
+  if (tab) { tab.classList.add('active'); setTimeout(() => map?.invalidateSize(), 100); }
 }
 
 // ── UTILS ──
