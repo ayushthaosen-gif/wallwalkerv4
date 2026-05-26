@@ -2462,8 +2462,10 @@ function prepareComparison(fromLL, toLL) {
   });
 
   const baseDist  = (fromLL.distanceTo(toLL) / 1000) * 1.3;
-  const hazardPen = localHazards.reduce((a, h) => a + Math.abs(Env.HAZARD_SCORE_MAP[h.type] || 5), 0);
-  const baseScore = Math.max(40, 100 - Math.round(baseDist * 6) - hazardPen);
+  // Route-card score = pure route quality (distance-based only).
+  // Hazard penalties are applied exactly once in computeWalkabilityScore() via updateHudScore().
+  // Keeping them out of baseScore prevents double-counting that drives the HUD score to 0.
+  const baseScore = Math.max(40, 100 - Math.round(baseDist * 6));
   const isLong    = baseDist > 3; // long distance → show multimodal option
 
   simData = {
@@ -2800,6 +2802,8 @@ function showHud(type, route, fromLL) {
   } else {
     walkabilityBase = rd.score;
   }
+  // Safety net: guard against NaN/falsy walkabilityBase before score display
+  if (!walkabilityBase || isNaN(walkabilityBase)) walkabilityBase = rd?.score || 50;
   updateHudScore();
 
   // Score in plain English
@@ -3866,21 +3870,22 @@ function showDestHistory() {
 function _updateCompareStrip(activeType) {
   const strip = document.getElementById('routeCompareStrip');
   if (!strip) return;
+  // id = suffix for meta/score element IDs; label = display text in chip
   const modes = [
-    { type:'walk',       icon:'🚶', label:'Walk' },
-    { type:'safe',       icon:'🛡️', label:'Safe' },
-    { type:'transit',    icon:'🚇', label:'Metro' },
-    { type:'bus',        icon:'🚌', label:'Bus' },
-    { type:'multimodal', icon:'⚡', label:'Multi' },
-    { type:'auto',       icon:'🛺', label:'Auto' },
-    { type:'cycle',      icon:'🚲', label:'Cycle' },
+    { type:'walk',       icon:'🚶', label:'Walk',  id:'Walk' },
+    { type:'safe',       icon:'🛡️', label:'Safe',  id:'Safe' },
+    { type:'transit',    icon:'🚇', label:'Metro', id:'Metro' },
+    { type:'bus',        icon:'🚌', label:'Bus',   id:'Bus' },
+    { type:'multimodal', icon:'⚡', label:'Multi', id:'Multimodal' },
+    { type:'auto',       icon:'🛺', label:'Auto',  id:'Auto' },
+    { type:'cycle',      icon:'🚲', label:'Cycle', id:'Cycle' },
   ];
   const chips = modes.filter(m => {
-    const el = document.getElementById('opt-' + (m.type==='transit'?'metro':m.type==='safe'?'safe':m.type));
+    const el = document.getElementById('opt-' + (m.type==='transit'?'metro':m.type));
     return el && el.style.display !== 'none';
   }).map(m => {
-    const metaEl = document.getElementById('meta' + m.label.charAt(0).toUpperCase() + m.label.slice(1));
-    const scoreEl = document.getElementById('score' + m.label.charAt(0).toUpperCase() + m.label.slice(1));
+    const metaEl  = document.getElementById('meta'  + m.id);
+    const scoreEl = document.getElementById('score' + m.id);
     const time   = metaEl ? metaEl.textContent.split('·')[0].trim() : '—';
     const score  = scoreEl ? scoreEl.textContent : '—';
     const active = m.type === activeType ? ' active-chip' : '';
