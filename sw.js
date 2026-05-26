@@ -7,7 +7,7 @@
 
 // #16 — cache key includes deploy timestamp so Render rebuilds always bust stale cache
 // IMPORTANT: bump this string on every deploy (or set via build script)
-const CACHE_VER = '2026-05-25-v1';
+const CACHE_VER = '2026-05-26-v1';
 const CACHE    = `gaitway-${CACHE_VER}`;
 const PRECACHE = [
   './',
@@ -26,7 +26,7 @@ const PRECACHE = [
   './manifest.json',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
-  'https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;800;900&display=swap',
+  'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap',
 ];
 
 // Install — precache app shell
