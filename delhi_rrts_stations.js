@@ -1,0 +1,3 @@
+// Delhi-Meerut RRTS (Namo Bharat) stations — OpenStreetMap, in corridor order, ODbL license
+// Tuple: [lat, lng, name]
+const DELHI_RRTS_STATIONS = [[28.58875,77.25725,"Sarai Kale Khan - Nizamuddin"],[28.58909,77.30151,"New Ashok Nagar"],[28.66763,77.3682,"Sahibabad"],[28.67255,77.41373,"Ghaziabad"],[28.69954,77.44575,"Guldhar"],[28.72702,77.47141,"Duhai"],[28.74228,77.46764,"Duhai Depot"],[28.77038,77.5107,"Muradnagar"],[28.81773,77.55674,"Modinagar South"],[28.84349,77.5832,"Modinagar North"],[28.90473,77.63284,"Meerut South"],[28.94775,77.67388,"Shatabdi Nagar"],[28.99674,77.7056,"Begumpul"],[28.97287,77.6906,"Meerut Central"],[29.05335,77.70802,"Meerut North"],[29.07233,77.70888,"Modipuram"]];

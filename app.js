@@ -2485,6 +2485,7 @@ function tryPrepare() {
 function prepareComparison(fromLL, toLL) {
   clearRoute(false);
   walkabilityBase = 100; cachedMetroPlan = null; window._cachedBusJourney = null; window._cachedNycJourney = null;
+  window._cachedRrtsPlan = null;
   _routeLightingStats = null;
 
   // Loading skeleton — show card immediately with shimmer placeholders
@@ -2588,6 +2589,23 @@ function prepareComparison(fromLL, toLL) {
           break outer;
         }
       }
+    }
+  }
+
+  // ── DELHI-MEERUT RRTS (Namo Bharat) — fallback when DMRC has no route (trip near the corridor) ──
+  if (!metroFound && isModeEnabled('metro') && detectedCity === 'delhi' &&
+      typeof DelhiInfraEngine !== 'undefined' && DelhiInfraEngine.rrtsDataReady()) {
+    const rrtsPlan = DelhiInfraEngine.planRrtsJourney(fromLL.lat, fromLL.lng, toLL.lat, toLL.lng);
+    if (rrtsPlan) {
+      window._cachedRrtsPlan = rrtsPlan;
+      const rideMin  = rrtsPlan.stops * 4; // semi-high-speed, ~4 min/stop incl. dwell
+      const rrtsMin  = Math.round(rrtsPlan.board.dist * 12) + rideMin + Math.round(rrtsPlan.alight.dist * 12) + 5;
+      simData.transit.score = 90; simData.transit.metroMin = rrtsMin; simData.transit.totalStops = rrtsPlan.stops;
+      document.getElementById('opt-metro').style.display = 'flex';
+      document.getElementById('metaMetro').textContent   = `🚄 ${rrtsMin} min · ${rrtsPlan.stops} stops · walk ${(rrtsPlan.board.dist*1000).toFixed(0)}m`;
+      document.getElementById('scoreMetro').textContent  = 90;
+      if (busEl) { busEl.innerHTML=`🚄 <b>${rrtsPlan.board.name}</b> → <b>${rrtsPlan.alight.name}</b> (RRTS)`; busEl.style.display='block'; }
+      metroFound = true;
     }
   }
 
@@ -3273,15 +3291,26 @@ async function buildTransitView(coords, steps, rd, type) {
     ]), { padding:[50,50] });
     document.getElementById('hudTime').textContent = `${approxMin} min`;
 
+    // Route to the actual gate (OSM subway_entrance) nearest each end when we have one for this
+    // station, instead of the station's center point — falls back to station center otherwise.
+    const boardGate  = (userFrom && typeof DelhiInfraEngine !== 'undefined')
+      ? DelhiInfraEngine.getNearestGate(userFrom.lat, userFrom.lng, boardStop.name) : null;
+    const alightGate = (userDest && typeof DelhiInfraEngine !== 'undefined')
+      ? DelhiInfraEngine.getNearestGate(userDest.lat, userDest.lng, alightStop.name) : null;
+    const boardLL  = boardGate  ? { lat: boardGate.lat,  lng: boardGate.lng  } : { lat: boardStop.lat,  lng: boardStop.lng };
+    const alightLL = alightGate ? { lat: alightGate.lat, lng: alightGate.lng } : { lat: alightStop.lat, lng: alightStop.lng };
+    const boardLabel  = boardGate  ? `${boardStop.name} (${boardGate.gateName.replace(boardGate.station||'','').trim()})`  : boardStop.name;
+    const alightLabel = alightGate ? `${alightStop.name} (${alightGate.gateName.replace(alightGate.station||'','').trim()})` : alightStop.name;
+
     // Fetch real walk legs to/from metro stations
-    const walkInSteps  = userFrom ? await _fetchWalkRoute(userFrom, { lat: boardStop.lat, lng: boardStop.lng }) : [];
-    const walkOutSteps = userDest ? await _fetchWalkRoute({ lat: alightStop.lat, lng: alightStop.lng }, userDest) : [];
+    const walkInSteps  = userFrom ? await _fetchWalkRoute(userFrom, boardLL)  : [];
+    const walkOutSteps = userDest ? await _fetchWalkRoute(alightLL, userDest) : [];
     const walkInMin    = Math.round(walkInKm * 12);
     const walkOutMin   = Math.round(walkOutKm * 12);
 
     tw.innerHTML = `
       <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;margin-bottom:8px;">
-        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Metro Station (${(walkInKm*1000).toFixed(0)}m · ~${walkInMin}min)</div>
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to ${boardLabel} (${(walkInKm*1000).toFixed(0)}m · ~${walkInMin}min)</div>
         ${mkS(walkInSteps, `${(walkInKm*1000).toFixed(0)}m walk`)}
       </div>
       <div style="background:#e8f0fe;padding:12px;border-radius:10px;border-left:4px solid #1565c0;margin-bottom:8px;">
@@ -3289,8 +3318,58 @@ async function buildTransitView(coords, steps, rd, type) {
         ${metroHtml}
       </div>
       <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;">
-        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to Destination (${(walkOutKm*1000).toFixed(0)}m · ~${walkOutMin}min)</div>
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk from ${alightLabel} (${(walkOutKm*1000).toFixed(0)}m · ~${walkOutMin}min)</div>
         ${mkS(walkOutSteps, `${(walkOutKm*1000).toFixed(0)}m walk`)}
+      </div>`;
+    return;
+  }
+
+  // ── DELHI-MEERUT RRTS (Namo Bharat) ──
+  if (_isMetroType && window._cachedRrtsPlan && detectedCity === 'delhi') {
+    const rrtsPlan = window._cachedRrtsPlan;
+    const { board, alight, stops } = rrtsPlan;
+    const rideMin   = stops * 4;
+    const approxMin = Math.round(board.dist * 12) + rideMin + Math.round(alight.dist * 12) + 5;
+    document.getElementById('hudTime').textContent = `${approxMin} min`;
+
+    L.polyline([[board.lat, board.lng], [alight.lat, alight.lng]], { color:'#7c2d92', weight:7, opacity:.9 }).addTo(transitLayer);
+    const mkStn = (ll, label, c) => {
+      const ico = L.divIcon({ className:'', iconSize:[null,null],
+        html:`<div style="background:${c};border:2px solid white;border-radius:4px;padding:2px 5px;font-size:10px;font-weight:800;color:white;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.3);">${label}</div>` });
+      return L.marker(ll, { icon:ico });
+    };
+    mkStn([board.lat, board.lng],   `🚄 ${board.name}`,  '#7c2d92').addTo(stationLayer);
+    mkStn([alight.lat, alight.lng], `🚄 ${alight.name}`, '#8e24aa').addTo(stationLayer);
+    map.fitBounds(L.latLngBounds([
+      coords[0], coords[coords.length-1], [board.lat, board.lng], [alight.lat, alight.lng]
+    ]), { padding:[50,50] });
+
+    const walkInSteps  = userFrom ? await _fetchWalkRoute(userFrom, { lat: board.lat, lng: board.lng })   : [];
+    const walkOutSteps = userDest ? await _fetchWalkRoute({ lat: alight.lat, lng: alight.lng }, userDest) : [];
+    const walkInMin  = Math.round(board.dist  * 12);
+    const walkOutMin = Math.round(alight.dist * 12);
+
+    const rrtsCard = `
+      <div style="background:white;padding:12px;border-radius:12px;border:1px solid #e2e8f0;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:38px;height:38px;border-radius:50%;background:#7c2d92;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">🚄</div>
+          <div style="flex:1;">
+            <div style="font-size:13px;font-weight:800;color:#7c2d92;">Namo Bharat (RRTS)</div>
+            <div style="font-size:11px;color:#64748b;">${board.name} → ${alight.name} · ${stops} stop${stops===1?'':'s'}</div>
+          </div>
+          <div style="text-align:right;"><div style="font-size:18px;font-weight:900;color:#7c2d92;">~${approxMin}</div><div style="font-size:10px;color:#64748b;">min</div></div>
+        </div>
+      </div>`;
+
+    tw.innerHTML = `
+      <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;margin-bottom:8px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk to ${board.name} (${(board.dist*1000).toFixed(0)}m · ~${walkInMin}min)</div>
+        ${mkS(walkInSteps, `${(board.dist*1000).toFixed(0)}m walk`)}
+      </div>
+      ${rrtsCard}
+      <div style="background:rgba(37,99,235,.05);padding:10px;border-radius:10px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#2563eb;margin-bottom:6px;">🚶 Walk from ${alight.name} (${(alight.dist*1000).toFixed(0)}m · ~${walkOutMin}min)</div>
+        ${mkS(walkOutSteps, `${(alight.dist*1000).toFixed(0)}m walk`)}
       </div>`;
     return;
   }
