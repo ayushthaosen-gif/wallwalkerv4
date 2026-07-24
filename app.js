@@ -1199,13 +1199,13 @@ function toggleSatellite(forceOn) {
     _osmTile?.remove();
     _satTile = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:19, attribution:'Esri' });
     _satTile.addTo(map); _satTile.bringToBack();
-    if (btn) { btn.textContent='🗺 Map'; btn.style.background='#0f172a'; btn.style.color='white'; }
+    if (btn) { btn.textContent='🗺'; btn.title='Map view'; btn.style.background='#0f172a'; btn.style.color='white'; }
     _satelliteOn = true;
   } else {
     _satTile?.remove();
     _osmTile = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19 });
     _osmTile.addTo(map); _osmTile.bringToBack();
-    if (btn) { btn.textContent='🛰 Sat'; btn.style.background='white'; btn.style.color='#0f172a'; }
+    if (btn) { btn.textContent='🛰'; btn.title='Satellite view'; btn.style.background='white'; btn.style.color='#0f172a'; }
     _satelliteOn = false;
   }
   localStorage.setItem('gw_satellite', _satelliteOn ? '1' : '0');
