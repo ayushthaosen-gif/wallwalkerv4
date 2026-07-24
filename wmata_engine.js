@@ -314,7 +314,7 @@ function refreshWmataOnView(lat, lng, zoom, stationLayer) {
       iconSize: [null, null],
     });
     const marker = L.marker([s.lat, s.lng], { icon: ico, zIndexOffset: 500 }).addTo(stationLayer);
-    marker.on('click', e => { e.originalEvent._handled = true; });
+    marker.on('click', e => { e.originalEvent._markerHandled = true; });
     marker.bindPopup(buildWmataStationPopup(s), { maxWidth: 300 });
     // Live arrivals on popup open (only when station has a WMATA code)
     if (s.id && /^[A-Z]\d/.test(s.id) && typeof _fetchDcTrainArrivals === 'function') {
@@ -333,7 +333,7 @@ function refreshWmataOnView(lat, lng, zoom, stationLayer) {
         iconAnchor: [zoom>=16?10:8, zoom>=16?10:8],
       });
       const marker = L.marker([s.lat, s.lng], { icon: ico }).addTo(stationLayer);
-      marker.on('click', e => { e.originalEvent._handled = true; });
+      marker.on('click', e => { e.originalEvent._markerHandled = true; });
       marker.bindPopup(buildWmataBusStopPopup(s), { maxWidth: 280 });
       if (typeof _fetchDcBusArrivals === 'function') {
         marker.on('popupopen', () => _fetchDcBusArrivals(s.id));
@@ -350,7 +350,7 @@ function refreshWmataOnView(lat, lng, zoom, stationLayer) {
         iconSize: [null, null],
       });
       const marker = L.marker([lot.lat, lot.lng], { icon: ico, zIndexOffset: 200 }).addTo(stationLayer);
-      marker.on('click', e => { e.originalEvent._handled = true; });
+      marker.on('click', e => { e.originalEvent._markerHandled = true; });
       marker.bindPopup(buildParkRidePopup(lot), { maxWidth: 260 });
     });
   }

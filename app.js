@@ -78,6 +78,21 @@ function applyCity(city, lat, lng) {
     // Start live tracking (gracefully no-ops if DELHI_OTD_KEY not set)
     startDelhiVehicleTracking();
   }
+  _applyCityModeToggles(city);
+}
+
+// Auto-rickshaw is a Delhi-only mode — hide the toggle and drop it from
+// enabledModes elsewhere so route comparisons for DC/NYC never show "Auto".
+function _applyCityModeToggles(city) {
+  const autoBtn = document.querySelector('.mode-toggle[data-mode="auto"]');
+  if (city === 'delhi') {
+    if (autoBtn) autoBtn.style.display = '';
+    enabledModes.add('auto');
+    if (autoBtn) autoBtn.classList.add('active');
+  } else {
+    if (autoBtn) { autoBtn.style.display = 'none'; autoBtn.classList.remove('active'); }
+    enabledModes.delete('auto');
+  }
 }
 
 function injectWmataScripts() {
@@ -3358,11 +3373,12 @@ async function buildTransitView(coords, steps, rd, type) {
       const midCoord = coords[Math.floor(coords.length/2)] || coords[0];
       const ns = typeof getNearestBusStops === 'function' ? getNearestBusStops(midCoord[0], midCoord[1], 1, 0.8) : [];
       const sn = ns.length ? ns[0].name : 'Nearest Bus Stop';
+      const agencyLabel = detectedCity === 'dc' ? 'WMATA Metrobus' : detectedCity === 'nyc' ? 'MTA Bus' : 'DTC / DIMTS Bus';
       busCardHtml = `<div style="background:white;padding:12px;border-radius:10px;border:1px solid #e2e8f0;margin-bottom:8px;">
         <div style="display:flex;align-items:center;gap:10px;">
           <div style="width:38px;height:38px;border-radius:50%;background:#d97706;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">🚌</div>
           <div style="flex:1;">
-            <div style="font-size:13px;font-weight:800;color:#d97706;">DTC / DIMTS Bus</div>
+            <div style="font-size:13px;font-weight:800;color:#d97706;">${agencyLabel}</div>
             <div style="font-size:10px;color:#64748b;">Board near: ${sn}</div>
           </div>
         </div></div>`;
