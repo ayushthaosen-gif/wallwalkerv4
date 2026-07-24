@@ -9,7 +9,10 @@ const API = window.location.hostname === 'localhost'
 
 // ── CITY DETECTION — decides which transit data to load ──
 const CITY_BBOXES = {
-  delhi: [28.40, 76.84, 28.88, 77.35],
+  // Delhi NCR — widened to match actual transit-data coverage: bus stops extend to
+  // lng 77.41 and Delhi Metro stations extend to lat 28.34 / lng 77.54 (Gurgaon,
+  // Noida, Faridabad, Ghaziabad border stations), which the old narrower box was clipping.
+  delhi: [28.30, 76.80, 28.90, 77.60],
   dc:    [38.79, -77.12, 38.99, -76.91],
   nyc:   [40.47, -74.26, 40.93, -73.70],
 };
