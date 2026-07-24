@@ -140,6 +140,8 @@
         <button id="btnSubwayNet" onclick="toggleSubwayNetwork()" class="map-layer-btn" style="display:none;">🚇 Lines</button>
         <button id="btnVehicles" onclick="toggleVehicles()" class="map-layer-btn" style="display:none;">🚆 Live</button>
         <button id="btnDelhiVehicles" onclick="toggleDelhiVehicles()" class="map-layer-btn" style="display:none;color:#1565c0;">🚇 Live</button>
+        <button id="btnDelhiStreetlights" onclick="toggleDelhiStreetlights()" class="map-layer-btn" style="display:none;color:#d97706;">💡 Lights</button>
+        <button id="btnDelhiSubways" onclick="toggleDelhiSubways()" class="map-layer-btn" style="display:none;color:#7c3aed;">🚧 Underpasses</button>
       </div>
 
       <!-- Route Card -->
@@ -417,6 +419,8 @@
 <script src="bus_stop_routes.js" async></script>
 <script src="bus_routes_p1.js" async></script>
 <script src="metro_data.js" async></script>
+<script src="delhi_streetlights.js" async></script>
+<script src="delhi_subways.js" async></script>
 <!-- Transit timing data — defer ensures ordered load after DOM -->
 <script src="stop_timings_p1.js" defer></script>
 <script src="stop_timings_p2.js" defer></script>
@@ -429,6 +433,7 @@
 <script src="bus_engine.js"></script>
 <script src="metro_engine.js"></script>
 <script src="wmata_engine.js"></script><!-- engine always loaded; data injected lazily by app.js -->
+<script src="delhi_infra_engine.js"></script>
 <!-- nyc_subway.js and nyc_engine.js are injected lazily by app.js when city=nyc -->
 <script src="environment.js"></script>
 <script src="app.js"></script>

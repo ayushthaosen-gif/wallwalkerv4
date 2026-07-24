@@ -7,7 +7,7 @@
 
 // #16 — cache key includes deploy timestamp so Render rebuilds always bust stale cache
 // IMPORTANT: bump this string on every deploy (or set via build script)
-const CACHE_VER = '2026-05-26-v3';
+const CACHE_VER = '2026-05-26-v5';
 const CACHE    = `gaitway-${CACHE_VER}`;
 const PRECACHE = [
   './',
@@ -18,6 +18,7 @@ const PRECACHE = [
   './bus_engine.js',
   './metro_engine.js',
   './wmata_engine.js',
+  './delhi_infra_engine.js',
   './transit_loader.js',
   './wmata_loader.js',
   './nyc_engine.js',

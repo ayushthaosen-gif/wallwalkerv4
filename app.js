@@ -38,7 +38,11 @@ function applyCity(city, lat, lng) {
     }
     if (detectedCity === 'delhi') {
       stopDelhiVehicleTracking();
-      const b = document.getElementById('btnDelhiVehicles'); if (b) b.style.display = 'none';
+      ['btnDelhiVehicles','btnDelhiStreetlights','btnDelhiSubways'].forEach(id => {
+        const b = document.getElementById(id); if (b) b.style.display = 'none';
+      });
+      if (streetlightHeatLayer) { map.removeLayer(streetlightHeatLayer); streetlightHeatLayer = null; }
+      if (subwayLayer) { map.removeLayer(subwayLayer); subwayLayer = null; }
     }
     if (detectedCity === 'dc') {
       const b = document.getElementById('btnDcLayers'); if (b) b.style.display = 'none';
@@ -77,6 +81,9 @@ function applyCity(city, lat, lng) {
     if (delhiVehBtn) delhiVehBtn.style.display = 'block';
     // Start live tracking (gracefully no-ops if DELHI_OTD_KEY not set)
     startDelhiVehicleTracking();
+    ['btnDelhiStreetlights','btnDelhiSubways'].forEach(id => {
+      const b = document.getElementById(id); if (b) b.style.display = 'block';
+    });
   }
   _applyCityModeToggles(city);
 }
@@ -951,8 +958,15 @@ let hudSnap = 'full';
 let _routeSteps   = [];
 let _liveStepIdx  = 0;
 
+// Delhi PAPL streetlight/underpass sampling for the active route (null when not applicable)
+let _routeLightingStats = null;
+
 // Hazard heatmap layer
 let heatLayer = null;
+
+// Delhi PAPL infra layers
+let streetlightHeatLayer = null;
+let subwayLayer = null;
 
 // ── TRANSPORT MODE PREFERENCES ──
 // Which modes the user has toggled ON
@@ -1650,6 +1664,8 @@ function initMap() {
         if (typeof WmataEngine !== 'undefined' && WmataEngine.wmataDataReady())
           WmataEngine.drawWmataMetroLines(stationLayer);
       }
+      if (streetlightHeatLayer) _refreshStreetlightHeat();
+      if (subwayLayer) _refreshSubwayMarkers();
     }, 400);
   });
 
@@ -2466,6 +2482,7 @@ function tryPrepare() {
 function prepareComparison(fromLL, toLL) {
   clearRoute(false);
   walkabilityBase = 100; cachedMetroPlan = null; window._cachedBusJourney = null; window._cachedNycJourney = null;
+  _routeLightingStats = null;
 
   // Loading skeleton — show card immediately with shimmer placeholders
   document.getElementById('routeCard').classList.add('active');
@@ -2792,12 +2809,8 @@ function showHud(type, route, fromLL) {
       <span class="step-m">${Math.round(step.distance)}m</span></div>`;
   });
 
-  document.getElementById('cntFoot').textContent   = routeCoordsData.footpaths.length;
-  document.getElementById('cntCross').textContent  = routeCoordsData.crossings.length;
-  document.getElementById('cntBridge').textContent = routeCoordsData.bridges.length;
-  document.getElementById('cntUnder').textContent  = routeCoordsData.underpasses.length;
-
   // Refine walkability score from actual OSM step data
+  _routeLightingStats = null;
   if (type === 'walk' || type === 'safe') {
     const totalDist = steps.reduce((s, st) => s + (st.distance || 0), 0) || 1;
     let penalty = 0;
@@ -2813,10 +2826,44 @@ function showHud(type, route, fromLL) {
     });
     // Crossings add minor score boost — more structure = safer walk
     const crossingBonus = Math.min(8, routeCoordsData.crossings.length * 1.5);
-    walkabilityBase = Math.max(35, Math.min(100, rd.score - Math.round(penalty) + Math.round(crossingBonus)));
+
+    // Delhi: sample the real PAPL streetlight/underpass survey along the route steps
+    // instead of relying only on OSM instruction text — verified underpasses replace
+    // guesses from "underpass" keyword matching, and lit coverage feeds the score directly.
+    let lightingBonus = 0, verifiedUnderpassBonus = 0;
+    if (detectedCity === 'delhi' && typeof DelhiInfraEngine !== 'undefined' && DelhiInfraEngine.delhiStreetlightsReady()) {
+      let litSamples = 0;
+      const verifiedUnderpasses = [];
+      steps.forEach(st => {
+        const [slng, slat] = st.maneuver.location;
+        if (DelhiInfraEngine.isLitPoint(slat, slng)) litSamples++;
+        const up = DelhiInfraEngine.nearestSubway(slat, slng);
+        if (up && !verifiedUnderpasses.some(p => Math.abs(p[0]-up.lat)<0.0003 && Math.abs(p[1]-up.lng)<0.0003)) {
+          verifiedUnderpasses.push([up.lat, up.lng]);
+        }
+      });
+      const litRatio = steps.length ? litSamples / steps.length : 0;
+      lightingBonus = Math.round((litRatio - 0.5) * 16); // roughly -8..+8
+      verifiedUnderpassBonus = Math.min(6, verifiedUnderpasses.length * 2);
+      _routeLightingStats = { litRatio, verifiedUnderpasses: verifiedUnderpasses.length, sampled: steps.length };
+      // Merge verified underpasses into the infra breakdown (more reliable than text matching)
+      verifiedUnderpasses.forEach(([la, lo]) => {
+        if (!routeCoordsData.underpasses.some(p => Math.abs(p[0]-la)<0.0003 && Math.abs(p[1]-lo)<0.0003)) {
+          routeCoordsData.underpasses.push([la, lo]);
+        }
+      });
+    }
+
+    walkabilityBase = Math.max(35, Math.min(100,
+      rd.score - Math.round(penalty) + Math.round(crossingBonus) + lightingBonus + verifiedUnderpassBonus));
   } else {
     walkabilityBase = rd.score;
   }
+
+  document.getElementById('cntFoot').textContent   = routeCoordsData.footpaths.length;
+  document.getElementById('cntCross').textContent  = routeCoordsData.crossings.length;
+  document.getElementById('cntBridge').textContent = routeCoordsData.bridges.length;
+  document.getElementById('cntUnder').textContent  = routeCoordsData.underpasses.length;
   // Safety net: guard against NaN/falsy walkabilityBase before score display
   if (!walkabilityBase || isNaN(walkabilityBase)) walkabilityBase = rd?.score || 50;
   updateHudScore();
@@ -3798,6 +3845,14 @@ function updateScoreBreakdown() {
     { label: 'Crossings',     val: Math.max(0, 100 - routeCoordsData.crossings.length * 8), color:'#d97706', icon:'🚦' },
     { label: 'Hazard density',val: Math.max(0, 100 - localHazards.length * 12),          color:'#dc2626', icon:'⚠️' },
   ];
+  // Real PAPL survey data (Delhi only) — replaces the synthetic estimate with measured lit coverage
+  if (_routeLightingStats) {
+    items.push({
+      label: `Street Lighting (${_routeLightingStats.verifiedUnderpasses} underpass${_routeLightingStats.verifiedUnderpasses===1?'':'es'} verified)`,
+      val:   Math.round(_routeLightingStats.litRatio * 100),
+      color: '#d97706', icon: '💡',
+    });
+  }
   el.innerHTML = items.map(i => `
     <div style="margin-bottom:10px;">
       <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;margin-bottom:3px;">
@@ -3832,6 +3887,79 @@ async function toggleHeatmap() {
     heatLayer = L.heatLayer(pts, { radius:25, blur:20, maxZoom:17, gradient:{0.4:'blue',0.65:'lime',1:'red'} }).addTo(map);
     showToast(`Heatmap: ${hazards.length} hazards`);
   } catch(e) { showToast('Could not load heatmap'); }
+}
+
+// ── DELHI STREETLIGHT DENSITY (PAPL survey, ~39.7k points) ──
+function _refreshStreetlightHeat() {
+  if (!streetlightHeatLayer || typeof DelhiInfraEngine === 'undefined') return;
+  const b = map.getBounds();
+  const pts = DelhiInfraEngine.getStreetlightsInView(b.getSouth(), b.getWest(), b.getNorth(), b.getEast())
+    .map(([lat, lng, cnt]) => [lat, lng, Math.min(1, cnt / 5)]);
+  streetlightHeatLayer.setLatLngs(pts);
+}
+
+function toggleDelhiStreetlights() {
+  const btn = document.getElementById('btnDelhiStreetlights');
+  if (streetlightHeatLayer) {
+    map.removeLayer(streetlightHeatLayer);
+    streetlightHeatLayer = null;
+    if (btn) btn.classList.remove('active-layer');
+    showToast('Streetlights hidden');
+    return;
+  }
+  if (typeof DelhiInfraEngine === 'undefined' || !DelhiInfraEngine.delhiStreetlightsReady()) {
+    showToast('Streetlight data still loading…');
+    return;
+  }
+  streetlightHeatLayer = L.heatLayer([], { radius:14, blur:12, maxZoom:18, gradient:{0.3:'#1e3a8a',0.6:'#d97706',1:'#facc15'} }).addTo(map);
+  if (btn) btn.classList.add('active-layer');
+  _refreshStreetlightHeat();
+  showToast('💡 Streetlight density (PAPL survey)');
+}
+
+// ── DELHI PEDESTRIAN UNDERPASSES (PAPL survey, ~417 points) ──
+function _refreshSubwayMarkers() {
+  if (!subwayLayer || typeof DelhiInfraEngine === 'undefined') return;
+  subwayLayer.clearLayers();
+  const c = map.getCenter();
+  DelhiInfraEngine.getNearestSubways(c.lat, c.lng, 40, 4.0).forEach(p => {
+    const ico = L.divIcon({ className:'', iconSize:[null,null],
+      html:`<div style="background:#7c3aed;border:2px solid white;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;box-shadow:0 2px 6px rgba(0,0,0,.3);">🚧</div>` });
+    const m = L.marker([p.lat, p.lng], { icon: ico }).addTo(subwayLayer);
+    m.on('click', e => { e.originalEvent._markerHandled = true; });
+    m.bindPopup(`<div style="min-width:220px;font-family:-apple-system,BlinkMacSystemFont,'DM Sans',sans-serif;">
+      <div style="display:flex;align-items:center;gap:10px;padding-bottom:8px;border-bottom:2px solid #f1f5f9;margin-bottom:6px;">
+        <div style="width:34px;height:34px;border-radius:50%;background:#7c3aed;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px;">🚧</div>
+        <div><div style="font-size:14px;font-weight:900;color:#0f172a;">Pedestrian Underpass</div>
+        <div style="font-size:10px;color:#64748b;font-weight:600;">${p.count} detected · PAPL survey</div></div>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button onclick="poiNavigateTo(${p.lat},${p.lng},'Pedestrian Underpass');map.closePopup();"
+          style="flex:1;background:#7c3aed;color:white;border:none;border-radius:8px;padding:8px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;">🧭 Go</button>
+        <button onclick="poiSetFrom(${p.lat},${p.lng},'Pedestrian Underpass');map.closePopup();"
+          style="flex:1;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:#475569;">📍 From</button>
+      </div>
+    </div>`, { maxWidth: 260 });
+  });
+}
+
+function toggleDelhiSubways() {
+  const btn = document.getElementById('btnDelhiSubways');
+  if (subwayLayer) {
+    map.removeLayer(subwayLayer);
+    subwayLayer = null;
+    if (btn) btn.classList.remove('active-layer');
+    showToast('Underpasses hidden');
+    return;
+  }
+  if (typeof DelhiInfraEngine === 'undefined' || !DelhiInfraEngine.delhiSubwaysReady()) {
+    showToast('Underpass data still loading…');
+    return;
+  }
+  subwayLayer = L.layerGroup().addTo(map);
+  if (btn) btn.classList.add('active-layer');
+  _refreshSubwayMarkers();
+  showToast('🚧 Pedestrian underpasses (PAPL survey)');
 }
 
 // Offline search cache helper — returns normalised {name,sub,lat,lng,pid} array
