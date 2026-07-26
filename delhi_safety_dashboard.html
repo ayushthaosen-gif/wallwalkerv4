@@ -382,7 +382,9 @@ function renderList() {
   const el = document.getElementById('rankList');
   el.innerHTML = sorted.map((d, i) => {
     const v = d[activeMetric];
-    const pct = v == null ? 0 : (hi===lo?100:(v-lo)/(hi-lo)*100);
+    // Floor at 3% so the district with the lowest real value still shows a visible sliver
+    // instead of a 0-width bar that reads as "no data."
+    const pct = v == null ? 0 : Math.max(3, (hi===lo?100:(v-lo)/(hi-lo)*100));
     const color = rustScale(v==null?0:(hi===lo?.5:(v-lo)/(hi-lo)));
     return '<div class="rank-row' + (selected===d.name?' selected':'') + '" data-name="' + d.name + '">' +
       '<span class="rank-num">' + (i+1) + '</span>' +
