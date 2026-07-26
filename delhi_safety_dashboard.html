@@ -34,6 +34,7 @@
   --shadow: 0 1px 3px rgba(28,35,49,.08), 0 4px 14px rgba(28,35,49,.06);
   --label-fill: var(--night);
   --label-stroke: var(--paper-raised);
+  --good: #3f7d52;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -47,6 +48,7 @@
     --shadow: 0 1px 3px rgba(0,0,0,.3), 0 4px 20px rgba(0,0,0,.25);
     --label-fill: #ffffff;
     --label-stroke: #10131a;
+    --good: #7bc492;
   }
 }
 :root[data-theme="dark"] {
@@ -60,6 +62,7 @@
   --shadow: 0 1px 3px rgba(0,0,0,.3), 0 4px 20px rgba(0,0,0,.25);
   --label-fill: #ffffff;
   --label-stroke: #10131a;
+  --good: #7bc492;
 }
 :root[data-theme="light"] {
   --bg: var(--paper);
@@ -72,6 +75,7 @@
   --shadow: 0 1px 3px rgba(28,35,49,.08), 0 4px 14px rgba(28,35,49,.06);
   --label-fill: var(--night);
   --label-stroke: var(--paper-raised);
+  --good: #3f7d52;
 }
 
 * { box-sizing: border-box; }
@@ -344,6 +348,37 @@ path.district:hover { opacity: .82; }
 .stat-val { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Consolas, monospace; font-variant-numeric: tabular-nums; font-size: 20px; font-weight: 600; }
 .stat-val.nodata { font-size: 13px; font-style: italic; color: var(--text-dim); font-weight: 400; }
 
+.analysis {
+  grid-column: 1 / -1;
+  margin-top: 6px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.confidence-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  padding: 4px 10px;
+  border-radius: 20px;
+}
+.confidence-badge.high { background: rgba(69,133,86,.14); color: var(--good); }
+.confidence-badge.partial { background: rgba(177,74,52,.14); color: var(--rust); }
+.analysis p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-dim);
+  max-width: 72ch;
+}
+.analysis p b { color: var(--text); font-weight: 700; }
+
 /* ── Correlation ── */
 .corr-panel { margin-top: 20px; padding: 18px 20px; }
 .corr-panel h2 {
@@ -536,6 +571,57 @@ function renderList() {
   });
 }
 
+// Rank d's value for the given metric key among all 15 districts, 1 = highest.
+function rankOf(d, key) {
+  const vals = DATA.map(x => x[key]).filter(v => v != null).sort((a,b) => b - a);
+  return vals.indexOf(d[key]) + 1;
+}
+function ordinal(n) {
+  const s = ['th','st','nd','rd'], v = n % 100;
+  return n + (s[(v-20)%10] || s[v] || s[0]);
+}
+function pctVsCityAvg(d, key) {
+  const vals = DATA.map(x => x[key]).filter(v => v != null);
+  const avg = vals.reduce((a,b)=>a+b,0) / vals.length;
+  return Math.round(((d[key] - avg) / avg) * 100);
+}
+
+function computeAnalysis(d) {
+  const n = DATA.length;
+  const ipcRank = rankOf(d, 'totalIPC');
+  const theftRank = rankOf(d, 'theft');
+  const cawRank = rankOf(d, 'crimeAgainstWomen');
+  const theftPct = pctVsCityAvg(d, 'theft');
+  const ipcPct = pctVsCityAvg(d, 'totalIPC');
+
+  const severityWord = ipcRank <= 5 ? 'among the highest-crime districts' : ipcRank >= 11 ? 'among the lower-crime districts' : 'in the middle of the pack';
+  const crimeP = `${d.name} ranks <b>${ordinal(ipcRank)} of ${n}</b> districts by total IPC crime — ${severityWord} in Delhi, with theft cases ${theftPct >= 0 ? `<b>${theftPct}% above</b>` : `<b>${Math.abs(theftPct)}% below</b>`} the citywide average (${ordinal(theftRank)} highest for theft specifically). It ranks ${ordinal(cawRank)} of ${n} for crime against women.`;
+
+  const highConfidence = CORR_DISTRICTS.has(d.name) && d.surveyPoints > 0;
+  let lightP, confidenceLevel, confidenceLabel;
+
+  if (highConfidence) {
+    const covered = DATA.filter(x => CORR_DISTRICTS.has(x.name) && x.surveyPoints);
+    const densities = covered.map(x => x.lightDensityPerKm2).sort((a,b)=>b-a);
+    const densityRank = densities.indexOf(d.lightDensityPerKm2) + 1;
+    const rate = d.theft / d.totalLights;
+    const rates = covered.map(x => x.theft / x.totalLights).sort((a,b)=>b-a);
+    const rateRank = rates.indexOf(rate) + 1;
+    const rateWord = rateRank <= 3 ? 'notably high' : rateRank >= 7 ? 'comparatively low' : 'roughly typical';
+    lightP = `The PAPL survey covered this district well (${d.surveyPoints.toLocaleString('en-IN')} points, ${d.lightDensityPerKm2}/km² lit density — ${ordinal(densityRank)} densest of the ${covered.length} surveyed districts). Its theft-per-streetlight rate is ${rateWord} (${ordinal(rateRank)} of ${covered.length}), meaning theft here tracks ${rateWord === 'notably high' ? 'higher than' : rateWord === 'comparatively low' ? 'lower than' : 'in line with'} what its lighting coverage alone would predict.`;
+    confidenceLevel = 'high';
+    confidenceLabel = 'High confidence — crime data + real streetlight survey';
+  } else {
+    lightP = d.surveyPoints > 0
+      ? `Only ${d.surveyPoints.toLocaleString('en-IN')} survey points fell inside this district — too sparse a sample (out of ~40k citywide) to say anything reliable about its lit coverage.`
+      : `The PAPL survey vehicle never drove through this district — there is <b>zero</b> streetlight data here. That is a gap in the survey, not evidence the district is unlit.`;
+    confidenceLevel = 'partial';
+    confidenceLabel = 'Crime data confirmed · no reliable streetlight read';
+  }
+
+  return { crimeP, lightP, confidenceLevel, confidenceLabel };
+}
+
 function renderDetail() {
   const el = document.getElementById('detail');
   const d = DATA.find(x => x.name === selected) || DATA.find(x => x.name === 'South-East');
@@ -543,6 +629,7 @@ function renderDetail() {
   const lightVal = d.surveyPoints
     ? `${d.totalLights.toLocaleString('en-IN')} <span style="font-size:12px;font-weight:400;color:var(--text-dim);">(${d.lightDensityPerKm2}/km²)</span>`
     : null;
+  const a = computeAnalysis(d);
   el.innerHTML = `
     <div class="detail-head">
       <h2>${d.name}</h2>
@@ -555,6 +642,11 @@ function renderDetail() {
     <div class="stat"><span class="stat-label">Vs. women</span><span class="stat-val">${fmtNum(d.crimeAgainstWomen)}</span></div>
     <div class="stat"><span class="stat-label">SLL crimes</span><span class="stat-val">${fmtNum(d.totalSLL)}</span></div>
     <div class="stat"><span class="stat-label">Streetlights surveyed</span>${lightVal ? `<span class="stat-val">${lightVal}</span>` : '<span class="stat-val nodata">No survey coverage</span>'}</div>
+    <div class="analysis">
+      <div class="confidence-badge ${a.confidenceLevel}">${a.confidenceLevel === 'high' ? '●' : '◐'} ${a.confidenceLabel}</div>
+      <p>${a.crimeP}</p>
+      <p>${a.lightP}</p>
+    </div>
   `;
 }
 
