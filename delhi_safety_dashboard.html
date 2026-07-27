@@ -172,6 +172,22 @@ details.method-detail code { font-family: "IBM Plex Mono", monospace; background
 .scatter-stat .val { font-family: "IBM Plex Mono", monospace; font-size: 22px; font-weight: 700; margin-top: 2px; }
 .scatter-read { font-size: 11.5px; color: var(--text-dim); line-height: 1.5; }
 
+.download-panel { margin-top: 20px; padding: 18px 20px; }
+.download-panel h2 { font-family: 'Big Shoulders', sans-serif; font-size: 18px; font-weight: 800; margin: 0 0 4px; }
+.dl-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+@media (max-width: 700px) { .dl-columns { grid-template-columns: 1fr; } }
+.dl-col-head { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; color: var(--text-dim); margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dl-list { border: 1px solid var(--border); border-radius: 8px; min-height: 140px; max-height: 260px; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 4px; background: var(--bg); }
+.dl-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 5px; background: var(--surface); border: 1px solid var(--border); font-size: 12.5px; }
+.dl-item .dl-item-label { flex: 1; }
+.dl-item button { font: inherit; font-size: 11px; font-weight: 700; border: none; background: transparent; color: var(--text-dim); cursor: pointer; padding: 2px 5px; border-radius: 4px; line-height: 1; }
+.dl-item button:hover { background: var(--bg); color: var(--text); }
+.dl-mini-btn { font: inherit; font-size: 10.5px; font-weight: 700; border: 1px solid var(--border); background: var(--surface); color: var(--text-dim); cursor: pointer; padding: 3px 8px; border-radius: 12px; text-transform: none; letter-spacing: 0; }
+.dl-mini-btn:hover { color: var(--text); border-color: var(--text-dim); }
+.dl-download-btn { font: inherit; font-size: 13px; font-weight: 700; border: none; background: var(--amber); color: var(--night); cursor: pointer; padding: 10px 18px; border-radius: 7px; transition: background .12s; }
+.dl-download-btn:hover { background: var(--amber-dim); }
+.dl-download-btn:disabled { opacity: .5; cursor: not-allowed; }
+
 footer { margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 11.5px; color: var(--text-dim); display: flex; flex-direction: column; gap: 4px; }
 footer a { color: inherit; }
 </style>
@@ -273,6 +289,36 @@ footer a { color: inherit; }
         </div>
         <div class="scatter-read" id="scatterRead"></div>
       </div>
+    </div>
+  </div>
+
+  <div class="panel download-panel">
+    <h2>Download the data</h2>
+    <p class="method-sub">Every number on this page, as CSV. Pick what you want and, for the full district table, the exact column order.</p>
+    <div class="metric-tabs" id="downloadTabs" style="margin-bottom:16px;"></div>
+
+    <div id="dlAllPanel" class="dl-panel">
+      <div class="dl-columns">
+        <div class="dl-col">
+          <div class="dl-col-head">Available fields</div>
+          <div id="dlAvailable" class="dl-list"></div>
+        </div>
+        <div class="dl-col">
+          <div class="dl-col-head">Selected, in export order <button class="dl-mini-btn" id="dlResetOrder">Reset to default</button></div>
+          <div id="dlSelected" class="dl-list"></div>
+        </div>
+      </div>
+      <button class="dl-download-btn" id="dlAllDownload">⬇ Download CSV — All District Data</button>
+    </div>
+
+    <div id="dlCorrPanel" class="dl-panel" style="display:none;">
+      <p class="scatter-read" style="margin-bottom:14px;">Every infrastructure type against every crime/road-safety metric — ${INFRA.length * METRICS.length} combinations, each with its own live-computed r and district count, exactly like the scatter chart above.</p>
+      <button class="dl-download-btn" id="dlCorrDownload">⬇ Download CSV — Full Correlation Matrix</button>
+    </div>
+
+    <div id="dlVersusPanel" class="dl-panel" style="display:none;">
+      <p class="scatter-read" style="margin-bottom:14px;">Whatever's currently plotted in the scatter chart above: <b id="dlVersusLabel"></b>. Change the X/Y selection there and this updates to match.</p>
+      <button class="dl-download-btn" id="dlVersusDownload">⬇ Download CSV — Current Comparison</button>
     </div>
   </div>
 
@@ -646,6 +692,8 @@ function renderScatter() {
     ctx.fillText(p.name, px(p.x)+8, py(p.y)+3);
     ctx.fillStyle = amber;
   });
+
+  updateVersusLabel();
 }
 
 function render() {
@@ -706,7 +754,150 @@ document.getElementById('policeToggle').addEventListener('click', function(){
   renderMap();
 });
 
+// ── DOWNLOAD DATA ──
+const FIELDS = [
+  { key: 'district', label: 'District' },
+  { key: 'areaSqKm', label: 'Area (km²)' },
+  { key: 'theft', label: 'Theft (2023)' },
+  { key: 'robbery', label: 'Robbery (2023)' },
+  { key: 'burglary', label: 'Burglary (2023)' },
+  { key: 'totalIPC', label: 'Total IPC crime (2023)' },
+  { key: 'crimeAgainstWomen', label: 'Crime against women (2023)' },
+  { key: 'totalSLL', label: 'SLL crime (2023)' },
+  { key: 'fatalRoadCrashes2022', label: 'Fatal road crashes (2022)' },
+  { key: 'hitAndRunCrashes2022', label: 'Hit-and-run crashes (2022)' },
+  { key: 'surveyPoints', label: 'Streetlight survey points' },
+  { key: 'totalLights', label: 'Streetlights (count)' },
+  { key: 'lightDensityPerKm2', label: 'Streetlight density (per km²)' },
+  { key: 'underpasses', label: 'Underpasses (count)' },
+  { key: 'underpassDensity', label: 'Underpass density (per km²)' },
+  { key: 'metroGates', label: 'Metro gates (count)' },
+  { key: 'metroGateDensity', label: 'Metro gate density (per km²)' },
+  { key: 'policeStations', label: 'Police stations (count)' },
+  { key: 'chowkiPosts', label: 'Chowkis/outposts (count)' },
+  { key: 'policeInfraCount', label: 'Police Infra combined (count)' },
+  { key: 'policeInfraDensity', label: 'Police Infra density (per km²)' },
+];
+let selectedFields = FIELDS.map(f => f.key);
+
+function csvEscape(v) {
+  if (v == null) return '';
+  const s = String(v);
+  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+function toCSV(headers, rows) {
+  return [headers.map(csvEscape).join(',')].concat(rows.map(r => r.map(csvEscape).join(','))).join('\r\n');
+}
+function triggerDownload(filename, content) {
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function renderDownloadFields() {
+  const availEl = document.getElementById('dlAvailable');
+  const selEl = document.getElementById('dlSelected');
+  const available = FIELDS.filter(f => !selectedFields.includes(f.key));
+
+  availEl.innerHTML = available.map(f =>
+    '<div class="dl-item"><span class="dl-item-label">' + f.label + '</span><button data-add="' + f.key + '">+ Add</button></div>'
+  ).join('') || '<div class="dl-item" style="opacity:.5;">All fields selected</div>';
+
+  selEl.innerHTML = selectedFields.map((key, i) => {
+    const f = FIELDS.find(x => x.key === key);
+    return '<div class="dl-item"><span class="dl-item-label">' + (i+1) + '. ' + f.label + '</span>' +
+      '<button data-up="' + key + '"' + (i===0?' disabled':'') + '>↑</button>' +
+      '<button data-down="' + key + '"' + (i===selectedFields.length-1?' disabled':'') + '>↓</button>' +
+      '<button data-remove="' + key + '">✕</button></div>';
+  }).join('') || '<div class="dl-item" style="opacity:.5;">No fields selected</div>';
+
+  availEl.querySelectorAll('[data-add]').forEach(btn => btn.addEventListener('click', () => {
+    selectedFields.push(btn.dataset.add); renderDownloadFields();
+  }));
+  selEl.querySelectorAll('[data-remove]').forEach(btn => btn.addEventListener('click', () => {
+    selectedFields = selectedFields.filter(k => k !== btn.dataset.remove); renderDownloadFields();
+  }));
+  selEl.querySelectorAll('[data-up]').forEach(btn => btn.addEventListener('click', () => {
+    const i = selectedFields.indexOf(btn.dataset.up);
+    if (i > 0) { [selectedFields[i-1], selectedFields[i]] = [selectedFields[i], selectedFields[i-1]]; renderDownloadFields(); }
+  }));
+  selEl.querySelectorAll('[data-down]').forEach(btn => btn.addEventListener('click', () => {
+    const i = selectedFields.indexOf(btn.dataset.down);
+    if (i < selectedFields.length - 1) { [selectedFields[i+1], selectedFields[i]] = [selectedFields[i], selectedFields[i+1]]; renderDownloadFields(); }
+  }));
+
+  document.getElementById('dlAllDownload').disabled = selectedFields.length === 0;
+}
+
+document.getElementById('dlResetOrder').addEventListener('click', () => {
+  selectedFields = FIELDS.map(f => f.key);
+  renderDownloadFields();
+});
+document.getElementById('dlAllDownload').addEventListener('click', () => {
+  if (!selectedFields.length) return;
+  const headers = selectedFields.map(k => FIELDS.find(f => f.key === k).label);
+  const rows = DATA.map(d => selectedFields.map(k => d[k]));
+  triggerDownload('gaitway_delhi_district_data.csv', toCSV(headers, rows));
+});
+
+document.getElementById('dlCorrDownload').addEventListener('click', () => {
+  const headers = ['Infrastructure type', 'Crime/road-safety metric', 'Metric year', 'Pearson r', 'Districts included (n)', 'Coverage note'];
+  const rows = [];
+  INFRA.forEach(inf => {
+    METRICS.forEach(m => {
+      const covered = DATA.filter(d => infraCovered(d, inf.key) && d[m.key] != null);
+      const xs = covered.map(d => d[inf.densityKey]);
+      const ys = covered.map(d => d[m.key] / d.areaSqKm);
+      const r = covered.length >= 2 ? pearson(xs, ys) : null;
+      const note = covered.length + ' of 15 districts had usable data for both this infrastructure type and this metric.';
+      rows.push([inf.label, m.label, m.year, r == null ? '' : r.toFixed(4), covered.length, note]);
+    });
+  });
+  triggerDownload('gaitway_delhi_correlation_matrix.csv', toCSV(headers, rows));
+});
+
+function updateVersusLabel() {
+  const inf = INFRA.find(i => i.key === scatterType);
+  const m = METRICS.find(x => x.key === scatterYMetric);
+  document.getElementById('dlVersusLabel').textContent = inf.label + ' density vs. ' + m.short + ' density';
+}
+document.getElementById('dlVersusDownload').addEventListener('click', () => {
+  const inf = INFRA.find(i => i.key === scatterType);
+  const m = METRICS.find(x => x.key === scatterYMetric);
+  const headers = ['District', inf.label + ' density (per km²)', m.label + ' density (per km²)', inf.label + ' (count)', m.label + ' (raw count)'];
+  const rows = DATA.filter(d => infraCovered(d, inf.key) && d[m.key] != null)
+    .map(d => [d.district, d[inf.densityKey], Math.round((d[m.key]/d.areaSqKm)*100)/100, d[inf.countKey], d[m.key]]);
+  triggerDownload('gaitway_delhi_' + inf.key + '_vs_' + m.key + '.csv', toCSV(headers, rows));
+});
+
+const DOWNLOAD_TABS = [
+  { key: 'all', label: 'All District Data' },
+  { key: 'corr', label: 'Correlation Matrix' },
+  { key: 'versus', label: 'Current Comparison' },
+];
+let activeDownloadTab = 'all';
+function renderDownloadTabs() {
+  document.getElementById('downloadTabs').innerHTML = DOWNLOAD_TABS.map(t =>
+    '<button class="metric-tab' + (t.key===activeDownloadTab?' active':'') + '" data-key="' + t.key + '">' + t.label + '</button>'
+  ).join('');
+  document.querySelectorAll('#downloadTabs .metric-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeDownloadTab = btn.dataset.key;
+      renderDownloadTabs();
+      document.getElementById('dlAllPanel').style.display = activeDownloadTab === 'all' ? '' : 'none';
+      document.getElementById('dlCorrPanel').style.display = activeDownloadTab === 'corr' ? '' : 'none';
+      document.getElementById('dlVersusPanel').style.display = activeDownloadTab === 'versus' ? '' : 'none';
+    });
+  });
+}
+
 buildScatterTabs();
 renderScatter();
 render();
+renderDownloadTabs();
+renderDownloadFields();
 </script>
