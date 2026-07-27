@@ -109,6 +109,10 @@ path.district:hover { opacity: .82; }
 .airport-label { font-family: 'Big Shoulders', sans-serif; font-weight: 700; font-size: 10.5px; fill: var(--label-fill); paint-order: stroke; stroke: var(--label-stroke); stroke-width: 2.5px; stroke-linejoin: round; pointer-events: none; text-anchor: middle; }
 
 .legend { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 11.5px; color: var(--text-dim); flex-wrap: wrap; }
+.legend-scale-note { font-size: 10.5px; font-style: italic; opacity: .8; }
+.map-tooltip { position: absolute; pointer-events: none; z-index: 20; background: var(--night); color: var(--bone); font-size: 12px; line-height: 1.4; padding: 6px 10px; border-radius: 6px; box-shadow: var(--shadow); opacity: 0; transform: translate(-50%, calc(-100% - 10px)); transition: opacity .1s; max-width: 240px; white-space: normal; }
+.map-tooltip.on { opacity: 1; }
+.map-tooltip b { display: block; margin-bottom: 2px; }
 .legend-scale { display: flex; height: 10px; width: 140px; border-radius: 3px; overflow: hidden; }
 .legend-scale span { flex: 1; }
 .legend-swatch { width: 12px; height: 12px; border-radius: 2px; display: inline-block; margin-right: 5px; vertical-align: -1px; }
@@ -248,13 +252,15 @@ footer a { color: inherit; }
   <div class="grid">
     <div class="panel map-panel">
       <div class="map-stage">
-        <svg id="map" viewBox="0 0 1000 900" xmlns="http://www.w3.org/2000/svg"></svg>
+        <svg id="map" viewBox="0 0 1000 900" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Map of Delhi's 15 police districts, shaded by the selected crime or road-safety metric"></svg>
         <canvas id="heat" width="1000" height="900"></canvas>
+        <div id="mapTooltip" class="map-tooltip"></div>
       </div>
       <div class="legend">
         <span id="legendLabel">Theft (Sec. 379 IPC), 2023</span>
         <div class="legend-scale" id="legendScale"></div>
         <span id="legendMin"></span> – <span id="legendMax"></span>
+        <span class="legend-scale-note">(ranked, not linear — an outlier district can't wash out the rest of the scale)</span>
         <span style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
           <span style="display:flex;align-items:center;gap:5px;"><span class="legend-swatch" style="background:var(--map-nodata-stripe);"></span>no streetlight/underpass survey</span>
           <span style="display:flex;align-items:center;gap:5px;"><span class="legend-swatch" style="background:var(--slate);opacity:.6;border:1px dashed var(--slate);"></span>IGI Airport (separate jurisdiction)</span>
@@ -421,7 +427,7 @@ const POLICE_MARKERS = {"stations":[[702.5,368.9,"PS CIVIL LINES"],[706.5,337.4,
 const AIRPORT_SHAPE = {"path":"M518,569.2 L520.4,569 L523,569.8 L525.3,570.6 L527.7,571.3 L530.1,572 L533.4,573 L535.8,573.7 L538.2,574.5 L541.5,575.6 L543.8,576.5 L544.1,579.5 L544.6,582.6 L545.3,586.3 L545.4,589.2 L546.3,592.1 L546.7,594.8 L544.9,597.7 L547.6,599.1 L550.4,600 L554.1,600.8 L556.6,601.4 L559.3,602 L561.9,602.5 L562,606.1 L561.1,609.3 L560.2,611.9 L559,614.4 L556.9,616.2 L554.9,617.9 L553,619.6 L550.2,622 L548.4,623.9 L546.3,625.6 L544.1,626.7 L541.6,628 L538.5,629.1 L536.1,629.6 L535.9,632.5 L535.7,635.3 L536.3,638 L534.9,640.2 L532.8,641.7 L530.6,643.1 L528.4,644.1 L526.1,645 L523.5,644.6 L521.8,642.5 L519.2,641.9 L516.5,641.3 L513.9,640.7 L511.3,640 L508.6,639.4 L506,638.8 L502.9,640.3 L500.2,639.8 L497.6,639.3 L494.6,638.9 L491.8,638.4 L489.3,637.8 L487,637.1 L484.5,636.1 L482.2,635.3 L479.8,634.3 L477.2,633.7 L474.5,633 L472.1,632.4 L469.3,631.7 L466.4,631 L463.8,630.4 L460.7,629.6 L457.4,628.9 L455.1,627.7 L454,624.9 L449.2,623.5 L450.7,621.3 L453.3,621.2 L454.1,618.2 L456.8,618.6 L458.6,615.6 L459.3,612.9 L461.3,611.2 L463.8,611.8 L466.4,612.5 L468.7,613.1 L471.2,613.6 L472.1,610.4 L472.8,607.6 L473.5,604.8 L471.2,603.3 L468.9,602.3 L466.7,601 L467.6,598.4 L469.4,596 L475.9,586.9 L478.2,583.8 L479.8,581.6 L481.8,579 L484.8,575 L487.5,577 L491.5,576.7 L494,578.1 L497.5,578.7 L499.8,579.1 L502,577.4 L504.9,577.4 L507.5,577.6 L510.8,577.1 L513.2,576.3 L515.1,574.7 L513.6,571.9 L513.9,568.8 L516.8,568.8 L518,569.2 Z","cx":508,"cy":609};
 const TRENDS = [{"year":2014,"crashes":8623,"fatalities":1671,"fatalCrashes":1629},{"year":2015,"crashes":8085,"fatalities":1622,"fatalCrashes":1582},{"year":2016,"crashes":7375,"fatalities":1591,"fatalCrashes":1548},{"year":2017,"crashes":6673,"fatalities":1584,"fatalCrashes":1565},{"year":2018,"crashes":6515,"fatalities":1690,"fatalCrashes":1657},{"year":2019,"crashes":5610,"fatalities":1463,"fatalCrashes":1433},{"year":2020,"crashes":4178,"fatalities":1196,"fatalCrashes":1163},{"year":2021,"crashes":4720,"fatalities":1239,"fatalCrashes":1206},{"year":2022,"crashes":5652,"fatalities":1461,"fatalCrashes":1428},{"year":2023,"crashes":5834,"fatalities":1457,"fatalCrashes":1432}];
 const VICTIMS = [{"year":2019,"pedestrianKilled":678,"pedestrianInjured":1887,"cyclistKilled":36,"cyclistInjured":108,"carKilled":39,"carInjured":281,"twoWheelerKilled":496,"twoWheelerInjured":2110,"busPassengerKilled":5,"busPassengerInjured":30,"slowMovingKilled":26,"slowMovingInjured":151,"animalDrivenKilled":1,"animalDrivenInjured":10,"otherKilled":182,"otherInjured":575,"totalKilled":1463,"totalInjured":5152},{"year":2020,"pedestrianKilled":505,"pedestrianInjured":1241,"cyclistKilled":48,"cyclistInjured":115,"carKilled":37,"carInjured":184,"twoWheelerKilled":441,"twoWheelerInjured":1613,"busPassengerKilled":5,"busPassengerInjured":18,"slowMovingKilled":21,"slowMovingInjured":110,"animalDrivenKilled":2,"animalDrivenInjured":9,"otherKilled":132,"otherInjured":372,"totalKilled":1196,"totalInjured":3662},{"year":2021,"pedestrianKilled":504,"pedestrianInjured":1536,"cyclistKilled":45,"cyclistInjured":123,"carKilled":42,"carInjured":158,"twoWheelerKilled":472,"twoWheelerInjured":1868,"busPassengerKilled":3,"busPassengerInjured":12,"slowMovingKilled":18,"slowMovingInjured":145,"animalDrivenKilled":0,"animalDrivenInjured":7,"otherKilled":155,"otherInjured":424,"totalKilled":1239,"totalInjured":4273},{"year":2022,"pedestrianKilled":629,"pedestrianInjured":1777,"cyclistKilled":48,"cyclistInjured":134,"carKilled":39,"carInjured":227,"twoWheelerKilled":552,"twoWheelerInjured":2263,"busPassengerKilled":3,"busPassengerInjured":25,"slowMovingKilled":26,"slowMovingInjured":200,"animalDrivenKilled":1,"animalDrivenInjured":2,"otherKilled":163,"otherInjured":573,"totalKilled":1461,"totalInjured":5201},{"year":2023,"pedestrianKilled":622,"pedestrianInjured":1941,"cyclistKilled":30,"cyclistInjured":118,"carKilled":45,"carInjured":234,"twoWheelerKilled":549,"twoWheelerInjured":2356,"busPassengerKilled":0,"busPassengerInjured":18,"slowMovingKilled":24,"slowMovingInjured":203,"animalDrivenKilled":3,"animalDrivenInjured":7,"otherKilled":184,"otherInjured":593,"totalKilled":1457,"totalInjured":5470}];
-const ACCIDENT_ZONES = [{"rank":1,"name":"ISBT Kashmiri Gate","simple":12,"fatal":7,"total":19,"road":"Ring Road"},{"rank":2,"name":"Mukarba Chowk","simple":11,"fatal":7,"total":18,"road":"GTKRoad"},{"rank":3,"name":"Libaspur Bus Stand","simple":11,"fatal":7,"total":18,"road":"GTKRoad"},{"rank":4,"name":"","simple":12,"fatal":6,"total":18,"road":"Boulevard Road"},{"rank":5,"name":"Britannia Chowk","simple":9,"fatal":6,"total":15,"road":"Ring Road"},{"rank":6,"name":"Burari Chowk","simple":8,"fatal":6,"total":14,"road":"Outer Ring Road"},{"rank":7,"name":"Bhalswa Chowk","simple":5,"fatal":6,"total":11,"road":"Outer Ring Road"},{"rank":8,"name":"Wazir Pur Depot","simple":4,"fatal":6,"total":10,"road":"Ring Road"},{"rank":9,"name":"Round About Mori Gate","simple":2,"fatal":6,"total":8,"road":"Hamilton Road"},{"rank":10,"name":"Gandhi Vihar Bus Stand","simple":11,"fatal":5,"total":16,"road":"Outer Ring Road"},{"rank":11,"name":"Anand Vihar lsbt","simple":11,"fatal":5,"total":16,"road":"Road No.56"},{"rank":12,"name":"Okhla Mandi","simple":6,"fatal":5,"total":11,"road":"Captain Gaud Marg"},{"rank":13,"name":"SgtNagar","simple":6,"fatal":5,"total":11,"road":"GTKRoad"},{"rank":14,"name":"Akshardham Mandir","simple":5,"fatal":5,"total":10,"road":"NH-24"},{"rank":15,"name":"Shalimar Bogh","simple":5,"fatal":5,"total":10,"road":"Ring Road"},{"rank":16,"name":"Metro Station Haider Pur","simple":5,"fatal":5,"total":10,"road":"Outer Ring Road"},{"rank":17,"name":"Loni Road Crossing","simple":5,"fatal":5,"total":10,"road":"Wazirabad Road"},{"rank":18,"name":"Metro Station Madipur","simple":4,"fatal":5,"total":9,"road":"Rohtak Road"},{"rank":19,"name":"Raja Harishchander Hospital","simple":2,"fatal":5,"total":7,"road":"OSI/DC Nore/a Road"},{"rank":20,"name":"Shamshan Ghat Punjabi Bogh","simple":2,"fatal":5,"total":7,"road":"Ring Road"},{"rank":21,"name":"Haryana Maitri Bhawan","simple":1,"fatal":5,"total":6,"road":"Road No43"},{"rank":22,"name":"Shastri Park/It Park","simple":20,"fatal":4,"total":24,"road":"G.T.Road"},{"rank":23,"name":"Rajouri Garden","simple":12,"fatal":4,"total":16,"road":"Ring Road"},{"rank":24,"name":"Swaroop Nagar","simple":10,"fatal":4,"total":14,"road":"GTKRoad"},{"rank":25,"name":"Modi Mill Flyover","simple":10,"fatal":4,"total":14,"road":"Outer Ring Road"},{"rank":26,"name":"Punjabi Bogh Chowk","simple":9,"fatal":4,"total":13,"road":"Ring Road"},{"rank":27,"name":"Metro Station Shivaji Park","simple":7,"fatal":4,"total":11,"road":"Rohtak Road"},{"rank":28,"name":"Kings Way Camp Chowk","simple":6,"fatal":4,"total":10,"road":"Ring Road"},{"rank":29,"name":"Round About Paharganj","simple":6,"fatal":4,"total":10,"road":"Rani Jhansi Road"},{"rank":30,"name":"West Enclave Red Light","simple":5,"fatal":4,"total":9,"road":"Outer Ring Road"},{"rank":31,"name":"Azadpur Sabzi Mandi","simple":5,"fatal":4,"total":9,"road":"GTKRoad"},{"rank":32,"name":"Ti/ak Nagar Flyover","simple":5,"fatal":4,"total":9,"road":"Najafgarh Road"},{"rank":33,"name":"Nathu Colony Chowk Nand Nagri","simple":4,"fatal":4,"total":8,"road":"Road No 68"},{"rank":34,"name":"Dabri Flyover","simple":3,"fatal":4,"total":7,"road":"Pankha Road"},{"rank":35,"name":"Saraswati Vihar Bus Stand","simple":3,"fatal":4,"total":7,"road":"Outer Ring Road"},{"rank":36,"name":"District Center Janakpuri","simple":3,"fatal":4,"total":7,"road":"Najafgarh Road"},{"rank":37,"name":"Nangli Poona","simple":3,"fatal":4,"total":7,"road":"GTKRoad"},{"rank":38,"name":"Cng Pumpl}ain Mandir NH-1","simple":2,"fatal":4,"total":6,"road":"GTKRoad"},{"rank":39,"name":"Toll Plaza Badarpur","simple":2,"fatal":4,"total":6,"road":"Mathura Road"},{"rank":40,"name":"Round About Seemapuri","simple":1,"fatal":4,"total":5,"road":"Road No 68"},{"rank":41,"name":"Peeragarhi Chowk","simple":13,"fatal":3,"total":16,"road":"Outer Ring Road"},{"rank":42,"name":"Khajoori Chowk","simple":11,"fatal":3,"total":14,"road":"Wazirabad Road"},{"rank":43,"name":"Madhuban Chowk","simple":11,"fatal":3,"total":14,"road":"Outer Ring Road"},{"rank":44,"name":"UdyogNagar","simple":10,"fatal":3,"total":13,"road":"Rohtak Road"},{"rank":45,"name":"Wazirabad","simple":10,"fatal":3,"total":13,"road":"Outer Ring Road"},{"rank":46,"name":"Mukundpur Chowk","simple":10,"fatal":3,"total":13,"road":"Outer Ring Road"},{"rank":47,"name":"Maya Puri Chowk","simple":9,"fatal":3,"total":12,"road":"Ring Road"},{"rank":48,"name":"Shani Mandir Nh-1","simple":9,"fatal":3,"total":12,"road":"GTKRoad"},{"rank":49,"name":"Ber Sarai Flyover","simple":9,"fatal":3,"total":12,"road":"Outer Ring Road"},{"rank":50,"name":"Sagarpur Bus Stand","simple":9,"fatal":3,"total":12,"road":"Pankha Road"},{"rank":51,"name":"Kanhiya Nagar Metro Station","simple":9,"fatal":3,"total":12,"road":"VIR Banda Bairagi Mr"},{"rank":52,"name":"Metro Station Welcome","simple":8,"fatal":3,"total":11,"road":"G.T.Road"},{"rank":53,"name":"Dtc Bus Depot Nand Nagri","simple":8,"fatal":3,"total":11,"road":"Wazirabad Road"},{"rank":54,"name":"Sai Baba Mandir Nh-1","simple":7,"fatal":3,"total":10,"road":"GTKRoad"},{"rank":55,"name":"Lado Sarai Crossing","simple":7,"fatal":3,"total":10,"road":"Mehrauli Badarpur Rd"},{"rank":56,"name":"Shaheen Bagh Road No-13a","simple":7,"fatal":3,"total":10,"road":"Road No 13a"},{"rank":57,"name":"Ti/ak Pu/ Dabri","simple":6,"fatal":3,"total":9,"road":"Pankha Road"},{"rank":58,"name":"Tikri Khurd Bus Stand","simple":6,"fatal":3,"total":9,"road":"GTKRoad"},{"rank":59,"name":"Kalkaji Mandir","simple":5,"fatal":3,"total":8,"road":"Outer Ring Road"},{"rank":60,"name":"Rajghat","simple":5,"fatal":3,"total":8,"road":"Ring Road"},{"rank":61,"name":"Deepali Chowk","simple":5,"fatal":3,"total":8,"road":"Outer Ring Road"},{"rank":62,"name":"Metro Station Paschim Vihar","simple":5,"fatal":3,"total":8,"road":"Rohtak Road"},{"rank":63,"name":"IT/ Dheerpur","simple":5,"fatal":3,"total":8,"road":"Outer Ring Road"},{"rank":64,"name":"Nigam Bodh Ghat","simple":4,"fatal":3,"total":7,"road":"Ring Road"},{"rank":65,"name":"Metro Station lnderlok","simple":4,"fatal":3,"total":7,"road":"VIR Banda Bairagi Mr"},{"rank":66,"name":"Keshopur T Point","simple":4,"fatal":3,"total":7,"road":"Outer Ring Road"},{"rank":67,"name":"Mundka","simple":4,"fatal":3,"total":7,"road":"Rohtak Road"},{"rank":68,"name":"Metro Station Ramesh Nagar","simple":4,"fatal":3,"total":7,"road":"Najafgarh Road"},{"rank":69,"name":"Rtr Flyover Vasant Vihar","simple":4,"fatal":3,"total":7,"road":"Outer Ring Road"},{"rank":70,"name":"OSI/DC Red Light NH-1","simple":4,"fatal":3,"total":7,"road":"GTKRoad"},{"rank":71,"name":"Adarsh Nagar","simple":4,"fatal":3,"total":7,"road":"GTKRoad"},{"rank":72,"name":"Arsd College Ring Road","simple":3,"fatal":3,"total":6,"road":"Ring Road"},{"rank":73,"name":"Sarai Kale Khan","simple":3,"fatal":3,"total":6,"road":"Ring Road"},{"rank":74,"name":"Round About Okh/a Estate","simple":3,"fatal":3,"total":6,"road":"Anand Mai Marg"},{"rank":75,"name":"Anand Vihar Railway Flyover","simple":3,"fatal":3,"total":6,"road":"Road No.56"},{"rank":76,"name":"Vijay Vihar Rohini","simple":3,"fatal":3,"total":6,"road":"Rithala Road"},{"rank":77,"name":"Delhi Cantt Flyover","simple":2,"fatal":3,"total":5,"road":"Jail Road"},{"rank":78,"name":"Shakarpur Red Light","simple":2,"fatal":3,"total":5,"road":"Yamuna Pusta Road"},{"rank":79,"name":"Geeta Colony Flyover","simple":2,"fatal":3,"total":5,"road":"Yamuna Pusta Road"},{"rank":80,"name":"Loha Mandi","simple":1,"fatal":3,"total":4,"road":"Girdhari Lal Marg"},{"rank":81,"name":"Siraspur","simple":1,"fatal":3,"total":4,"road":"GTKRoad"},{"rank":82,"name":"Janak Puri East","simple":1,"fatal":3,"total":4,"road":"Najafgarh Road"},{"rank":83,"name":"Mayur Vihar Extension","simple":1,"fatal":3,"total":4,"road":"Naida Link Road"},{"rank":84,"name":"Pu/ Mithai Spm Marg","simple":1,"fatal":3,"total":4,"road":"SPM Marg"},{"rank":85,"name":"Paper Market Gajipur","simple":1,"fatal":3,"total":4,"road":"Paper Market Road"},{"rank":86,"name":"Goy/a Village Najafgarh","simple":1,"fatal":3,"total":4,"road":"Goy/a Dairy Road"},{"rank":87,"name":"Near Haldi Ram Wazirpur","simple":0,"fatal":3,"total":3,"road":"Ring Road"},{"rank":88,"name":"Surya Nagar Red Light","simple":0,"fatal":3,"total":3,"road":"Road No.56"},{"rank":89,"name":"lg Indoor Stadium","simple":13,"fatal":2,"total":15,"road":"Ring Road"},{"rank":90,"name":"Seelampur T Point","simple":13,"fatal":2,"total":15,"road":"G.T.Road"},{"rank":91,"name":"Moti Bagh Flyover","simple":12,"fatal":2,"total":14,"road":"Ring Road"},{"rank":92,"name":"Ashram Chowk","simple":12,"fatal":2,"total":14,"road":"Ring Road"},{"rank":93,"name":"Shakarpur Chungi","simple":11,"fatal":2,"total":13,"road":"Vikas Marg"},{"rank":94,"name":"Dhaula Kuan","simple":10,"fatal":2,"total":12,"road":"Ring Road"},{"rank":95,"name":"Khaira More Najafgarh","simple":10,"fatal":2,"total":12,"road":"Najafgarh Dwarka Rd"},{"rank":96,"name":"Azadpur Chowk","simple":10,"fatal":2,"total":12,"road":"GTKRoad"},{"rank":97,"name":"Mahipalpur Flyover","simple":9,"fatal":2,"total":11,"road":"NH-8"},{"rank":98,"name":"Uttam Nagar","simple":8,"fatal":2,"total":10,"road":"Najafgarh Road"},{"rank":99,"name":"Shankar Vihar","simple":8,"fatal":2,"total":10,"road":"NH-8"},{"rank":100,"name":"Shanti Van","simple":8,"fatal":2,"total":10,"road":"Ring Road"},{"rank":101,"name":"Zakhira Flyover","simple":13,"fatal":1,"total":14,"road":"Rohtak Road"},{"rank":102,"name":"Subhash Nagar Metro Station","simple":11,"fatal":1,"total":12,"road":"Najafgarh Road"},{"rank":103,"name":"Under Pass Patparganj","simple":9,"fatal":1,"total":10,"road":"Patparganj Road"},{"rank":104,"name":"Rajoukari Flyover","simple":9,"fatal":1,"total":10,"road":"NH-8"},{"rank":105,"name":"Bara/ Khana Chowk","simple":9,"fatal":1,"total":10,"road":"Rani Jhansi Road"},{"rank":106,"name":"Moo/ Chand","simple":15,"fatal":0,"total":15,"road":"Ring Road"},{"rank":107,"name":"Outer Circle Cp Near Minto Road","simple":10,"fatal":0,"total":10,"road":"Outer Circle Cp"}];
+const ACCIDENT_ZONES = [{"rank":1,"name":"ISBT Kashmiri Gate","simple":12,"fatal":7,"total":19,"road":"Ring Road"},{"rank":2,"name":"Mukarba Chowk","simple":11,"fatal":7,"total":18,"road":"GTK Road"},{"rank":3,"name":"Libaspur Bus Stand","simple":11,"fatal":7,"total":18,"road":"GTK Road"},{"rank":4,"name":"Boulevard Road","simple":12,"fatal":6,"total":18,"road":"Kashmiri Gate Area"},{"rank":5,"name":"Britannia Chowk","simple":9,"fatal":6,"total":15,"road":"Ring Road"},{"rank":6,"name":"Burari Chowk","simple":8,"fatal":6,"total":14,"road":"Outer Ring Road"},{"rank":7,"name":"Bhalswa Chowk","simple":5,"fatal":6,"total":11,"road":"Outer Ring Road"},{"rank":8,"name":"Wazir Pur Depot","simple":4,"fatal":6,"total":10,"road":"Ring Road"},{"rank":9,"name":"Round About Mori Gate","simple":2,"fatal":6,"total":8,"road":"Hamilton Road"},{"rank":10,"name":"Gandhi Vihar Bus Stand","simple":11,"fatal":5,"total":16,"road":"Outer Ring Road"},{"rank":11,"name":"Anand Vihar ISBT","simple":11,"fatal":5,"total":16,"road":"Road No. 56"},{"rank":12,"name":"Okhla Mandi","simple":6,"fatal":5,"total":11,"road":"Captain Gaur Marg"},{"rank":13,"name":"SGT Nagar","simple":6,"fatal":5,"total":11,"road":"GTK Road"},{"rank":14,"name":"Akshardham Mandir","simple":5,"fatal":5,"total":10,"road":"NH-24"},{"rank":15,"name":"Shalimar Bagh","simple":5,"fatal":5,"total":10,"road":"Ring Road"},{"rank":16,"name":"Metro Station Haider Pur","simple":5,"fatal":5,"total":10,"road":"Outer Ring Road"},{"rank":17,"name":"Loni Road Crossing","simple":5,"fatal":5,"total":10,"road":"Wazirabad Road"},{"rank":18,"name":"Metro Station Madipur","simple":4,"fatal":5,"total":9,"road":"Rohtak Road"},{"rank":19,"name":"Raja Harishchander Hospital","simple":2,"fatal":5,"total":7,"road":"DSIIDC Narela Road"},{"rank":20,"name":"Shamshan Ghat Punjabi Bagh","simple":2,"fatal":5,"total":7,"road":"Ring Road"},{"rank":21,"name":"Haryana Maitri Bhawan","simple":1,"fatal":5,"total":6,"road":"Road No. 43"},{"rank":22,"name":"Shastri Park / IT Park","simple":20,"fatal":4,"total":24,"road":"G.T. Road"},{"rank":23,"name":"Rajouri Garden","simple":12,"fatal":4,"total":16,"road":"Ring Road"},{"rank":24,"name":"Swaroop Nagar","simple":10,"fatal":4,"total":14,"road":"GTK Road"},{"rank":25,"name":"Modi Mill Flyover","simple":10,"fatal":4,"total":14,"road":"Outer Ring Road"},{"rank":26,"name":"Punjabi Bagh Chowk","simple":9,"fatal":4,"total":13,"road":"Ring Road"},{"rank":27,"name":"Metro Station Shivaji Park","simple":7,"fatal":4,"total":11,"road":"Rohtak Road"},{"rank":28,"name":"Kingsway Camp Chowk","simple":6,"fatal":4,"total":10,"road":"Ring Road"},{"rank":29,"name":"Round About Paharganj","simple":6,"fatal":4,"total":10,"road":"Rani Jhansi Road"},{"rank":30,"name":"West Enclave Red Light","simple":5,"fatal":4,"total":9,"road":"Outer Ring Road"},{"rank":31,"name":"Azadpur Sabzi Mandi","simple":5,"fatal":4,"total":9,"road":"GTK Road"},{"rank":32,"name":"Tilak Nagar Flyover","simple":5,"fatal":4,"total":9,"road":"Najafgarh Road"},{"rank":33,"name":"Nathu Colony Chowk Nand Nagri","simple":4,"fatal":4,"total":8,"road":"Road No. 68"},{"rank":34,"name":"Dabri Flyover","simple":3,"fatal":4,"total":7,"road":"Pankha Road"},{"rank":35,"name":"Saraswati Vihar Bus Stand","simple":3,"fatal":4,"total":7,"road":"Outer Ring Road"},{"rank":36,"name":"District Center Janakpuri","simple":3,"fatal":4,"total":7,"road":"Najafgarh Road"},{"rank":37,"name":"Nangli Poona","simple":3,"fatal":4,"total":7,"road":"GTK Road"},{"rank":38,"name":"CNG Pump / Jain Mandir NH-1","simple":2,"fatal":4,"total":6,"road":"GTK Road"},{"rank":39,"name":"Toll Plaza Badarpur","simple":2,"fatal":4,"total":6,"road":"Mathura Road"},{"rank":40,"name":"Round About Seemapuri","simple":1,"fatal":4,"total":5,"road":"Road No. 68"},{"rank":41,"name":"Peeragarhi Chowk","simple":13,"fatal":3,"total":16,"road":"Outer Ring Road"},{"rank":42,"name":"Khajoori Chowk","simple":11,"fatal":3,"total":14,"road":"Wazirabad Road"},{"rank":43,"name":"Madhuban Chowk","simple":11,"fatal":3,"total":14,"road":"Outer Ring Road"},{"rank":44,"name":"Udyog Nagar","simple":10,"fatal":3,"total":13,"road":"Rohtak Road"},{"rank":45,"name":"Wazirabad","simple":10,"fatal":3,"total":13,"road":"Outer Ring Road"},{"rank":46,"name":"Mukundpur Chowk","simple":10,"fatal":3,"total":13,"road":"Outer Ring Road"},{"rank":47,"name":"Maya Puri Chowk","simple":9,"fatal":3,"total":12,"road":"Ring Road"},{"rank":48,"name":"Shani Mandir NH-1","simple":9,"fatal":3,"total":12,"road":"GTK Road"},{"rank":49,"name":"Ber Sarai Flyover","simple":9,"fatal":3,"total":12,"road":"Outer Ring Road"},{"rank":50,"name":"Sagarpur Bus Stand","simple":9,"fatal":3,"total":12,"road":"Pankha Road"},{"rank":51,"name":"Kanhiya Nagar Metro Station","simple":9,"fatal":3,"total":12,"road":"VIR Banda Bairagi Marg"},{"rank":52,"name":"Metro Station Welcome","simple":8,"fatal":3,"total":11,"road":"G.T. Road"},{"rank":53,"name":"DTC Bus Depot Nand Nagri","simple":8,"fatal":3,"total":11,"road":"Wazirabad Road"},{"rank":54,"name":"Sai Baba Mandir NH-1","simple":7,"fatal":3,"total":10,"road":"GTK Road"},{"rank":55,"name":"Lado Sarai Crossing","simple":7,"fatal":3,"total":10,"road":"Mehrauli Badarpur Rd"},{"rank":56,"name":"Shaheen Bagh Road No-13A","simple":7,"fatal":3,"total":10,"road":"Road No. 13A"},{"rank":57,"name":"Tilak Pul Dabri","simple":6,"fatal":3,"total":9,"road":"Pankha Road"},{"rank":58,"name":"Tikri Khurd Bus Stand","simple":6,"fatal":3,"total":9,"road":"GTK Road"},{"rank":59,"name":"Kalkaji Mandir","simple":5,"fatal":3,"total":8,"road":"Outer Ring Road"},{"rank":60,"name":"Rajghat","simple":5,"fatal":3,"total":8,"road":"Ring Road"},{"rank":61,"name":"Deepali Chowk","simple":5,"fatal":3,"total":8,"road":"Outer Ring Road"},{"rank":62,"name":"Metro Station Paschim Vihar","simple":5,"fatal":3,"total":8,"road":"Rohtak Road"},{"rank":63,"name":"ITI Dheerpur","simple":5,"fatal":3,"total":8,"road":"Outer Ring Road"},{"rank":64,"name":"Nigam Bodh Ghat","simple":4,"fatal":3,"total":7,"road":"Ring Road"},{"rank":65,"name":"Metro Station Inderlok","simple":4,"fatal":3,"total":7,"road":"VIR Banda Bairagi Marg"},{"rank":66,"name":"Keshopur T Point","simple":4,"fatal":3,"total":7,"road":"Outer Ring Road"},{"rank":67,"name":"Mundka","simple":4,"fatal":3,"total":7,"road":"Rohtak Road"},{"rank":68,"name":"Metro Station Ramesh Nagar","simple":4,"fatal":3,"total":7,"road":"Najafgarh Road"},{"rank":69,"name":"RTR Flyover Vasant Vihar","simple":4,"fatal":3,"total":7,"road":"Outer Ring Road"},{"rank":70,"name":"DSIIDC Red Light NH-1","simple":4,"fatal":3,"total":7,"road":"GTK Road"},{"rank":71,"name":"Adarsh Nagar","simple":4,"fatal":3,"total":7,"road":"GTK Road"},{"rank":72,"name":"ARSD College","simple":3,"fatal":3,"total":6,"road":"Ring Road"},{"rank":73,"name":"Sarai Kale Khan","simple":3,"fatal":3,"total":6,"road":"Ring Road"},{"rank":74,"name":"Round About Okhla Estate","simple":3,"fatal":3,"total":6,"road":"Anand Mai Marg"},{"rank":75,"name":"Anand Vihar Railway Flyover","simple":3,"fatal":3,"total":6,"road":"Road No. 56"},{"rank":76,"name":"Vijay Vihar Rohini","simple":3,"fatal":3,"total":6,"road":"Rithala Road"},{"rank":77,"name":"Delhi Cantt Flyover","simple":2,"fatal":3,"total":5,"road":"Jail Road"},{"rank":78,"name":"Shakarpur Red Light","simple":2,"fatal":3,"total":5,"road":"Yamuna Pusta Road"},{"rank":79,"name":"Geeta Colony Flyover","simple":2,"fatal":3,"total":5,"road":"Yamuna Pusta Road"},{"rank":80,"name":"Loha Mandi","simple":1,"fatal":3,"total":4,"road":"Girdhari Lal Marg"},{"rank":81,"name":"Siraspur","simple":1,"fatal":3,"total":4,"road":"GTK Road"},{"rank":82,"name":"Janak Puri East","simple":1,"fatal":3,"total":4,"road":"Najafgarh Road"},{"rank":83,"name":"Mayur Vihar Extension","simple":1,"fatal":3,"total":4,"road":"Noida Link Road"},{"rank":84,"name":"Pul Mithai","simple":1,"fatal":3,"total":4,"road":"SPM Marg"},{"rank":85,"name":"Paper Market Gajipur","simple":1,"fatal":3,"total":4,"road":"Paper Market Road"},{"rank":86,"name":"Goyla Village Najafgarh","simple":1,"fatal":3,"total":4,"road":"Goyla Dairy Road"},{"rank":87,"name":"Near Haldiram Wazirpur","simple":0,"fatal":3,"total":3,"road":"Ring Road"},{"rank":88,"name":"Surya Nagar Red Light","simple":0,"fatal":3,"total":3,"road":"Road No. 56"},{"rank":89,"name":"IG Indoor Stadium","simple":13,"fatal":2,"total":15,"road":"Ring Road"},{"rank":90,"name":"Seelampur T Point","simple":13,"fatal":2,"total":15,"road":"G.T. Road"},{"rank":91,"name":"Moti Bagh Flyover","simple":12,"fatal":2,"total":14,"road":"Ring Road"},{"rank":92,"name":"Ashram Chowk","simple":12,"fatal":2,"total":14,"road":"Ring Road"},{"rank":93,"name":"Shakarpur Chungi","simple":11,"fatal":2,"total":13,"road":"Vikas Marg"},{"rank":94,"name":"Dhaula Kuan","simple":10,"fatal":2,"total":12,"road":"Ring Road"},{"rank":95,"name":"Khaira More Najafgarh","simple":10,"fatal":2,"total":12,"road":"Najafgarh Dwarka Rd"},{"rank":96,"name":"Azadpur Chowk","simple":10,"fatal":2,"total":12,"road":"GTK Road"},{"rank":97,"name":"Mahipalpur Flyover","simple":9,"fatal":2,"total":11,"road":"NH-8"},{"rank":98,"name":"Uttam Nagar","simple":8,"fatal":2,"total":10,"road":"Najafgarh Road"},{"rank":99,"name":"Shankar Vihar","simple":8,"fatal":2,"total":10,"road":"NH-8"},{"rank":100,"name":"Shanti Van","simple":8,"fatal":2,"total":10,"road":"Ring Road"},{"rank":101,"name":"Zakhira Flyover","simple":13,"fatal":1,"total":14,"road":"Rohtak Road"},{"rank":102,"name":"Subhash Nagar Metro Station","simple":11,"fatal":1,"total":12,"road":"Najafgarh Road"},{"rank":103,"name":"Under Pass Patparganj","simple":9,"fatal":1,"total":10,"road":"Patparganj Road"},{"rank":104,"name":"Rajokari Flyover","simple":9,"fatal":1,"total":10,"road":"NH-8"},{"rank":105,"name":"Baraf Khana Chowk","simple":9,"fatal":1,"total":10,"road":"Rani Jhansi Road"},{"rank":106,"name":"Mool Chand","simple":15,"fatal":0,"total":15,"road":"Ring Road"},{"rank":107,"name":"Outer Circle CP Near Minto Road","simple":10,"fatal":0,"total":10,"road":"Outer Circle CP"}];
 const ACCIDENT_ZONES_MAPPED = [{"name":"ISBT Kashmiri Gate","road":"Ring Road","simple":12,"fatal":7,"total":19,"lat":28.6679,"lng":77.2284,"x":713.1,"y":406.8,"district":"North"},{"name":"Mukarba Chowk","road":"GTKRoad","simple":11,"fatal":7,"total":18,"lat":28.7373,"lng":77.1598,"x":605,"y":282.2,"district":"Outer North"},{"name":"Libaspur Bus Stand","road":"GTKRoad","simple":11,"fatal":7,"total":18,"lat":28.742,"lng":77.153,"x":594.2,"y":273.7,"district":"Outer North"},{"name":"","road":"Boulevard Road","simple":12,"fatal":6,"total":18,"lat":28.6651,"lng":77.221,"x":701.4,"y":411.8,"district":"North"},{"name":"Britannia Chowk","road":"Ring Road","simple":9,"fatal":6,"total":15,"lat":28.6946,"lng":77.1396,"x":573.1,"y":358.9,"district":"North-West"},{"name":"Burari Chowk","road":"Outer Ring Road","simple":8,"fatal":6,"total":14,"lat":28.74,"lng":77.195,"x":660.4,"y":277.3,"district":"North"},{"name":"Bhalswa Chowk","road":"Outer Ring Road","simple":5,"fatal":6,"total":11,"lat":28.736,"lng":77.17,"x":621,"y":284.5,"district":"North-West"},{"name":"Wazir Pur Depot","road":"Ring Road","simple":4,"fatal":6,"total":10,"lat":28.693,"lng":77.152,"x":592.7,"y":361.7,"district":"North-West"},{"name":"Round About Mori Gate","road":"Hamilton Road","simple":2,"fatal":6,"total":8,"lat":28.6635,"lng":77.2215,"x":702.2,"y":414.7,"district":"North"},{"name":"Gandhi Vihar Bus Stand","road":"Outer Ring Road","simple":11,"fatal":5,"total":16,"lat":28.718,"lng":77.206,"x":677.8,"y":316.8,"district":"North-West"},{"name":"Anand Vihar lsbt","road":"Road No.56","simple":11,"fatal":5,"total":16,"lat":28.6465,"lng":77.316,"x":851.1,"y":445.2,"district":"East"},{"name":"Okhla Mandi","road":"Captain Gaud Marg","simple":6,"fatal":5,"total":11,"lat":28.553,"lng":77.264,"x":769.2,"y":613.1,"district":"South-East"},{"name":"SgtNagar","road":"GTKRoad","simple":6,"fatal":5,"total":11,"lat":28.745,"lng":77.15,"x":589.5,"y":268.4,"district":"Outer North"},{"name":"Akshardham Mandir","road":"NH-24","simple":5,"fatal":5,"total":10,"lat":28.612,"lng":77.277,"x":789.7,"y":507.2,"district":"East"},{"name":"Shalimar Bogh","road":"Ring Road","simple":5,"fatal":5,"total":10,"lat":28.703,"lng":77.16,"x":605.3,"y":343.8,"district":"North-West"},{"name":"Metro Station Haider Pur","road":"Outer Ring Road","simple":5,"fatal":5,"total":10,"lat":28.7145,"lng":77.147,"x":584.8,"y":323.1,"district":"North-West"},{"name":"Loni Road Crossing","road":"Wazirabad Road","simple":5,"fatal":5,"total":10,"lat":28.705,"lng":77.288,"x":807,"y":340.2,"district":"North-East"},{"name":"Metro Station Madipur","road":"Rohtak Road","simple":4,"fatal":5,"total":9,"lat":28.679,"lng":77.118,"x":539.1,"y":386.9,"district":"West"},{"name":"Raja Harishchander Hospital","road":"OSI/DC Nore/a Road","simple":2,"fatal":5,"total":7,"lat":28.799,"lng":77.086,"x":488.7,"y":171.4,"district":"Outer North"},{"name":"Shamshan Ghat Punjabi Bogh","road":"Ring Road","simple":2,"fatal":5,"total":7,"lat":28.666,"lng":77.13,"x":558,"y":410.2,"district":"West"},{"name":"Haryana Maitri Bhawan","road":"Road No43","simple":1,"fatal":5,"total":6,"lat":28.692,"lng":77.152,"x":592.7,"y":363.5,"district":"North-West"},{"name":"Shastri Park/It Park","road":"G.T.Road","simple":20,"fatal":4,"total":24,"lat":28.6725,"lng":77.252,"x":750.3,"y":398.6,"district":"North-East"},{"name":"Rajouri Garden","road":"Ring Road","simple":12,"fatal":4,"total":16,"lat":28.649,"lng":77.123,"x":547,"y":440.8,"district":"West"},{"name":"Swaroop Nagar","road":"GTKRoad","simple":10,"fatal":4,"total":14,"lat":28.749,"lng":77.165,"x":613.2,"y":261.2,"district":"Outer North"},{"name":"Modi Mill Flyover","road":"Outer Ring Road","simple":10,"fatal":4,"total":14,"lat":28.552,"lng":77.265,"x":770.8,"y":614.9,"district":"South-East"},{"name":"Punjabi Bogh Chowk","road":"Ring Road","simple":9,"fatal":4,"total":13,"lat":28.672,"lng":77.132,"x":561.1,"y":399.4,"district":"West"},{"name":"Metro Station Shivaji Park","road":"Rohtak Road","simple":7,"fatal":4,"total":11,"lat":28.678,"lng":77.13,"x":558,"y":388.7,"district":"West"},{"name":"Kings Way Camp Chowk","road":"Ring Road","simple":6,"fatal":4,"total":10,"lat":28.698,"lng":77.2,"x":668.3,"y":352.8,"district":"North-West"},{"name":"Round About Paharganj","road":"Rani Jhansi Road","simple":6,"fatal":4,"total":10,"lat":28.644,"lng":77.21,"x":684.1,"y":449.7,"district":"Central"},{"name":"West Enclave Red Light","road":"Outer Ring Road","simple":5,"fatal":4,"total":9,"lat":28.685,"lng":77.098,"x":507.6,"y":376.1,"district":"Outer"},{"name":"Azadpur Sabzi Mandi","road":"GTKRoad","simple":5,"fatal":4,"total":9,"lat":28.712,"lng":77.174,"x":627.3,"y":327.6,"district":"North-West"},{"name":"Ti/ak Nagar Flyover","road":"Najafgarh Road","simple":5,"fatal":4,"total":9,"lat":28.636,"lng":77.096,"x":504.4,"y":464.1,"district":"West"},{"name":"Nathu Colony Chowk Nand Nagri","road":"Road No 68","simple":4,"fatal":4,"total":8,"lat":28.688,"lng":77.31,"x":841.7,"y":370.7,"district":"Shahdara"},{"name":"Dabri Flyover","road":"Pankha Road","simple":3,"fatal":4,"total":7,"lat":28.611,"lng":77.087,"x":490.2,"y":509,"district":"Dwarka"},{"name":"Saraswati Vihar Bus Stand","road":"Outer Ring Road","simple":3,"fatal":4,"total":7,"lat":28.696,"lng":77.123,"x":547,"y":356.3,"district":"Outer"},{"name":"District Center Janakpuri","road":"Najafgarh Road","simple":3,"fatal":4,"total":7,"lat":28.629,"lng":77.078,"x":476,"y":476.7,"district":"West"},{"name":"Nangli Poona","road":"GTKRoad","simple":3,"fatal":4,"total":7,"lat":28.761,"lng":77.143,"x":578.5,"y":239.6,"district":"Outer North"},{"name":"Cng Pumpl}ain Mandir NH-1","road":"GTKRoad","simple":2,"fatal":4,"total":6,"lat":28.74,"lng":77.158,"x":602.1,"y":277.3,"district":"Outer North"},{"name":"Toll Plaza Badarpur","road":"Mathura Road","simple":2,"fatal":4,"total":6,"lat":28.497,"lng":77.304,"x":832.2,"y":713.7,"district":"South-East"},{"name":"Round About Seemapuri","road":"Road No 68","simple":1,"fatal":4,"total":5,"lat":28.682,"lng":77.319,"x":855.9,"y":381.5,"district":"Shahdara"},{"name":"Peeragarhi Chowk","road":"Outer Ring Road","simple":13,"fatal":3,"total":16,"lat":28.6775,"lng":77.092,"x":498.1,"y":389.6,"district":"Outer"},{"name":"Khajoori Chowk","road":"Wazirabad Road","simple":11,"fatal":3,"total":14,"lat":28.712,"lng":77.262,"x":766,"y":327.6,"district":"North-East"},{"name":"Madhuban Chowk","road":"Outer Ring Road","simple":11,"fatal":3,"total":14,"lat":28.704,"lng":77.122,"x":545.4,"y":342,"district":"Rohini"},{"name":"UdyogNagar","road":"Rohtak Road","simple":10,"fatal":3,"total":13,"lat":28.682,"lng":77.08,"x":479.2,"y":381.5,"district":"Outer"},{"name":"Wazirabad","road":"Outer Ring Road","simple":10,"fatal":3,"total":13,"lat":28.711,"lng":77.227,"x":710.9,"y":329.4,"district":"North"},{"name":"Mukundpur Chowk","road":"Outer Ring Road","simple":10,"fatal":3,"total":13,"lat":28.73,"lng":77.185,"x":644.7,"y":295.3,"district":"North-West"},{"name":"Maya Puri Chowk","road":"Ring Road","simple":9,"fatal":3,"total":12,"lat":28.629,"lng":77.125,"x":550.1,"y":476.7,"district":"West"},{"name":"Shani Mandir Nh-1","road":"GTKRoad","simple":9,"fatal":3,"total":12,"lat":28.738,"lng":77.16,"x":605.3,"y":280.9,"district":"Outer North"},{"name":"Ber Sarai Flyover","road":"Outer Ring Road","simple":9,"fatal":3,"total":12,"lat":28.539,"lng":77.182,"x":639.9,"y":638.3,"district":"South-West"},{"name":"Sagarpur Bus Stand","road":"Pankha Road","simple":9,"fatal":3,"total":12,"lat":28.599,"lng":77.088,"x":491.8,"y":530.5,"district":"South-West"},{"name":"Kanhiya Nagar Metro Station","road":"VIR Banda Bairagi Mr","simple":9,"fatal":3,"total":12,"lat":28.682,"lng":77.165,"x":613.2,"y":381.5,"district":"North-West"},{"name":"Metro Station Welcome","road":"G.T.Road","simple":8,"fatal":3,"total":11,"lat":28.672,"lng":77.277,"x":789.7,"y":399.4,"district":"North-East"},{"name":"Dtc Bus Depot Nand Nagri","road":"Wazirabad Road","simple":8,"fatal":3,"total":11,"lat":28.696,"lng":77.315,"x":849.6,"y":356.3,"district":"North-East"},{"name":"Sai Baba Mandir Nh-1","road":"GTKRoad","simple":7,"fatal":3,"total":10,"lat":28.741,"lng":77.157,"x":600.5,"y":275.5,"district":"Outer North"},{"name":"Lado Sarai Crossing","road":"Mehrauli Badarpur Rd","simple":7,"fatal":3,"total":10,"lat":28.524,"lng":77.195,"x":660.4,"y":665.2,"district":"South"},{"name":"Shaheen Bagh Road No-13a","road":"Road No 13a","simple":7,"fatal":3,"total":10,"lat":28.546,"lng":77.301,"x":827.5,"y":625.7,"district":"South-East"},{"name":"Ti/ak Pu/ Dabri","road":"Pankha Road","simple":6,"fatal":3,"total":9,"lat":28.608,"lng":77.088,"x":491.8,"y":514.4,"district":"South-West"},{"name":"Tikri Khurd Bus Stand","road":"GTKRoad","simple":6,"fatal":3,"total":9,"lat":28.818,"lng":77.121,"x":543.8,"y":137.3,"district":"Outer North"},{"name":"Kalkaji Mandir","road":"Outer Ring Road","simple":5,"fatal":3,"total":8,"lat":28.549,"lng":77.259,"x":761.3,"y":620.3,"district":"South-East"},{"name":"Rajghat","road":"Ring Road","simple":5,"fatal":3,"total":8,"lat":28.64,"lng":77.247,"x":742.4,"y":456.9,"district":"Central"},{"name":"Deepali Chowk","road":"Outer Ring Road","simple":5,"fatal":3,"total":8,"lat":28.698,"lng":77.121,"x":543.8,"y":352.8,"district":"Outer"},{"name":"Metro Station Paschim Vihar","road":"Rohtak Road","simple":5,"fatal":3,"total":8,"lat":28.679,"lng":77.106,"x":520.2,"y":386.9,"district":"Outer"},{"name":"IT/ Dheerpur","road":"Outer Ring Road","simple":5,"fatal":3,"total":8,"lat":28.716,"lng":77.197,"x":663.6,"y":320.4,"district":"North-West"},{"name":"Nigam Bodh Ghat","road":"Ring Road","simple":4,"fatal":3,"total":7,"lat":28.665,"lng":77.234,"x":721.9,"y":412,"district":"North"},{"name":"Metro Station lnderlok","road":"VIR Banda Bairagi Mr","simple":4,"fatal":3,"total":7,"lat":28.673,"lng":77.17,"x":621,"y":397.7,"district":"North"},{"name":"Keshopur T Point","road":"Outer Ring Road","simple":4,"fatal":3,"total":7,"lat":28.643,"lng":77.082,"x":482.3,"y":451.5,"district":"West"},{"name":"Mundka","road":"Rohtak Road","simple":4,"fatal":3,"total":7,"lat":28.683,"lng":77.026,"x":394.1,"y":379.7,"district":"Outer"},{"name":"Metro Station Ramesh Nagar","road":"Najafgarh Road","simple":4,"fatal":3,"total":7,"lat":28.652,"lng":77.131,"x":559.6,"y":435.4,"district":"West"},{"name":"Rtr Flyover Vasant Vihar","road":"Outer Ring Road","simple":4,"fatal":3,"total":7,"lat":28.558,"lng":77.16,"x":605.3,"y":604.2,"district":"South-West"},{"name":"OSI/DC Red Light NH-1","road":"GTKRoad","simple":4,"fatal":3,"total":7,"lat":28.751,"lng":77.151,"x":591.1,"y":257.6,"district":"Outer North"},{"name":"Adarsh Nagar","road":"GTKRoad","simple":4,"fatal":3,"total":7,"lat":28.716,"lng":77.172,"x":624.2,"y":320.4,"district":"North-West"},{"name":"Arsd College Ring Road","road":"Ring Road","simple":3,"fatal":3,"total":6,"lat":28.582,"lng":77.163,"x":610,"y":561.1,"district":"South-West"},{"name":"Sarai Kale Khan","road":"Ring Road","simple":3,"fatal":3,"total":6,"lat":28.587,"lng":77.261,"x":764.5,"y":552.1,"district":"South-East"},{"name":"Round About Okh/a Estate","road":"Anand Mai Marg","simple":3,"fatal":3,"total":6,"lat":28.536,"lng":77.275,"x":786.5,"y":643.7,"district":"South-East"},{"name":"Anand Vihar Railway Flyover","road":"Road No.56","simple":3,"fatal":3,"total":6,"lat":28.648,"lng":77.315,"x":849.6,"y":442.5,"district":"East"},{"name":"Vijay Vihar Rohini","road":"Rithala Road","simple":3,"fatal":3,"total":6,"lat":28.729,"lng":77.098,"x":507.6,"y":297.1,"district":"Outer North"},{"name":"Delhi Cantt Flyover","road":"Jail Road","simple":2,"fatal":3,"total":5,"lat":28.599,"lng":77.115,"x":534.4,"y":530.5,"district":"South-West"},{"name":"Shakarpur Red Light","road":"Yamuna Pusta Road","simple":2,"fatal":3,"total":5,"lat":28.628,"lng":77.279,"x":792.8,"y":478.5,"district":"East"},{"name":"Geeta Colony Flyover","road":"Yamuna Pusta Road","simple":2,"fatal":3,"total":5,"lat":28.645,"lng":77.26,"x":762.9,"y":447.9,"district":"Central"},{"name":"Loha Mandi","road":"Girdhari Lal Marg","simple":1,"fatal":3,"total":4,"lat":28.636,"lng":77.135,"x":565.9,"y":464.1,"district":"West"},{"name":"Siraspur","road":"GTKRoad","simple":1,"fatal":3,"total":4,"lat":28.75,"lng":77.142,"x":576.9,"y":259.4,"district":"Outer North"},{"name":"Janak Puri East","road":"Najafgarh Road","simple":1,"fatal":3,"total":4,"lat":28.627,"lng":77.086,"x":488.7,"y":480.3,"district":"West"},{"name":"Mayur Vihar Extension","road":"Naida Link Road","simple":1,"fatal":3,"total":4,"lat":28.594,"lng":77.294,"x":816.5,"y":539.5,"district":"East"},{"name":"Pu/ Mithai Spm Marg","road":"SPM Marg","simple":1,"fatal":3,"total":4,"lat":28.66,"lng":77.215,"x":692,"y":421,"district":"North"},{"name":"Paper Market Gajipur","road":"Paper Market Road","simple":1,"fatal":3,"total":4,"lat":28.631,"lng":77.319,"x":855.9,"y":473.1,"district":"East"},{"name":"Goy/a Village Najafgarh","road":"Goy/a Dairy Road","simple":1,"fatal":3,"total":4,"lat":28.587,"lng":76.994,"x":343.7,"y":552.1,"district":"Dwarka"},{"name":"Near Haldi Ram Wazirpur","road":"Ring Road","simple":0,"fatal":3,"total":3,"lat":28.691,"lng":77.15,"x":589.5,"y":365.3,"district":"North-West"},{"name":"lg Indoor Stadium","road":"Ring Road","simple":13,"fatal":2,"total":15,"lat":28.63,"lng":77.249,"x":745.5,"y":474.9,"district":"Central"},{"name":"Moti Bagh Flyover","road":"Ring Road","simple":12,"fatal":2,"total":14,"lat":28.585,"lng":77.171,"x":622.6,"y":555.7,"district":"South-West"},{"name":"Ashram Chowk","road":"Ring Road","simple":12,"fatal":2,"total":14,"lat":28.572,"lng":77.256,"x":756.6,"y":579,"district":"South-East"},{"name":"Shakarpur Chungi","road":"Vikas Marg","simple":11,"fatal":2,"total":13,"lat":28.631,"lng":77.279,"x":792.8,"y":473.1,"district":"East"},{"name":"Dhaula Kuan","road":"Ring Road","simple":10,"fatal":2,"total":12,"lat":28.592,"lng":77.162,"x":608.4,"y":543.1,"district":"South-West"},{"name":"Khaira More Najafgarh","road":"Najafgarh Dwarka Rd","simple":10,"fatal":2,"total":12,"lat":28.608,"lng":76.98,"x":321.6,"y":514.4,"district":"Dwarka"},{"name":"Azadpur Chowk","road":"GTKRoad","simple":10,"fatal":2,"total":12,"lat":28.711,"lng":77.175,"x":628.9,"y":329.4,"district":"North-West"},{"name":"Mahipalpur Flyover","road":"NH-8","simple":9,"fatal":2,"total":11,"lat":28.548,"lng":77.131,"x":559.6,"y":622.1,"district":"South-West"},{"name":"Uttam Nagar","road":"Najafgarh Road","simple":8,"fatal":2,"total":10,"lat":28.621,"lng":77.065,"x":455.6,"y":491,"district":"Dwarka"},{"name":"Shankar Vihar","road":"NH-8","simple":8,"fatal":2,"total":10,"lat":28.558,"lng":77.145,"x":581.6,"y":604.2,"district":"South-West"},{"name":"Shanti Van","road":"Ring Road","simple":8,"fatal":2,"total":10,"lat":28.647,"lng":77.247,"x":742.4,"y":444.3,"district":"Central"},{"name":"Zakhira Flyover","road":"Rohtak Road","simple":13,"fatal":1,"total":14,"lat":28.665,"lng":77.159,"x":603.7,"y":412,"district":"West"},{"name":"Subhash Nagar Metro Station","road":"Najafgarh Road","simple":11,"fatal":1,"total":12,"lat":28.64,"lng":77.112,"x":529.6,"y":456.9,"district":"West"},{"name":"Under Pass Patparganj","road":"Patparganj Road","simple":9,"fatal":1,"total":10,"lat":28.625,"lng":77.296,"x":819.6,"y":483.9,"district":"East"},{"name":"Rajoukari Flyover","road":"NH-8","simple":9,"fatal":1,"total":10,"lat":28.52,"lng":77.106,"x":520.2,"y":672.4,"district":"South-West"},{"name":"Bara/ Khana Chowk","road":"Rani Jhansi Road","simple":9,"fatal":1,"total":10,"lat":28.663,"lng":77.206,"x":677.8,"y":415.6,"district":"North"},{"name":"Moo/ Chand","road":"Ring Road","simple":15,"fatal":0,"total":15,"lat":28.564,"lng":77.234,"x":721.9,"y":593.4,"district":"South-East"},{"name":"Outer Circle Cp Near Minto Road","road":"Outer Circle Cp","simple":10,"fatal":0,"total":10,"lat":28.634,"lng":77.221,"x":701.4,"y":467.7,"district":"New Delhi"}];
 
 const METRICS = [
@@ -473,6 +479,29 @@ function rustScale(t) {
 }
 function fmtNum(n) { return n == null ? '—' : n.toLocaleString('en-IN'); }
 
+// Renders canvas charts at native device pixel density instead of stretching a fixed-resolution
+// buffer via CSS, which is what made them blurry on Retina/high-DPI screens. Returns null when
+// the canvas is currently hidden (e.g. an inactive road-safety tab) — clientWidth is 0 there, and
+// drawing into a 0-width buffer would just waste a frame, so callers should bail out on null.
+function setupHighDPICanvas(canvas, aspectRatio) {
+  const cssWidth = canvas.clientWidth;
+  if (!cssWidth) return null;
+  const cssHeight = Math.round(cssWidth * aspectRatio);
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(cssWidth * dpr);
+  canvas.height = Math.round(cssHeight * dpr);
+  canvas.style.height = cssHeight + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.scale(dpr, dpr);
+  return { ctx, W: cssWidth, H: cssHeight };
+}
+
+function debounce(fn, ms) {
+  let t;
+  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
+
 function currentMetric() { return METRICS.find(m => m.key === activeMetric); }
 
 // A metric with a prevKey has three years on record — 2022, 2023 (its canonical, unsuffixed key)
@@ -501,7 +530,7 @@ function yearSuffix(m) {
 
 function buildMetricTabs() {
   const el = document.getElementById('metricTabs');
-  el.innerHTML = METRICS.map(m => '<button class="metric-tab' + (m.key===activeMetric?' active':'') + '" data-key="' + m.key + '">' + m.label + '</button>').join('');
+  el.innerHTML = METRICS.map(m => '<button class="metric-tab' + (m.key===activeMetric?' active':'') + '" data-key="' + m.key + '" aria-pressed="' + (m.key===activeMetric) + '">' + m.label + '</button>').join('');
   el.querySelectorAll('.metric-tab').forEach(btn => {
     btn.addEventListener('click', () => { activeMetric = btn.dataset.key; render(); });
   });
@@ -514,7 +543,7 @@ function buildYearToggle() {
   if (!m.prevKey) { el.style.display = 'none'; return; }
   el.style.display = '';
   const opts = [['2022', '2022'], ['2023', '2023'], ['2024', '2024']];
-  el.innerHTML = opts.map(([val, label]) => '<button class="metric-tab' + (activeYear===val?' active':'') + '" data-val="' + val + '">' + label + '</button>').join('');
+  el.innerHTML = opts.map(([val, label]) => '<button class="metric-tab' + (activeYear===val?' active':'') + '" data-val="' + val + '" aria-pressed="' + (activeYear===val) + '">' + label + '</button>').join('');
   el.querySelectorAll('.metric-tab').forEach(btn => {
     btn.addEventListener('click', () => { activeYear = btn.dataset.val; render(); });
   });
@@ -526,19 +555,39 @@ function currentDomain() {
   return [Math.min(...vals), Math.max(...vals)];
 }
 
+// Rank-based (percentile) scale instead of linear min-max: a district's color depends on how
+// many other districts it beats, not its raw distance from the extremes. One outlier district
+// (e.g. 20,000 thefts against a field mostly under 2,000) would otherwise squash everyone else
+// into the bottom of the color range under a linear scale, hiding real variance among the rest.
+function percentileScale(values) {
+  const sorted = [...values].sort((a, b) => a - b);
+  const n = sorted.length;
+  return v => {
+    if (n <= 1) return 0.5;
+    const first = sorted.indexOf(v);
+    const last = sorted.length - 1 - [...sorted].reverse().indexOf(v);
+    return ((first + last) / 2) / (n - 1);
+  };
+}
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function tt(title, body) { return ' data-tt-title="' + esc(title) + '" data-tt-body="' + esc(body || '') + '"'; }
+
 function renderMap() {
   const svg = document.getElementById('map');
   const m = currentMetric();
   const [lo, hi] = currentDomain();
+  const scale = percentileScale(DATA.map(d => metricValue(d, m)).filter(v => v != null));
   const parts = ['<defs><pattern id="hatch" width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><line x1="0" y1="0" x2="0" y2="7" stroke="var(--label-stroke)" stroke-width="2.5" opacity=".35"></line></pattern></defs>'];
   DATA.forEach(d => {
     const v = metricValue(d, m);
     // A null value (no data for this district on this metric) is NOT the same as the lowest
     // real value — render it as a flat neutral instead of the rustScale's low end, which would
     // misleadingly read as "least crime here" for a district that simply has no reported figure.
-    const fill = v == null ? 'var(--map-nodata-stripe)' : rustScale(hi === lo ? .5 : (v - lo) / (hi - lo));
+    const fill = v == null ? 'var(--map-nodata-stripe)' : rustScale(scale(v));
     const sel = selected === d.name ? ' style="stroke:var(--night);stroke-width:2.4;"' : '';
-    parts.push('<path class="district" data-name="' + d.name + '" d="' + d.path + '" fill="' + fill + '"' + sel + '></path>');
+    const body = v == null ? 'No data for this metric' : m.short + ': ' + fmtNum(v);
+    parts.push('<path class="district" data-name="' + d.name + '" d="' + d.path + '" fill="' + fill + '"' + sel + tt(d.name, body) + '></path>');
   });
   DATA.forEach(d => {
     if (metricValue(d, m) != null) return;
@@ -552,23 +601,23 @@ function renderMap() {
   }
   // IGI Airport is its own police jurisdiction, not one of the 15 districts this dataset covers —
   // marked explicitly instead of left as an unexplained gap in South-West's territory.
-  parts.push('<path class="airport-shape" d="' + AIRPORT_SHAPE.path + '"><title>IGI Airport — separate police jurisdiction, no crime data in this dataset</title></path>');
+  parts.push('<path class="airport-shape" d="' + AIRPORT_SHAPE.path + '"' + tt('IGI Airport', 'Separate police jurisdiction — no crime data in this dataset') + '></path>');
   parts.push('<text class="airport-label" x="' + AIRPORT_SHAPE.cx + '" y="' + AIRPORT_SHAPE.cy + '">✈ Airport</text>');
   // District center marker — a ring-and-dot symbol at each district's polygon centroid,
   // the standard cartographic convention for a capital/administrative center. This is the
   // geometric centroid of the (simplified) district boundary, not a specific DCP office
   // address — labeled that way below rather than implying survey-grade HQ precision.
   DATA.forEach(d => {
-    parts.push('<circle class="district-center-ring" cx="' + d.cx + '" cy="' + d.cy + '" r="5.5"><title>' + d.name + ' district — approximate center</title></circle>');
+    parts.push('<circle class="district-center-ring" cx="' + d.cx + '" cy="' + d.cy + '" r="5.5"' + tt(d.name, 'Approximate district center (polygon centroid)') + '></circle>');
     parts.push('<circle class="district-center-dot" cx="' + d.cx + '" cy="' + d.cy + '" r="2"></circle>');
     parts.push('<text class="district-label" x="' + d.cx + '" y="' + (d.cy + 17) + '">' + d.name + '</text>');
   });
   if (showPolice) {
     POLICE_MARKERS.posts.forEach(([x,y,name]) => {
-      parts.push('<circle class="police-marker post" cx="' + x + '" cy="' + y + '" r="3.2"><title>' + name + '</title></circle>');
+      parts.push('<circle class="police-marker post" cx="' + x + '" cy="' + y + '" r="3.2"' + tt(name, 'Police post / chowki / outpost') + '></circle>');
     });
     POLICE_MARKERS.stations.forEach(([x,y,name]) => {
-      parts.push('<circle class="police-marker station" cx="' + x + '" cy="' + y + '" r="4.2"><title>' + name + '</title></circle>');
+      parts.push('<circle class="police-marker station" cx="' + x + '" cy="' + y + '" r="4.2"' + tt(name, 'Police station') + '></circle>');
     });
   }
   if (showZones) {
@@ -579,13 +628,10 @@ function renderMap() {
       const t = Math.max(0, Math.min(1, (z.fatal - 1) / 6));
       const size = 4.5 + t * 3.5;
       const opacity = 0.55 + t * 0.45;
-      parts.push('<path class="zone-marker" style="opacity:' + opacity.toFixed(2) + '" d="M' + x + ',' + (y-size) + ' L' + (x+size*0.87) + ',' + (y+size*0.67) + ' L' + (x-size*0.87) + ',' + (y+size*0.67) + ' Z"><title>' + z.name + ' (' + z.road + ') — ' + z.district + ': ' + z.fatal + ' fatal, ' + z.total + ' total crashes, 2023</title></path>');
+      parts.push('<path class="zone-marker" style="opacity:' + opacity.toFixed(2) + '" d="M' + x + ',' + (y-size) + ' L' + (x+size*0.87) + ',' + (y+size*0.67) + ' L' + (x-size*0.87) + ',' + (y+size*0.67) + ' Z"' + tt(z.name + ' (' + z.road + ')', z.district + ' · ' + z.fatal + ' fatal, ' + z.total + ' total crashes, 2023') + '></path>');
     });
   }
   svg.innerHTML = parts.join('');
-  svg.querySelectorAll('path.district').forEach(p => {
-    p.addEventListener('click', () => { selected = p.dataset.name; render(); });
-  });
 
   document.getElementById('legendLabel').textContent = yearLabel(m);
   document.getElementById('legendMin').textContent = fmtNum(lo);
@@ -597,6 +643,7 @@ function renderList() {
   const m = currentMetric();
   document.getElementById('listSub').textContent = 'Districts by ' + m.short + ', ' + yearSuffix(m);
   const [lo, hi] = currentDomain();
+  const scale = percentileScale(DATA.map(d => metricValue(d, m)).filter(v => v != null));
   const sorted = [...DATA].sort((a,b) => (metricValue(b,m)??-Infinity) - (metricValue(a,m)??-Infinity));
   const el = document.getElementById('rankList');
   el.innerHTML = sorted.map((d, i) => {
@@ -604,7 +651,7 @@ function renderList() {
     // Floor at 3% so the district with the lowest real value still shows a visible sliver
     // instead of a 0-width bar that reads as "no data."
     const pct = v == null ? 0 : Math.max(3, (hi===lo?100:(v-lo)/(hi-lo)*100));
-    const color = v == null ? 'var(--map-nodata-stripe)' : rustScale(hi===lo?.5:(v-lo)/(hi-lo));
+    const color = v == null ? 'var(--map-nodata-stripe)' : rustScale(scale(v));
     const valLabel = fmtNum(v);
     return '<div class="rank-row' + (selected===d.name?' selected':'') + '" data-name="' + d.name + '">' +
       '<span class="rank-num">' + (i+1) + '</span>' +
@@ -613,9 +660,6 @@ function renderList() {
       '<div class="rank-bar-track"><div class="rank-bar-fill" style="width:' + pct + '%;background:' + color + ';"></div></div>' +
     '</div>';
   }).join('');
-  el.querySelectorAll('.rank-row').forEach(r => {
-    r.addEventListener('click', () => { selected = r.dataset.name; render(); });
-  });
 }
 
 function rankOf(d, key) {
@@ -804,12 +848,12 @@ function pearson(xs, ys) {
 
 function buildScatterTabs() {
   const el = document.getElementById('scatterTabs');
-  el.innerHTML = INFRA.map(inf => '<button class="metric-tab' + (inf.key===scatterType?' active':'') + '" data-key="' + inf.key + '">' + inf.label + '</button>').join('');
+  el.innerHTML = INFRA.map(inf => '<button class="metric-tab' + (inf.key===scatterType?' active':'') + '" data-key="' + inf.key + '" aria-pressed="' + (inf.key===scatterType) + '">' + inf.label + '</button>').join('');
   el.querySelectorAll('.metric-tab').forEach(btn => {
     btn.addEventListener('click', () => { scatterType = btn.dataset.key; renderScatter(); });
   });
   const yEl = document.getElementById('scatterYTabs');
-  yEl.innerHTML = METRICS.map(m => '<button class="metric-tab' + (m.key===scatterYMetric?' active':'') + '" data-key="' + m.key + '">' + m.label + '</button>').join('');
+  yEl.innerHTML = METRICS.map(m => '<button class="metric-tab' + (m.key===scatterYMetric?' active':'') + '" data-key="' + m.key + '" aria-pressed="' + (m.key===scatterYMetric) + '">' + m.label + '</button>').join('');
   yEl.querySelectorAll('.metric-tab').forEach(btn => {
     btn.addEventListener('click', () => { scatterYMetric = btn.dataset.key; renderScatter(); });
   });
@@ -838,9 +882,11 @@ function renderScatter() {
   document.getElementById('scatterRead').textContent = 'This is ' + strength + ' relationship: ' + direction + ' across these ' + pts.length + ' districts.' + extra;
 
   const canvas = document.getElementById('scatterCanvas');
-  const ctx = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
-  const PAD = { l: 55, r: 20, t: 20, b: 40 };
+  const setup = setupHighDPICanvas(canvas, 380/640);
+  if (!setup) return;
+  const { ctx, W, H } = setup;
+  const MARKER_R = 5;
+  const PAD = { l: 55, r: 20 + MARKER_R, t: 20 + MARKER_R, b: 40 };
   ctx.clearRect(0,0,W,H);
 
   const xMax = Math.max(...xs, 0) * 1.1 || 1, yMax = Math.max(...ys, 0) * 1.1 || 1;
@@ -885,7 +931,7 @@ function renderScatter() {
   // points + labels
   ctx.fillStyle = amber;
   pts.forEach(p => {
-    ctx.beginPath(); ctx.arc(px(p.x), py(p.y), 5, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(px(p.x), py(p.y), MARKER_R, 0, Math.PI*2); ctx.fill();
     ctx.fillStyle = text; ctx.font = '10px -apple-system, sans-serif';
     ctx.fillText(p.name, px(p.x)+8, py(p.y)+3);
     ctx.fillStyle = amber;
@@ -906,8 +952,9 @@ function renderTrends() {
   document.getElementById('trendsRead').textContent = 'Both crashes and fatalities fell sharply through 2020 (the COVID lockdown year, ' + minYear.year + ' was the low point at ' + fmtNum(minYear.fatalities) + ' deaths) and have partly rebounded since — 2023 fatalities are still ' + Math.round(((last.fatalities - minYear.fatalities)/minYear.fatalities)*100) + '% above that low.';
 
   const canvas = document.getElementById('trendsCanvas');
-  const ctx = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
+  const setup = setupHighDPICanvas(canvas, 320/640);
+  if (!setup) return;
+  const { ctx, W, H } = setup;
   const PAD = { l: 45, r: 100, t: 20, b: 30 };
   ctx.clearRect(0,0,W,H);
 
@@ -978,8 +1025,9 @@ function renderVictimsByMode() {
     { key: 'busPassenger', label: 'Bus passenger', color: '#7c3aed' },
   ];
   const canvas = document.getElementById('victimsCanvas');
-  const ctx = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
+  const setup = setupHighDPICanvas(canvas, 320/640);
+  if (!setup) return;
+  const { ctx, W, H } = setup;
   const PAD = { l: 45, r: 110, t: 20, b: 30 };
   ctx.clearRect(0,0,W,H);
 
@@ -1107,6 +1155,61 @@ document.getElementById('zonesToggle').addEventListener('click', function(){
   this.classList.toggle('on', showZones);
   renderMap();
 });
+
+// Delegated map interaction — one listener each instead of one per district/marker, since
+// renderMap() replaces the SVG's entire innerHTML on every render (metric switch, year toggle,
+// selection change, ...) and per-element listeners would just be discarded and re-added every
+// time, generating GC churn for no benefit.
+const mapSvg = document.getElementById('map');
+const mapStage = document.querySelector('.map-stage');
+const mapTooltip = document.getElementById('mapTooltip');
+
+mapSvg.addEventListener('click', (e) => {
+  const path = e.target.closest('.district');
+  // Clicking the already-selected district, or empty map background, clears the selection
+  // and falls back to the default district view rather than staying stuck on one district.
+  selected = path ? (selected === path.dataset.name ? null : path.dataset.name) : null;
+  render();
+});
+
+document.getElementById('rankList').addEventListener('click', (e) => {
+  const row = e.target.closest('.rank-row');
+  if (!row) return;
+  selected = selected === row.dataset.name ? null : row.dataset.name;
+  render();
+});
+
+// Custom tooltip: instant and stylable, unlike SVG <title> which is OS-rendered with a 1-2s
+// hover delay and no CSS control.
+mapSvg.addEventListener('mousemove', (e) => {
+  const el = e.target.closest('[data-tt-title]');
+  if (!el) { mapTooltip.classList.remove('on'); return; }
+  const stageRect = mapStage.getBoundingClientRect();
+  mapTooltip.style.left = (e.clientX - stageRect.left) + 'px';
+  mapTooltip.style.top = (e.clientY - stageRect.top) + 'px';
+  mapTooltip.innerHTML = '<b>' + el.dataset.ttTitle + '</b>' + (el.dataset.ttBody || '');
+  mapTooltip.classList.add('on');
+});
+mapSvg.addEventListener('mouseleave', () => mapTooltip.classList.remove('on'));
+
+// Delegated: one listener on the tab strip rather than one per button, since renderRoadSafetyTabs()
+// rebuilds the buttons via innerHTML on every switch.
+document.getElementById('roadSafetyTabs').addEventListener('click', (e) => {
+  const btn = e.target.closest('.metric-tab');
+  if (!btn) return;
+  activeRoadSafetyTab = btn.dataset.key;
+  renderRoadSafetyTabs();
+  // The canvas in the tab just switched to was hidden (0 width) on its last render — redraw now
+  // that it's visible so it isn't stuck blank.
+  if (activeRoadSafetyTab === 'trends') renderTrends();
+  if (activeRoadSafetyTab === 'victims') renderVictimsByMode();
+});
+
+window.addEventListener('resize', debounce(() => {
+  renderScatter();
+  renderTrends();
+  renderVictimsByMode();
+}, 200));
 
 // ── DOWNLOAD DATA ──
 // derive fields are computed (not a raw DATA property) — mainly the coverage-flag columns,
@@ -1462,17 +1565,8 @@ const ROAD_SAFETY_TABS = [
 let activeRoadSafetyTab = 'trends';
 function renderRoadSafetyTabs() {
   document.getElementById('roadSafetyTabs').innerHTML = ROAD_SAFETY_TABS.map(t =>
-    '<button class="metric-tab' + (t.key===activeRoadSafetyTab?' active':'') + '" data-key="' + t.key + '">' + t.label + '</button>'
+    '<button class="metric-tab' + (t.key===activeRoadSafetyTab?' active':'') + '" data-key="' + t.key + '" aria-pressed="' + (t.key===activeRoadSafetyTab) + '">' + t.label + '</button>'
   ).join('');
-  document.querySelectorAll('#roadSafetyTabs .metric-tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-      activeRoadSafetyTab = btn.dataset.key;
-      renderRoadSafetyTabs();
-      document.getElementById('rsTrendsPanel').classList.toggle('active', activeRoadSafetyTab === 'trends');
-      document.getElementById('rsVictimsPanel').classList.toggle('active', activeRoadSafetyTab === 'victims');
-      document.getElementById('rsZonesPanel').classList.toggle('active', activeRoadSafetyTab === 'zones');
-    });
-  });
   document.getElementById('rsTrendsPanel').classList.toggle('active', activeRoadSafetyTab === 'trends');
   document.getElementById('rsVictimsPanel').classList.toggle('active', activeRoadSafetyTab === 'victims');
   document.getElementById('rsZonesPanel').classList.toggle('active', activeRoadSafetyTab === 'zones');
@@ -1487,7 +1581,7 @@ const DOWNLOAD_TABS = [
 let activeDownloadTab = 'all';
 function renderDownloadTabs() {
   document.getElementById('downloadTabs').innerHTML = DOWNLOAD_TABS.map(t =>
-    '<button class="metric-tab' + (t.key===activeDownloadTab?' active':'') + '" data-key="' + t.key + '">' + t.label + '</button>'
+    '<button class="metric-tab' + (t.key===activeDownloadTab?' active':'') + '" data-key="' + t.key + '" aria-pressed="' + (t.key===activeDownloadTab) + '">' + t.label + '</button>'
   ).join('');
   document.querySelectorAll('#downloadTabs .metric-tab').forEach(btn => {
     btn.addEventListener('click', () => {
