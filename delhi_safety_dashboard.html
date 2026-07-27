@@ -172,6 +172,9 @@ details.method-detail code { font-family: "IBM Plex Mono", monospace; background
 .scatter-stat .label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-dim); font-weight: 700; }
 .scatter-stat .val { font-family: "IBM Plex Mono", monospace; font-size: 22px; font-weight: 700; margin-top: 2px; }
 .scatter-read { font-size: 11.5px; color: var(--text-dim); line-height: 1.5; }
+.zone-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 12px; margin-top: 14px; }
+.zone-item { font-size: 12.5px; color: var(--text); padding: 6px 8px; border-radius: 5px; background: var(--surface); border: 1px solid var(--border); display: flex; gap: 8px; align-items: baseline; }
+.zone-item .zone-num { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; color: var(--text-dim); flex-shrink: 0; }
 
 .download-panel { margin-top: 20px; padding: 18px 20px; }
 .download-panel h2 { font-family: 'Big Shoulders', sans-serif; font-size: 18px; font-weight: 800; margin: 0 0 4px; }
@@ -212,7 +215,7 @@ footer a { color: inherit; }
         <li><b>Metro station gates</b> (OpenStreetMap, 529 points) have real, complete coverage across all 15 districts.</li>
         <li><b>Police Infra</b> combines two sources: full <b>police stations</b> (Delhi Police GSDL, official geocoded list, 224 points — complete for all 15 districts) plus <b>chowkis, outposts &amp; booths</b> (OpenStreetMap community mapping, 120 points — no official geocoded chowki dataset exists publicly, confirmed against the same GSDL source). The combined figure is fully trustworthy for 14 of 15 districts; <b>Outer</b> shows 12 real stations but zero mapped chowkis, almost certainly an OSM under-mapping gap, so its combined count is flagged as an undercount.</li>
         <li><b>Road Deaths &amp; Hit-and-Run</b> (Delhi Traffic Police, 2022 Delhi Road Crash Fatalities Report) can be plotted on the map and scatter chart alongside the 2023 crime figures. It's a year older and uses Traffic Police's own <b>11-district reporting geography</b>, not the 15 Delhi Police districts — <b>Outer, Outer North, Rohini and South-West have no separate entry</b> and show hatched on the map, not zero deaths.</li>
-        <li><b>Year comparison</b>: the six NCRB crime metrics (theft, robbery, burglary, total IPC, crime against women, SLL crimes) each have a matching figure for <b>2022, 2023 and 2024</b> from the same NCRB district-wise tables. Use the <b>2022 / 2023 / 2024 / % Change</b> toggle above the map to switch views — the road-safety metrics have no equivalent multi-year series, so that toggle is hidden when they're selected. The 2024 IPC table also switched to the new BNS section numbering alongside the old IPC references — the offence categories carry over, it's the legal citation that changed.</li>
+        <li><b>Year comparison</b>: the six NCRB crime metrics (theft, robbery, burglary, total IPC, crime against women, SLL crimes) each have a matching figure for <b>2022, 2023 and 2024</b> from the same NCRB district-wise tables. Use the <b>2022 / 2023 / 2024</b> toggle above the map to switch the map, ranked list, and district detail panel to that year — the road-safety metrics have no equivalent multi-year series, so that toggle is hidden when they're selected. Selecting a year shows the percent change from the previous year in the district detail panel (2022 has no earlier year on record, so no change is shown there). The 2024 IPC table also switched to the new BNS section numbering alongside the old IPC references — the offence categories carry over, it's the legal citation that changed.</li>
       </ul>
     </div>
   </div>
@@ -298,6 +301,53 @@ footer a { color: inherit; }
     </div>
   </div>
 
+  <div class="panel scatter-panel">
+    <h2>Citywide road safety trends, 2014-2023</h2>
+    <p class="scatter-sub">Delhi Traffic Police's own citywide totals — not broken down by district, so this sits alongside the district analysis above rather than inside it. Indexed to 2014 = 100 so three very differently-scaled series (thousands of crashes, hundreds of deaths) can share one axis.</p>
+    <div class="scatter-layout">
+      <canvas id="trendsCanvas" width="640" height="320"></canvas>
+      <div>
+        <div class="scatter-stat">
+          <div class="label">Road crashes, 2014→2023</div>
+          <div class="val" id="trendsCrashesChange"></div>
+        </div>
+        <div class="scatter-stat">
+          <div class="label">Road crash fatalities, 2014→2023</div>
+          <div class="val" id="trendsFatalitiesChange"></div>
+        </div>
+        <div class="scatter-read" id="trendsRead"></div>
+      </div>
+    </div>
+    <button class="dl-download-btn" id="dlTrendsDownload" style="margin-top:14px;">⬇ Download CSV — Citywide Road Safety Trends</button>
+  </div>
+
+  <div class="panel scatter-panel">
+    <h2>Road deaths by mode of travel, 2019-2023</h2>
+    <p class="scatter-sub">Who's actually dying on Delhi's roads — pedestrians, two-wheeler riders, cyclists, car occupants, bus passengers, or other/slow-moving vehicles. Directly relevant to a walkability index: pedestrians are unprotected road users by definition.</p>
+    <div class="scatter-layout">
+      <canvas id="victimsCanvas" width="640" height="320"></canvas>
+      <div>
+        <div class="scatter-stat">
+          <div class="label">Pedestrian share of all road deaths, 2023</div>
+          <div class="val" id="pedestrianShare"></div>
+        </div>
+        <div class="scatter-stat">
+          <div class="label">Two-wheeler rider share, 2023</div>
+          <div class="val" id="twoWheelerShare"></div>
+        </div>
+        <div class="scatter-read" id="victimsRead"></div>
+      </div>
+    </div>
+    <button class="dl-download-btn" id="dlVictimsDownload" style="margin-top:14px;">⬇ Download CSV — Road Deaths by Mode of Travel</button>
+  </div>
+
+  <div class="panel scatter-panel">
+    <h2>87 accident-prone zones, 2021</h2>
+    <p class="scatter-sub">Delhi Traffic Police's official blackspot list for 2021 — junctions, flyovers, and stretches with a documented history of fatal crashes. The source report groups these into 6 Traffic Police Ranges (Outer, Eastern, Central, Western, New Delhi, Southern) on an accompanying map, which is a different geography from the 15 Delhi Police districts used everywhere else on this page, so the two aren't merged here. Locations only, not re-transcribed severity counts.</p>
+    <div class="zone-grid" id="zoneGrid"></div>
+    <button class="dl-download-btn" id="dlZonesDownload" style="margin-top:14px;">⬇ Download CSV — Accident-Prone Zones List</button>
+  </div>
+
   <div class="panel download-panel">
     <h2>Download the data</h2>
     <p class="method-sub">Every number on this page, exportable for reuse — plain CSV for scripting, or a full Excel workbook with sources, methodology, and a data dictionary included for citation.</p>
@@ -341,7 +391,7 @@ footer a { color: inherit; }
   </div>
 
   <footer>
-    <span><b>Sources:</b> Crime data (2022, 2023 &amp; 2024) — National Crime Records Bureau, Crime in India, District Wise Reports: <a href="https://www.ncrb.gov.in/uploads/files/1DistrictwiseIPCCrimes2024.xlsx" target="_blank" rel="noopener">IPC Crimes 2024</a>, <a href="https://www.ncrb.gov.in/uploads/files/1DistrictwiseIPCCrimes20231.xlsx" target="_blank" rel="noopener">IPC Crimes 2023</a>, <a href="https://www.ncrb.gov.in/uploads/nationalcrimerecordsbureau/custom/17016833111DistrictwiseIPCCrimes2022.xlsx" target="_blank" rel="noopener">IPC Crimes 2022</a>, <a href="https://www.ncrb.gov.in/uploads/files/2DistrictwiseSLLCrimes2024.xlsx" target="_blank" rel="noopener">SLL Crimes 2024</a>, <a href="https://www.ncrb.gov.in/uploads/files/2DistrictwiseSLLCrimes2023.xlsx" target="_blank" rel="noopener">SLL Crimes 2023</a>, <a href="https://www.ncrb.gov.in/uploads/nationalcrimerecordsbureau/custom/17016838002DistrictwiseSLLCrimes2022.xlsx" target="_blank" rel="noopener">SLL Crimes 2022</a>, <a href="https://www.ncrb.gov.in/uploads/files/3DistrictwiseCrimeagainstWomen2024.xlsx" target="_blank" rel="noopener">Crime against Women 2024</a>, <a href="https://www.ncrb.gov.in/uploads/files/3DistrictwiseCrimeagainstWomen2023.xlsx" target="_blank" rel="noopener">Crime against Women 2023</a>, <a href="https://www.ncrb.gov.in/uploads/nationalcrimerecordsbureau/custom/17016840143DistrictwiseCrimeagainstWomen2022.xlsx" target="_blank" rel="noopener">Crime against Women 2022</a> · Fatal road crashes &amp; hit-and-run: <a href="https://transport.delhi.gov.in/sites/default/files/2024-09/2022_delhi_road_crash_fatalities_report_1.pdf" target="_blank" rel="noopener">2022 Delhi Road Crash Fatalities Report</a>, Delhi Traffic Police / Transport Dept. GNCTD · Streetlight &amp; underpass survey: PAPL, via <a href="https://otd.delhi.gov.in/" target="_blank" rel="noopener">Delhi Transport Stack Open Transit Data</a> · Metro station gates: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> (railway=subway_entrance), ODbL · Police station locations &amp; district boundaries: Delhi Police GSDL, via <a href="https://gist.github.com/Vonter/a1f0f9d50a587ce059ddcfb086fc0fac" target="_blank" rel="noopener">community mirror</a>.</span>
+    <span><b>Sources:</b> Crime data (2022, 2023 &amp; 2024) — National Crime Records Bureau, Crime in India, District Wise Reports: <a href="https://www.ncrb.gov.in/uploads/files/1DistrictwiseIPCCrimes2024.xlsx" target="_blank" rel="noopener">IPC Crimes 2024</a>, <a href="https://www.ncrb.gov.in/uploads/files/1DistrictwiseIPCCrimes20231.xlsx" target="_blank" rel="noopener">IPC Crimes 2023</a>, <a href="https://www.ncrb.gov.in/uploads/nationalcrimerecordsbureau/custom/17016833111DistrictwiseIPCCrimes2022.xlsx" target="_blank" rel="noopener">IPC Crimes 2022</a>, <a href="https://www.ncrb.gov.in/uploads/files/2DistrictwiseSLLCrimes2024.xlsx" target="_blank" rel="noopener">SLL Crimes 2024</a>, <a href="https://www.ncrb.gov.in/uploads/files/2DistrictwiseSLLCrimes2023.xlsx" target="_blank" rel="noopener">SLL Crimes 2023</a>, <a href="https://www.ncrb.gov.in/uploads/nationalcrimerecordsbureau/custom/17016838002DistrictwiseSLLCrimes2022.xlsx" target="_blank" rel="noopener">SLL Crimes 2022</a>, <a href="https://www.ncrb.gov.in/uploads/files/3DistrictwiseCrimeagainstWomen2024.xlsx" target="_blank" rel="noopener">Crime against Women 2024</a>, <a href="https://www.ncrb.gov.in/uploads/files/3DistrictwiseCrimeagainstWomen2023.xlsx" target="_blank" rel="noopener">Crime against Women 2023</a>, <a href="https://www.ncrb.gov.in/uploads/nationalcrimerecordsbureau/custom/17016840143DistrictwiseCrimeagainstWomen2022.xlsx" target="_blank" rel="noopener">Crime against Women 2022</a> · Fatal road crashes &amp; hit-and-run: <a href="https://transport.delhi.gov.in/sites/default/files/2024-09/2022_delhi_road_crash_fatalities_report_1.pdf" target="_blank" rel="noopener">2022 Delhi Road Crash Fatalities Report</a>, Delhi Traffic Police / Transport Dept. GNCTD · Citywide road crash/fatality trends (2014-2023) and road deaths by mode of travel (2019-2023): Delhi Traffic Police annual road crash data · 87 accident-prone zones (2021): Delhi Traffic Police, "Accident-Prone Zones of the Year – 2021" · Streetlight &amp; underpass survey: PAPL, via <a href="https://otd.delhi.gov.in/" target="_blank" rel="noopener">Delhi Transport Stack Open Transit Data</a> · Metro station gates: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> (railway=subway_entrance), ODbL · Police station locations &amp; district boundaries: Delhi Police GSDL, via <a href="https://gist.github.com/Vonter/a1f0f9d50a587ce059ddcfb086fc0fac" target="_blank" rel="noopener">community mirror</a>.</span>
     <span>District boundary polygons simplified for display (~165m tolerance) — not survey-grade. IGI Airport unit and non-geographic units (Crime Branch, EOW, Metro, Railway, Vigilance, etc.) excluded from district figures.</span>
   </footer>
 </div>
@@ -352,6 +402,9 @@ const GRID = {"cell":1.2,"points":[[465,488,34],[631,448,27],[623,492,47],[459,5
 const CORR = {"streetlight":{"n":9,"r":-0.281,"coverage":"partial"},"underpass":{"n":9,"r":0.086,"coverage":"partial"},"metroGate":{"n":15,"r":0.254,"coverage":"full"},"policeInfra":{"n":14,"r":0.538,"coverage":"partial"}};
 const POLICE_MARKERS = {"stations":[[702.5,368.9,"PS CIVIL LINES"],[706.5,337.4,"PS TIMAR PUR"],[672.3,376.4,"PS ROOP NAGAR"],[642.2,405.2,"PS SARAI ROHILLA"],[681.2,410.8,"PS BARA HINDU RAO"],[656.3,403.4,"PS GULABI BAGH"],[679.3,362.6,"PS MAURICE NAGAR"],[698.2,428.8,"PS LAHORI GATE"],[685.5,431.6,"PS SADAR BAZAR"],[680.1,404.1,"PS SUBZI MANDI"],[663.7,283.4,"PS BURARI"],[717.4,423.6,"PS KOTWALI"],[717.3,416,"PS KASHMERE GATE"],[657.1,434.9,"PS KAROL BAGH"],[657.8,433.8,"PS D.B.G.ROAD"],[732.7,453.4,"PS DARYA GANJ"],[743.1,479.9,"PS I.P. ESTATE"],[641.3,466.3,"PS RAJINDER NAGAR"],[638,442.6,"PS PARSHAD NAGAR"],[695.7,439.4,"PS NABI KARIM"],[709.6,452.9,"PS KAMLA MARKET"],[708.9,439.2,"PS HAUZ QAZI"],[722,433.8,"PS JAMA MASJID"],[725.4,450.4,"PS CHANDNI MAHAL"],[628.2,421.8,"PS ANAND PARBAT"],[601.9,434.8,"PS PATEL NAGAR"],[682.4,446.9,"PS PAHAR GANJ"],[627,362.6,"PS ASHOK VIHAR"],[629.3,331.2,"PS ADARSH NAGAR"],[629.3,288.8,"PS JAHANGIR PURI"],[600.8,318.4,"PS SHALIMAR BAGH"],[580.3,368.4,"PS SUBHASH PLACE"],[658.5,344.9,"PS MODEL TOWN"],[599.2,244,"PS SWARUP NAGAR"],[804.5,412,"PS FARASH BAZAR"],[836,483.4,"PS MANDAWALI"],[832.4,516,"PS MAYUR VIHAR"],[851.5,388.8,"PS SEEMA PURI"],[802.5,395,"PS SHAHDARA"],[774.9,395,"PS SEELAM PUR"],[804.6,344.8,"PS GOKUL PURI"],[754.6,325.2,"PS KHAJURI KHAS"],[770.5,347.1,"PS BHAJAN PURA"],[838,353.9,"PS NAND NAGRI"],[786.8,290.2,"PS KARAWAL NAGAR"],[766,398.4,"PS NEW USMAN PUR"],[855.3,338.6,"PS HARSH VIHAR"],[720.4,591.8,"PS DEFENCE COLONY"],[709.9,550.3,"PS LODHI COLONY"],[681.3,620,"PS HAUZ KHAS"],[619.7,603.9,"PS VASANT VIHAR"],[634.5,581.7,"PS R.K.PURAM"],[667.5,574.4,"PS SAROJINI NAGAR"],[592.4,645.1,"PS VASANT KUNJ NORTH"],[707.9,571.8,"PS KOTLA MUBARAK PUR"],[695.1,661.2,"PS SAKET"],[690.2,710.2,"PS NEB SARAI"],[675.5,653.1,"PS MALVIYA NAGAR"],[326.3,510.9,"PS NAJAFGARH"],[490.8,655.3,"PS KAPASHERA"],[548.4,530.6,"PS DELHI CANTT."],[570,469.2,"PS NARAINA"],[488,505.2,"PS DABRI"],[444.7,592.2,"PS DWARKA SEC-23"],[474.1,507.8,"PS BINDA PUR"],[583.4,348.7,"PS MAURYA ENCLAVE"],[604.7,378.1,"PS KESHAV PURAM"],[682.2,349.1,"PS MUKHERJI NAGAR"],[418.8,175.8,"PS BAWANA"],[491.9,73.9,"PS NARELA"],[571.7,171.5,"PS ALI PUR"],[358.3,303.3,"PS KANJHAWALA"],[497.3,355.7,"PS MANGOL PURI"],[477.5,344.1,"PS SULTAN PURI"],[553.8,317,"PS PARSHANT VIHAR"],[477.4,263.7,"PS SHAHBAD DAIRY"],[523.3,317.8,"PS BUDH VIHAR"],[688.8,484,"PS PARLIAMENT STREET"],[661.9,523.3,"PS CHANAKYA PURI"],[685,532.4,"PS TUGLAK ROAD"],[724.2,496.5,"PS TILAK MARG"],[690.6,475,"PS CONNAUGHT PLACE"],[708.9,473.7,"PS BARAKHAMBA ROAD"],[673.5,458.6,"PS MANDIR MARG"],[800.4,450,"PS JAGAT PURI"],[830.3,492.5,"PS PANDAV NAGAR"],[853.5,504.9,"PS KALYAN PURI"],[788.2,429.4,"PS GEETA COLONY"],[836,408.5,"PS VIVEK VIHAR"],[794.7,408,"PS KRISHNA NAGAR"],[779.7,461.6,"PS SHAKAR PUR"],[774.9,421.1,"PS GANDHI NAGAR"],[862.9,522,"PS NEW ASHOK NAGAR"],[467.6,309.1,"PS BEGUM PUR"],[634.6,581.5,"PS SOUTH CAMPUS"],[590.7,770.4,"PS FATEHPUR BERI"],[811.3,704.8,"PS PUL PRAHLAD PUR"],[581.9,472.9,"PS INDER PURI"],[483.8,549.8,"PS PALAM VILLAGE"],[218.4,536.1,"PS JAFFARPUR KALAN"],[345.2,552.3,"PS CHHAWLA"],[732,585.5,"PS LAJPAT NAGAR"],[756.5,623.9,"PS KALKAJI"],[785.7,659.6,"PS OKHLA INDL. AREA"],[736.7,691,"PS SANGAM VIHAR"],[737.3,542.7,"PS H.N.DIN"],[813.6,597.1,"PS JAMIA NAGAR"],[746,642.2,"PS CHITRANJAN PARK"],[736.5,625.2,"PS GREATER KAILASH"],[732.5,666,"PS AMBEDKAR NAGAR"],[832,719.4,"PS BADAR PUR"],[796.8,636,"PS SARITA VIHAR"],[774.5,596.3,"PS NEW FRIENDS COLONY"],[732.4,601.8,"PS AMAR COLONY"],[856.8,701.6,"PS JAITPUR"],[771.8,653.1,"PS GOVIND PURI"],[561.4,395.5,"PS PUNJABI BAGH"],[512.2,401.3,"PS PASCHIM VIHAR EAST"],[584.4,420.2,"PS MOTI NAGAR"],[542.1,436.3,"PS RAJOURI GARDEN"],[510.5,511.7,"PS SAGAR PUR"],[455.3,483.2,"PS UTTAM NAGAR"],[482.1,477.7,"PS JANAK PURI"],[513.8,459.3,"PS TILAK NAGAR"],[566.4,456.5,"PS KIRTI NAGAR"],[460.6,474.5,"PS VIKAS PURI"],[544.6,480.8,"PS MAYA PURI"],[458.7,381.9,"PS NANGLOI"],[465.4,412.2,"PS NIHAL VIHAR"],[505.1,435.8,"PS KHYALA"],[636.8,669.3,"PS MEHRAULI"],[818.4,459.1,"PS PREET VIHAR"],[835.6,483.6,"PS MADHU VIHAR"],[783.2,386.8,"PS JAFFRABAD"],[740.6,266.6,"PS SONIA VIHAR"],[811.6,355.6,"PS JYOTI NAGAR"],[614.1,272.5,"PS BHALSWA DAIRY"],[633.9,384.2,"PS BHARAT NAGAR"],[541,353.5,"PS RANI BAGH"],[611.7,303.1,"PS MAHENDRA PARK"],[543.7,293.5,"PS K.N. KATJU MARG"],[538.9,333.3,"PS NORTH ROHINI"],[535.3,344.9,"PS SOUTH ROHINI"],[454.8,316.5,"PS AMAN VIHAR"],[397.7,544.8,"PS DWARKA NORTH"],[409.2,431.9,"PS RANHOLA"],[603.1,443.5,"PS RANJIT NAGAR"],[762.9,568,"PS SUNLIGHT COLONY"],[592.1,644.9,"PS VASANT KUNJ SOUTH"],[667.5,574.9,"PS SAFDARJUNG ENCLAVE"],[491.3,406.2,"PS PASCHIM VIHAR WEST"],[290.9,401.8,"PS MUNDKA"],[823.5,379.7,"PS MANSAROVER PARK"],[850.9,375,"PS G.T.B.ENCLAVE"],[877.1,484.5,"PS GHAZIPUR"],[291.9,458.7,"PS BABA HARIDAS NAGAR"],[458.1,568.3,"PS DWARKA SOUTH"],[714.7,419.9,"PS OLD DELHI RAILWAY STATION"],[709.9,410,"PS METRO STATION KASHMERE GATE"],[698.1,449.9,"PS NEW DELHI RAILWAY STATION"],[522.9,313.9,"PS METRO STATION RITHALA"],[746,405.3,"PS METRO STATION SHASTRI PARK"],[752.6,550,"PS HAZRAT NIZAMUDIN RAILWAY STATION"],[545.6,439,"PS METRO STATION RAJA GARDEN"],[711.3,550.3,"PS SPL.CELL"],[667.3,652.9,"PS CAW CELL"],[702.2,677.7,"PS CRIME BRANCH"],[645.8,416,"PS SARAI ROHILLA RAILWAY STATION"],[588.5,719.1,"PS METRO STATION GHITORNI"],[791.9,381.8,"PS WELCOME"],[815.7,431.6,"PS ANAND VIHAR"],[813,599.9,"PS METRO STATION OKHLA VIHAR"],[774.5,488.1,"PS METRO STATION YAMUNA DEPOT"],[709,473.3,"PS VIGILANCE"],[673,458,"PS EOW"],[667.9,515.8,"PS SOUTH AVENUE"],[666.9,496.5,"PS NORTH AVENUE"],[709.5,452.2,"PS E-POILCE STATION"],[454.4,379.1,"PS METRO STATION NANGLOI"],[388.3,504.3,"PS METRO STATION JANAK PURI"],[534.9,507.9,"PS DELHI CANTT.RAILWAY STATION"],[668.8,406.7,"PS SUBZI MANDI RAILWAY STATION"],[636.9,337,"PS METRO STATION AZAD PUR"],[710.8,439,"PS METRO STATION RAJIV CHOWK"],[735.5,486.6,"PS METRO STATION PRAGATI MAIDAN"],[683.6,572.3,"PS METRO STATION INA"],[593.3,356.6,"PS METRO STATION NETAJI SUBHASH PLACE"],[525.5,487.8,"PS HARI NAGAR"],[432.8,346.8,"PS PREM NAGAR"],[505.8,344.2,"PS VIJAY VIHAR"],[502.2,112.6,"PS NARELA INDL.AREA"],[649.9,641,"PS KISHAN GARH"],[751,616,"PS METRO STATION NEHRU PLACE"],[804.7,344.6,"PS DAYAL PUR"],[765.6,398.3,"PS SHASTRI PARK"],[779.7,461.3,"PS LAXMI NAGAR"],[851.1,447.6,"PS PATPARGANJ INDL. AREA"],[820,619.9,"PS SHAHEEN BAGH"],[855.5,653.4,"PS KALINDI KUNJ"],[482.8,359.5,"PS RAJ PARK"],[636.8,669.1,"PS MAIDAN GARHI"],[689.9,710.2,"PS TIGRI"],[706.4,337.6,"PS WAZIRABAD"],[407.4,475.8,"PS MOHAN GARDEN"],[468,310.1,"PS CYBER CRIME ROHINI"],[682.5,620.3,"PS CYBER CRIM SOUTH"],[797,636.6,"PS CYBER CRIME SOUTH EAST"],[619.2,603.9,"PS CYBER CRIME SOUTH WEST"],[850,477.5,"PS CYBER CRIME EAST"],[805,412.2,"PS CYBER CRIME SHAHDARA"],[780.3,399,"PS CYBER CRIME NORTH EAST"],[704.5,369.4,"PS CYBER CRIME NORTH"],[732.9,454,"PS CYBER CRIME CENTRAL"],[626.9,363.2,"PS CYBER CRIME NORTH WEST"],[576,303.9,"PS CYBER CRIME OUTER NORTH"],[524.8,368.7,"PS CYBER CRIME OUTER"],[439.8,568.2,"PS CYBER CRIME DWARKA"],[542.1,435.9,"PS CYBER CRIME WEST"],[688.6,484.4,"PS CYBER CRIME NEW DELHI"]],"posts":[[638.4,466.8,"Police Post"],[460.7,474.6,"Vikas Puri"],[332.2,506.1,"Police Chowki"],[445.2,591.7,"Dwarka Ploce Station"],[563.8,402.6,"Police Booth"],[642.7,466,"Police Residential Complex"],[545.3,439,"Police Post"],[736.5,439.1,"Police Post"],[723.1,428.3,"Cycle Market Police Post"],[709.5,834,"Police Post Sanjay Colony"],[702.6,368.7,"Police Post"],[703.4,464.3,"Police Post"],[710.9,355.4,"Police Post Majnu ka Tila"],[853,504.7,"Police Post"],[708.1,651,"Police Post PSRI Hospital"],[813.4,373.9,"Police Chowki"],[835.8,408.4,"Vivek Vihar"],[620.9,298.3,"Women Facilitation Booth"],[709.7,528.2,"Police Post, Khan Market"],[683,501.2,"No entry for foreigners going towards the government buildings"],[666.1,497,"Gate 35, No entry for foreigners"],[671.5,497.6,"Police Post"],[792.4,368.4,"Delhi Police Post (Babarpur)"],[609.6,251.9,"Police Post"],[698.1,447.5,"Railway Police Force Station"],[790.4,474.1,"Police Post"],[748.3,618.6,"All Women police assistance booth"],[720.1,479.4,"DCP Residence"],[806.7,597.4,"Police check point"],[711.5,526.5,"Police assistance booth"],[679.9,404.1,"Crime Against Women Cell"],[633.6,661.3,"Delhi Police — Mehrauli"],[492,436.1,"Keshavpur Sabzi Mandi"],[563.1,534.8,"Pink Booth"],[664.2,572.1,"Facilitation Kiosk"],[660.8,572.4,"Police Booth"],[698.3,472,"Prepaid Auto Service"],[697.2,453.3,"Tourist Police Booth"],[851.4,441.2,"Delhi Police"],[732.9,454.2,"Office Of The Deputy Commissioner Of Police Central District"],[710.2,439.9,"Delhi Police"],[805,411.4,"DCP Shahdara District Office"],[823.3,429.2,"Delhi Police Dog Squad"],[418.9,543.7,"Police Post"],[553.2,519.7,"Integrated Facilitation Booth"],[619.7,548.1,"Integrated Facilitation Booth"],[733.2,613.4,"Kailash Colony Market Integrated Facilitation Booth"],[738.1,602.6,"Police Post"],[722.3,578.2,"Police Post"],[788.3,398.5,"Welcome Metro Station Integrated Facilitation Booth"],[831.1,388.9,"Swami Dayanand Hospital Police Booth"],[690.5,710.3,"Police Post"],[636.6,335.8,"Integrated police booth, Model Town"],[812.8,644.3,"Police Post"],[622,320.6,"Bharola Police Post"],[613.1,308.6,"Integrated Police Booth"],[553,316.6,"Police Post"],[687.3,483.1,"Delhi Police Headquarters"],[528.4,309.8,"Metro Walk"],[653.5,337.9,"Police Booth Model Town"],[683.6,575.9,"Integrated Facilitation Booth"],[701,585.7,"Integrated Police Facility"],[699.1,469.2,"Public Facilitation Booth"],[682.5,576.8,"Suvidha Seva"],[719.3,404.1,"Police Post ISBT"],[710.8,409.5,"Police Post"],[592.3,645,"Police Post"],[578.3,647,"Police Post"],[397.4,545,"Police Post"],[802.4,394.4,"Police Post"],[474.2,507.7,"Police Post"],[771.8,653,"Police Post"],[460.2,474.8,"Police Post"],[642.6,405.1,"Police Post"],[545.4,427,"Nishkam Seva Bhawan"],[445.2,591.9,"Police Post"],[888.9,487.2,"Police Post"],[804.3,412.8,"DCP Shahdara District Office"],[709.4,452.4,"Police Post"],[699,649.4,"Police Post"],[455.4,483,"Police Post"],[674.9,336.5,"Police Post"],[685.2,431.5,"Police Post"],[738.7,483.6,"Police Post"],[762.7,568.3,"Police Post"],[491.7,74.2,"Police Post"],[635.4,580.6,"Police Post"],[855.6,653.3,"Police Post"],[613.9,272.3,"Police Post"],[561.9,275.9,"Crime Branch"],[805.3,345.1,"Police Post"],[785.1,352.8,"Police Post"],[542.3,436.1,"Police Post"],[855.6,653.3,"kalindi kunj pollice station"],[618.5,549.5,"Police Post"],[706.9,455.2,"Central Reserve Police Force Transit Camp"],[673.2,458.5,"Economic Offences Wing"],[683.6,369.6,"Integrated Police Booth"],[681.6,363.9,"Pink Booth"],[629.9,306.3,"Police Post"]]};
 const AIRPORT_SHAPE = {"path":"M518,569.2 L520.4,569 L523,569.8 L525.3,570.6 L527.7,571.3 L530.1,572 L533.4,573 L535.8,573.7 L538.2,574.5 L541.5,575.6 L543.8,576.5 L544.1,579.5 L544.6,582.6 L545.3,586.3 L545.4,589.2 L546.3,592.1 L546.7,594.8 L544.9,597.7 L547.6,599.1 L550.4,600 L554.1,600.8 L556.6,601.4 L559.3,602 L561.9,602.5 L562,606.1 L561.1,609.3 L560.2,611.9 L559,614.4 L556.9,616.2 L554.9,617.9 L553,619.6 L550.2,622 L548.4,623.9 L546.3,625.6 L544.1,626.7 L541.6,628 L538.5,629.1 L536.1,629.6 L535.9,632.5 L535.7,635.3 L536.3,638 L534.9,640.2 L532.8,641.7 L530.6,643.1 L528.4,644.1 L526.1,645 L523.5,644.6 L521.8,642.5 L519.2,641.9 L516.5,641.3 L513.9,640.7 L511.3,640 L508.6,639.4 L506,638.8 L502.9,640.3 L500.2,639.8 L497.6,639.3 L494.6,638.9 L491.8,638.4 L489.3,637.8 L487,637.1 L484.5,636.1 L482.2,635.3 L479.8,634.3 L477.2,633.7 L474.5,633 L472.1,632.4 L469.3,631.7 L466.4,631 L463.8,630.4 L460.7,629.6 L457.4,628.9 L455.1,627.7 L454,624.9 L449.2,623.5 L450.7,621.3 L453.3,621.2 L454.1,618.2 L456.8,618.6 L458.6,615.6 L459.3,612.9 L461.3,611.2 L463.8,611.8 L466.4,612.5 L468.7,613.1 L471.2,613.6 L472.1,610.4 L472.8,607.6 L473.5,604.8 L471.2,603.3 L468.9,602.3 L466.7,601 L467.6,598.4 L469.4,596 L475.9,586.9 L478.2,583.8 L479.8,581.6 L481.8,579 L484.8,575 L487.5,577 L491.5,576.7 L494,578.1 L497.5,578.7 L499.8,579.1 L502,577.4 L504.9,577.4 L507.5,577.6 L510.8,577.1 L513.2,576.3 L515.1,574.7 L513.6,571.9 L513.9,568.8 L516.8,568.8 L518,569.2 Z","cx":508,"cy":609};
+const TRENDS = [{"year":2014,"crashes":8623,"fatalities":1671,"fatalCrashes":1629},{"year":2015,"crashes":8085,"fatalities":1622,"fatalCrashes":1582},{"year":2016,"crashes":7375,"fatalities":1591,"fatalCrashes":1548},{"year":2017,"crashes":6673,"fatalities":1584,"fatalCrashes":1565},{"year":2018,"crashes":6515,"fatalities":1690,"fatalCrashes":1657},{"year":2019,"crashes":5610,"fatalities":1463,"fatalCrashes":1433},{"year":2020,"crashes":4178,"fatalities":1196,"fatalCrashes":1163},{"year":2021,"crashes":4720,"fatalities":1239,"fatalCrashes":1206},{"year":2022,"crashes":5652,"fatalities":1461,"fatalCrashes":1428},{"year":2023,"crashes":5834,"fatalities":1457,"fatalCrashes":1432}];
+const VICTIMS = [{"year":2019,"pedestrianKilled":678,"pedestrianInjured":1887,"cyclistKilled":36,"cyclistInjured":108,"carKilled":39,"carInjured":281,"twoWheelerKilled":496,"twoWheelerInjured":2110,"busPassengerKilled":5,"busPassengerInjured":30,"slowMovingKilled":26,"slowMovingInjured":151,"animalDrivenKilled":1,"animalDrivenInjured":10,"otherKilled":182,"otherInjured":575,"totalKilled":1463,"totalInjured":5152},{"year":2020,"pedestrianKilled":505,"pedestrianInjured":1241,"cyclistKilled":48,"cyclistInjured":115,"carKilled":37,"carInjured":184,"twoWheelerKilled":441,"twoWheelerInjured":1613,"busPassengerKilled":5,"busPassengerInjured":18,"slowMovingKilled":21,"slowMovingInjured":110,"animalDrivenKilled":2,"animalDrivenInjured":9,"otherKilled":132,"otherInjured":372,"totalKilled":1196,"totalInjured":3662},{"year":2021,"pedestrianKilled":504,"pedestrianInjured":1536,"cyclistKilled":45,"cyclistInjured":123,"carKilled":42,"carInjured":158,"twoWheelerKilled":472,"twoWheelerInjured":1868,"busPassengerKilled":3,"busPassengerInjured":12,"slowMovingKilled":18,"slowMovingInjured":145,"animalDrivenKilled":0,"animalDrivenInjured":7,"otherKilled":155,"otherInjured":424,"totalKilled":1239,"totalInjured":4273},{"year":2022,"pedestrianKilled":629,"pedestrianInjured":1777,"cyclistKilled":48,"cyclistInjured":134,"carKilled":39,"carInjured":227,"twoWheelerKilled":552,"twoWheelerInjured":2263,"busPassengerKilled":3,"busPassengerInjured":25,"slowMovingKilled":26,"slowMovingInjured":200,"animalDrivenKilled":1,"animalDrivenInjured":2,"otherKilled":163,"otherInjured":573,"totalKilled":1461,"totalInjured":5201},{"year":2023,"pedestrianKilled":622,"pedestrianInjured":1941,"cyclistKilled":30,"cyclistInjured":118,"carKilled":45,"carInjured":234,"twoWheelerKilled":549,"twoWheelerInjured":2356,"busPassengerKilled":0,"busPassengerInjured":18,"slowMovingKilled":24,"slowMovingInjured":203,"animalDrivenKilled":3,"animalDrivenInjured":7,"otherKilled":184,"otherInjured":593,"totalKilled":1457,"totalInjured":5470}];
+const ACCIDENT_ZONES = ["BHALSWA CHOWK","MUKARBA CHOWK","PUNJABI BAGH CHOWK","ZAKHIRA FLYOVER","LIBASPUR BUS STAND","MUKUNDPUR CHOWK","MOTI BAGH FLYOVER","NANGLI POONA","SIRASPUR","SHASTRI PARK/IT PARK","MAJNU KA TILA","METRO STATION HAIDER PUR","SWAROOP NAGAR","SEELAMPUR T POINT","RAMA ROAD CROSSING","METRO STATION MADIPUR","RML HOSPITAL","WAZIRABAD","MAYA PURI CHOWK","MANGOLPURI FLYOVER","KARKARI MORE","JHARERA VILLAGE","HAIDER PUR","BURARI CHOWK","GAGAN CINEMA","OKHLA MORE","TELCO GAJIPUR","KHAJOORI KHAS PUSTA ROAD","NEAR HALDI RAM WAZIRPUR","C-1 JANAKPURI","RAJDHANI PARK","ROUND ABOUT SEEMAPURI","GTK DEPOT JAHANGIRPURI","GANDHI VIHAR BUS STAND","MOOL CHAND","POWER HOUSE MAHAVIR ENCLAVE","UNDER PASS GAJIPUR","PEERAGARHI CHOWK","AKSHARDHAM MANDIR","DHAULA KUAN","RAJOURI GARDEN","LONI ROAD CROSSING","RAILWAY UNDER PUL PRAHLADPUR","VIJAY GHAT","TOLL PLAZA BADARPUR","ANAND VIHAR ISBT","NARAINA","VIP COLLEGE PITAMPURA","RAJA HARISHCHANDER HOSPITAL","MUNDKA METRO STATION","NIGAM BODH GHAT","FLYOVER RAJA RAM MARG","SUBHASH NAGAR METRO STATION","LAJPAT RAI MARKET (LAL QILA)","SHAHDARA FLYOVER","MODI MILL FLYOVER","PREM BARI PULL","JAHANGIR PURI BUS STAND OUTER RING ROAD","CHIRAG DELHI FLYOVER","SHASTRI PARK METRO STATION","KHAMPUR VILLAGE","AZADPUR SABZI MANDI","KESHOPUR T POINT","TUGLAQABAD METRO STATION","NEAR MANISH FURNITURE MKT NANGLOI ROAD","JASOLA VIHAR","ESI HOSPITAL RING ROAD","KHICHADI PUR","METRO STATION SADAR BAZAR","SANTOM HOSPITAL OUTER RING ROAD","POWER HOUSE PITAMPURA","PANCHSHEEL FLYOVER","NIZAMUDIN YAMUNA BRIDGE","DILSHAD GARDEN","GOKALPURI","HYAAT HOTEL","HANUMAN MANDIR YAMUNA BAZAR","TEES HAZARI RED LIGHT","MURGA MANDI FLYOVER","SARITA VIHAR FLYOVER","DURGAPURI CHOWK","MAHIPALPUR FLYOVER","DTC BUS DEPOT NAND NAGRI","HARNAM PALACE ASHOK NAGAR","SEC-1,2 RED LIGHT DWARKA","NIRANKARI COLONY","KHAJOORI CHOWK"];
 
 const METRICS = [
   { key: 'theft', label: 'Theft', short: 'theft', year: '2023', full: 'Theft (Sec. 379 IPC), 2023', prevKey: 'theft2022', prevYear: '2022', key2024: 'theft2024' },
@@ -401,16 +454,12 @@ function fmtNum(n) { return n == null ? '—' : n.toLocaleString('en-IN'); }
 function currentMetric() { return METRICS.find(m => m.key === activeMetric); }
 
 // A metric with a prevKey has three years on record — 2022, 2023 (its canonical, unsuffixed key)
-// and 2024 — activeYear picks which to read, or computes the 2022→2024 percent change. Metrics
-// without a prevKey (road-safety, single-year only) always return their one value regardless of activeYear.
+// and 2024 — activeYear picks which to read. Metrics without a prevKey (road-safety, single-year
+// only) always return their one value regardless of activeYear.
 function metricValue(d, m) {
   if (!m.prevKey) return d[m.key];
   if (activeYear === '2022') return d[m.prevKey];
   if (activeYear === '2024') return d[m.key2024];
-  if (activeYear === 'change') {
-    if (d[m.key2024] == null || d[m.prevKey] == null || d[m.prevKey] === 0) return null;
-    return ((d[m.key2024] - d[m.prevKey]) / d[m.prevKey]) * 100;
-  }
   return d[m.key];
 }
 
@@ -418,7 +467,6 @@ function yearLabel(m) {
   if (!m.prevKey) return m.full;
   if (activeYear === '2022') return m.full.replace('2023', '2022');
   if (activeYear === '2024') return m.full.replace('2023', '2024');
-  if (activeYear === 'change') return m.full.replace(', 2023', ', % change 2022→2024');
   return m.full;
 }
 
@@ -426,17 +474,7 @@ function yearSuffix(m) {
   if (!m.prevKey) return m.year;
   if (activeYear === '2022') return m.prevYear;
   if (activeYear === '2024') return '2024';
-  if (activeYear === 'change') return m.prevYear + '→2024 change';
   return m.year;
-}
-
-// Diverging color for YoY change: green (--good) for a decrease, rust for an increase,
-// mixed toward the panel surface color as the magnitude shrinks toward zero.
-function changeColor(pct, maxAbs) {
-  if (pct == null) return 'var(--map-nodata-stripe)';
-  const t = maxAbs > 0 ? Math.max(0, Math.min(1, Math.abs(pct) / maxAbs)) : 0;
-  const base = pct >= 0 ? 'var(--rust)' : 'var(--good)';
-  return 'color-mix(in srgb, ' + base + ' ' + Math.round(t * 100) + '%, var(--surface) ' + Math.round((1 - t) * 100) + '%)';
 }
 
 function buildMetricTabs() {
@@ -453,7 +491,7 @@ function buildYearToggle() {
   const m = currentMetric();
   if (!m.prevKey) { el.style.display = 'none'; return; }
   el.style.display = '';
-  const opts = [['2022', '2022'], ['2023', '2023'], ['2024', '2024'], ['change', '% Change 22→24']];
+  const opts = [['2022', '2022'], ['2023', '2023'], ['2024', '2024']];
   el.innerHTML = opts.map(([val, label]) => '<button class="metric-tab' + (activeYear===val?' active':'') + '" data-val="' + val + '">' + label + '</button>').join('');
   el.querySelectorAll('.metric-tab').forEach(btn => {
     btn.addEventListener('click', () => { activeYear = btn.dataset.val; render(); });
@@ -463,10 +501,6 @@ function buildYearToggle() {
 function currentDomain() {
   const m = currentMetric();
   const vals = DATA.map(d => metricValue(d, m)).filter(v => v != null);
-  if (activeYear === 'change') {
-    const maxAbs = Math.max(...vals.map(Math.abs), 1);
-    return [-maxAbs, maxAbs];
-  }
   return [Math.min(...vals), Math.max(...vals)];
 }
 
@@ -480,7 +514,7 @@ function renderMap() {
     // A null value (no data for this district on this metric) is NOT the same as the lowest
     // real value — render it as a flat neutral instead of the rustScale's low end, which would
     // misleadingly read as "least crime here" for a district that simply has no reported figure.
-    const fill = v == null ? 'var(--map-nodata-stripe)' : activeYear === 'change' ? changeColor(v, hi) : rustScale(hi === lo ? .5 : (v - lo) / (hi - lo));
+    const fill = v == null ? 'var(--map-nodata-stripe)' : rustScale(hi === lo ? .5 : (v - lo) / (hi - lo));
     const sel = selected === d.name ? ' style="stroke:var(--night);stroke-width:2.4;"' : '';
     parts.push('<path class="district" data-name="' + d.name + '" d="' + d.path + '" fill="' + fill + '"' + sel + '></path>');
   });
@@ -515,18 +549,9 @@ function renderMap() {
   });
 
   document.getElementById('legendLabel').textContent = yearLabel(m);
-  if (activeYear === 'change') {
-    document.getElementById('legendMin').textContent = '−' + Math.round(hi) + '%';
-    document.getElementById('legendMax').textContent = '+' + Math.round(hi) + '%';
-    document.getElementById('legendScale').innerHTML = Array.from({length:10}, (_,i) => {
-      const pct = lo + (hi - lo) * i / 9;
-      return '<span style="background:' + changeColor(pct, hi) + '"></span>';
-    }).join('');
-  } else {
-    document.getElementById('legendMin').textContent = fmtNum(lo);
-    document.getElementById('legendMax').textContent = fmtNum(hi);
-    document.getElementById('legendScale').innerHTML = Array.from({length:10}, (_,i) => '<span style="background:' + rustScale(i/9) + '"></span>').join('');
-  }
+  document.getElementById('legendMin').textContent = fmtNum(lo);
+  document.getElementById('legendMax').textContent = fmtNum(hi);
+  document.getElementById('legendScale').innerHTML = Array.from({length:10}, (_,i) => '<span style="background:' + rustScale(i/9) + '"></span>').join('');
 }
 
 function renderList() {
@@ -539,9 +564,9 @@ function renderList() {
     const v = metricValue(d, m);
     // Floor at 3% so the district with the lowest real value still shows a visible sliver
     // instead of a 0-width bar that reads as "no data."
-    const pct = v == null ? 0 : activeYear === 'change' ? Math.max(3, Math.abs(v) / hi * 100) : Math.max(3, (hi===lo?100:(v-lo)/(hi-lo)*100));
-    const color = v == null ? 'var(--map-nodata-stripe)' : activeYear === 'change' ? changeColor(v, hi) : rustScale(hi===lo?.5:(v-lo)/(hi-lo));
-    const valLabel = v == null ? '—' : activeYear === 'change' ? (v >= 0 ? '+' : '') + v.toFixed(1) + '%' : fmtNum(v);
+    const pct = v == null ? 0 : Math.max(3, (hi===lo?100:(v-lo)/(hi-lo)*100));
+    const color = v == null ? 'var(--map-nodata-stripe)' : rustScale(hi===lo?.5:(v-lo)/(hi-lo));
+    const valLabel = fmtNum(v);
     return '<div class="rank-row' + (selected===d.name?' selected':'') + '" data-name="' + d.name + '">' +
       '<span class="rank-num">' + (i+1) + '</span>' +
       '<span class="rank-name">' + d.name + '</span>' +
@@ -576,14 +601,27 @@ function yoyBadge(cur, prev, label) {
   return '<span class="yoy-badge" style="color:' + color + '">' + arrow + ' ' + (pct >= 0 ? '+' : '') + pct.toFixed(1) + '% ' + label + '</span>';
 }
 
-function computeAnalysis(d) {
+// Maps a crime metric's canonical (unsuffixed, 2023) key to whichever year's field is
+// actually being displayed right now, so the detail panel and its narrative can follow
+// the same 2022/2023/2024 toggle as the map and ranked list.
+function yearField(baseKey, year) {
+  const m = METRICS.find(x => x.key === baseKey);
+  if (!m || !m.prevKey) return baseKey;
+  if (year === '2022') return m.prevKey;
+  if (year === '2024') return m.key2024;
+  return m.key;
+}
+function prevYearOf(year) { return year === '2024' ? '2023' : year === '2023' ? '2022' : null; }
+
+function computeAnalysis(d, year) {
   const n = DATA.length;
-  const ipcRank = rankOf(d, 'totalIPC');
-  const theftRank = rankOf(d, 'theft');
-  const cawRank = rankOf(d, 'crimeAgainstWomen');
-  const theftPct = pctVsCityAvg(d, 'theft');
+  const ipcKey = yearField('totalIPC', year), theftKey = yearField('theft', year), cawKey = yearField('crimeAgainstWomen', year);
+  const ipcRank = rankOf(d, ipcKey);
+  const theftRank = rankOf(d, theftKey);
+  const cawRank = rankOf(d, cawKey);
+  const theftPct = pctVsCityAvg(d, theftKey);
   const severityWord = ipcRank <= 5 ? 'among the highest-crime districts' : ipcRank >= 11 ? 'among the lower-crime districts' : 'in the middle of the pack';
-  const crimeP = d.name + ' ranks <b>' + ordinal(ipcRank) + ' of ' + n + '</b> districts by total IPC crime — ' + severityWord + ' in Delhi, with theft cases ' +
+  const crimeP = d.name + ' ranks <b>' + ordinal(ipcRank) + ' of ' + n + '</b> districts by total IPC crime in <b>' + year + '</b> — ' + severityWord + ' in Delhi, with theft cases ' +
     (theftPct >= 0 ? '<b>' + theftPct + '% above</b>' : '<b>' + Math.abs(theftPct) + '% below</b>') +
     ' the citywide average (' + ordinal(theftRank) + ' highest for theft specifically). It ranks ' + ordinal(cawRank) + ' of ' + n + ' for crime against women.';
 
@@ -636,7 +674,21 @@ function renderDetail() {
   const el = document.getElementById('detail');
   const d = DATA.find(x => x.name === selected) || DATA.find(x => x.name === 'South-East');
   if (!d) { el.innerHTML = ''; return; }
-  const a = computeAnalysis(d);
+  const detailYear = activeYear;
+  const a = computeAnalysis(d, detailYear);
+  const prevYear = prevYearOf(detailYear);
+  function crimeRow(label, baseKey) {
+    const key = yearField(baseKey, detailYear);
+    const val = d[key];
+    let sub = '';
+    if (prevYear) {
+      const prevKey = yearField(baseKey, prevYear);
+      const prevVal = d[prevKey];
+      const badge = yoyBadge(val, prevVal, 'vs ' + prevYear);
+      sub = '<span class="stat-sub">' + badge + '</span>';
+    }
+    return '<div class="stat"><span class="stat-label">' + label + ' (' + detailYear + ')</span><span class="stat-val">' + fmtNum(val) + '</span>' + sub + '</div>';
+  }
 
   const infraTiles = INFRA.map(inf => {
     const covered = infraCovered(d, inf.key);
@@ -653,12 +705,12 @@ function renderDetail() {
       <h2>${d.name}</h2>
       <span class="area">${d.areaSqKm.toLocaleString('en-IN')} km²</span>
     </div>
-    <div class="stat"><span class="stat-label">Theft (2023)</span><span class="stat-val">${fmtNum(d.theft)}</span><span class="stat-sub">2022 ${fmtNum(d.theft2022)} · 2024 ${fmtNum(d.theft2024)} ${yoyBadge(d.theft2024, d.theft2022, "'22→'24")}</span></div>
-    <div class="stat"><span class="stat-label">Robbery (2023)</span><span class="stat-val">${fmtNum(d.robbery)}</span><span class="stat-sub">2022 ${fmtNum(d.robbery2022)} · 2024 ${fmtNum(d.robbery2024)} ${yoyBadge(d.robbery2024, d.robbery2022, "'22→'24")}</span></div>
-    <div class="stat"><span class="stat-label">Burglary (2023)</span><span class="stat-val">${fmtNum(d.burglary)}</span><span class="stat-sub">2022 ${fmtNum(d.burglary2022)} · 2024 ${fmtNum(d.burglary2024)} ${yoyBadge(d.burglary2024, d.burglary2022, "'22→'24")}</span></div>
-    <div class="stat"><span class="stat-label">Total IPC (2023)</span><span class="stat-val">${fmtNum(d.totalIPC)}</span><span class="stat-sub">2022 ${fmtNum(d.totalIPC2022)} · 2024 ${fmtNum(d.totalIPC2024)} ${yoyBadge(d.totalIPC2024, d.totalIPC2022, "'22→'24")}</span></div>
-    <div class="stat"><span class="stat-label">Vs. women (2023)</span><span class="stat-val">${fmtNum(d.crimeAgainstWomen)}</span><span class="stat-sub">2022 ${fmtNum(d.crimeAgainstWomen2022)} · 2024 ${fmtNum(d.crimeAgainstWomen2024)} ${yoyBadge(d.crimeAgainstWomen2024, d.crimeAgainstWomen2022, "'22→'24")}</span></div>
-    <div class="stat"><span class="stat-label">SLL crimes (2023)</span><span class="stat-val">${fmtNum(d.totalSLL)}</span><span class="stat-sub">2022 ${fmtNum(d.totalSLL2022)} · 2024 ${fmtNum(d.totalSLL2024)} ${yoyBadge(d.totalSLL2024, d.totalSLL2022, "'22→'24")}</span></div>
+    ${crimeRow('Theft', 'theft')}
+    ${crimeRow('Robbery', 'robbery')}
+    ${crimeRow('Burglary', 'burglary')}
+    ${crimeRow('Total IPC', 'totalIPC')}
+    ${crimeRow('Vs. women', 'crimeAgainstWomen')}
+    ${crimeRow('SLL crimes', 'totalSLL')}
     <div class="section-divider"></div>
     <div class="stat"><span class="stat-label"><span class="confidence-dot ${d.fatalRoadCrashes2022!=null?'high':'partial'}"></span>Road deaths '22</span>${d.fatalRoadCrashes2022!=null ? '<span class="stat-val">'+fmtNum(d.fatalRoadCrashes2022)+'</span>' : '<span class="stat-val nodata">Not reported</span>'}</div>
     <div class="stat"><span class="stat-label"><span class="confidence-dot ${d.hitAndRunCrashes2022!=null?'high':'partial'}"></span>Hit & run '22</span>${d.hitAndRunCrashes2022!=null ? '<span class="stat-val">'+fmtNum(d.hitAndRunCrashes2022)+'</span>' : '<span class="stat-val nodata">Not reported</span>'}</div>
@@ -793,12 +845,162 @@ function renderScatter() {
   updateVersusLabel();
 }
 
+function renderTrends() {
+  const first = TRENDS[0], last = TRENDS[TRENDS.length - 1];
+  const crashesChange = Math.round(((last.crashes - first.crashes) / first.crashes) * 100);
+  const fatalitiesChange = Math.round(((last.fatalities - first.fatalities) / first.fatalities) * 100);
+  document.getElementById('trendsCrashesChange').textContent = (crashesChange >= 0 ? '+' : '') + crashesChange + '%';
+  document.getElementById('trendsCrashesChange').style.color = crashesChange >= 0 ? 'var(--rust)' : 'var(--good)';
+  document.getElementById('trendsFatalitiesChange').textContent = (fatalitiesChange >= 0 ? '+' : '') + fatalitiesChange + '%';
+  document.getElementById('trendsFatalitiesChange').style.color = fatalitiesChange >= 0 ? 'var(--rust)' : 'var(--good)';
+  const minYear = TRENDS.reduce((m,t) => t.fatalities < m.fatalities ? t : m, TRENDS[0]);
+  document.getElementById('trendsRead').textContent = 'Both crashes and fatalities fell sharply through 2020 (the COVID lockdown year, ' + minYear.year + ' was the low point at ' + fmtNum(minYear.fatalities) + ' deaths) and have partly rebounded since — 2023 fatalities are still ' + Math.round(((last.fatalities - minYear.fatalities)/minYear.fatalities)*100) + '% above that low.';
+
+  const canvas = document.getElementById('trendsCanvas');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const PAD = { l: 45, r: 100, t: 20, b: 30 };
+  ctx.clearRect(0,0,W,H);
+
+  const styles = getComputedStyle(document.body);
+  const border = styles.getPropertyValue('--border').trim();
+  const textDim = styles.getPropertyValue('--text-dim').trim();
+  const text = styles.getPropertyValue('--text').trim();
+  const amber = styles.getPropertyValue('--amber').trim();
+  const rust = styles.getPropertyValue('--rust').trim();
+  const slate = styles.getPropertyValue('--slate').trim();
+
+  const series = [
+    { key: 'crashes', label: 'Road crashes', color: slate },
+    { key: 'fatalities', label: 'Fatalities', color: rust },
+    { key: 'fatalCrashes', label: 'Fatal crashes', color: amber },
+  ];
+  const indexed = series.map(s => ({ ...s, vals: TRENDS.map(t => (t[s.key] / TRENDS[0][s.key]) * 100) }));
+  const allVals = indexed.flatMap(s => s.vals);
+  const yMin = Math.min(...allVals, 100) * 0.95, yMax = Math.max(...allVals, 100) * 1.05;
+  const n = TRENDS.length;
+  const px = i => PAD.l + (i/(n-1)) * (W-PAD.l-PAD.r);
+  const py = v => H-PAD.b - ((v-yMin)/(yMax-yMin)) * (H-PAD.t-PAD.b);
+
+  ctx.strokeStyle = border; ctx.lineWidth = 1;
+  ctx.font = '10px -apple-system, sans-serif';
+  ctx.fillStyle = textDim;
+  for (let i=0;i<n;i++) {
+    const gx = px(i);
+    ctx.beginPath(); ctx.moveTo(gx,PAD.t); ctx.lineTo(gx,H-PAD.b); ctx.stroke();
+    if (i % 2 === 0) ctx.fillText(TRENDS[i].year, gx-12, H-PAD.b+14);
+  }
+  ctx.beginPath(); ctx.moveTo(PAD.l, py(100)); ctx.lineTo(W-PAD.r, py(100)); ctx.setLineDash([3,3]); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillText('2014 = 100', PAD.l+4, py(100)-4);
+
+  indexed.forEach(s => {
+    ctx.strokeStyle = s.color; ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    s.vals.forEach((v,i) => { i===0 ? ctx.moveTo(px(i),py(v)) : ctx.lineTo(px(i),py(v)); });
+    ctx.stroke();
+    s.vals.forEach((v,i) => { ctx.beginPath(); ctx.arc(px(i),py(v),2.6,0,Math.PI*2); ctx.fillStyle = s.color; ctx.fill(); });
+  });
+
+  let ly = PAD.t;
+  indexed.forEach(s => {
+    ctx.fillStyle = s.color;
+    ctx.fillRect(W-PAD.r+14, ly, 10, 10);
+    ctx.fillStyle = text; ctx.font = '11px -apple-system, sans-serif';
+    ctx.fillText(s.label, W-PAD.r+28, ly+9);
+    ly += 20;
+  });
+}
+
+function renderVictimsByMode() {
+  const last = VICTIMS[VICTIMS.length - 1];
+  const pedShare = Math.round((last.pedestrianKilled / last.totalKilled) * 100);
+  const twShare = Math.round((last.twoWheelerKilled / last.totalKilled) * 100);
+  document.getElementById('pedestrianShare').textContent = pedShare + '%';
+  document.getElementById('twoWheelerShare').textContent = twShare + '%';
+  const allPedHighest = VICTIMS.every(v => v.pedestrianKilled >= v.cyclistKilled && v.pedestrianKilled >= v.carKilled && v.pedestrianKilled >= v.busPassengerKilled);
+  document.getElementById('victimsRead').textContent = 'Pedestrians and two-wheeler riders together account for ' + (pedShare+twShare) + '% of all road deaths in ' + last.year + '.' +
+    (allPedHighest ? ' Pedestrians are the single largest killed category of any mode in every year from ' + VICTIMS[0].year + ' to ' + last.year + ' except where two-wheeler riders edge slightly ahead.' : '');
+
+  const groups = [
+    { key: 'pedestrian', label: 'Pedestrian', color: 'var(--rust)' },
+    { key: 'twoWheeler', label: 'Two-wheeler', color: 'var(--amber)' },
+    { key: 'car', label: 'Car occupant', color: 'var(--slate)' },
+    { key: 'cyclist', label: 'Cyclist', color: 'var(--good)' },
+    { key: 'busPassenger', label: 'Bus passenger', color: '#7c3aed' },
+  ];
+  const canvas = document.getElementById('victimsCanvas');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const PAD = { l: 45, r: 110, t: 20, b: 30 };
+  ctx.clearRect(0,0,W,H);
+
+  const styles = getComputedStyle(document.body);
+  const border = styles.getPropertyValue('--border').trim();
+  const textDim = styles.getPropertyValue('--text-dim').trim();
+  const text = styles.getPropertyValue('--text').trim();
+
+  const otherOf = v => v.slowMovingKilled + v.animalDrivenKilled + v.otherKilled;
+  const stackKeys = ['pedestrianKilled','twoWheelerKilled','carKilled','cyclistKilled','busPassengerKilled'];
+  const maxTotal = Math.max(...VICTIMS.map(v => v.totalKilled)) * 1.1;
+  const n = VICTIMS.length;
+  const barW = (W-PAD.l-PAD.r) / n * 0.6;
+  const px = i => PAD.l + (i+0.5) * (W-PAD.l-PAD.r)/n;
+  const py = v => H-PAD.b - (v/maxTotal) * (H-PAD.t-PAD.b);
+
+  ctx.strokeStyle = border; ctx.lineWidth = 1;
+  ctx.font = '10px -apple-system, sans-serif';
+  ctx.fillStyle = textDim;
+  for (let i=0;i<=4;i++) {
+    const gy = H-PAD.b - i*(H-PAD.t-PAD.b)/4;
+    ctx.beginPath(); ctx.moveTo(PAD.l,gy); ctx.lineTo(W-PAD.r,gy); ctx.stroke();
+    ctx.fillText(Math.round(maxTotal*i/4), 6, gy+4);
+  }
+
+  VICTIMS.forEach((v,i) => {
+    let yTop = H-PAD.b;
+    const cx = px(i);
+    stackKeys.forEach(key => {
+      const val = v[key];
+      const h = (val/maxTotal) * (H-PAD.t-PAD.b);
+      const g = groups.find(g => key.startsWith(g.key));
+      ctx.fillStyle = g.color.startsWith('var') ? styles.getPropertyValue(g.color.slice(4,-1)).trim() : g.color;
+      ctx.fillRect(cx-barW/2, yTop-h, barW, h);
+      yTop -= h;
+    });
+    const otherVal = otherOf(v);
+    const hOther = (otherVal/maxTotal) * (H-PAD.t-PAD.b);
+    ctx.fillStyle = textDim;
+    ctx.fillRect(cx-barW/2, yTop-hOther, barW, hOther);
+    ctx.fillStyle = text; ctx.font = '10px -apple-system, sans-serif';
+    ctx.fillText(v.year, cx-10, H-PAD.b+14);
+  });
+
+  let ly = PAD.t;
+  [...groups, { key:'other', label:'Slow-moving / animal-driven / other', color: textDim }].forEach(g => {
+    ctx.fillStyle = g.color.startsWith('var') ? styles.getPropertyValue(g.color.slice(4,-1)).trim() : g.color;
+    ctx.fillRect(W-PAD.r+8, ly, 10, 10);
+    ctx.fillStyle = text; ctx.font = '10px -apple-system, sans-serif';
+    ctx.fillText(g.label, W-PAD.r+22, ly+9);
+    ly += 18;
+  });
+}
+
+function renderZones() {
+  const el = document.getElementById('zoneGrid');
+  el.innerHTML = ACCIDENT_ZONES.map((name, i) =>
+    '<div class="zone-item"><span class="zone-num">' + (i+1) + '</span><span>' + name + '</span></div>'
+  ).join('');
+}
+
 function render() {
   buildMetricTabs();
   renderMap();
   renderList();
   renderDetail();
   renderMethod();
+  renderTrends();
+  renderVictimsByMode();
+  renderZones();
 }
 
 function heatColor(t) {
@@ -996,6 +1198,24 @@ document.getElementById('dlCorrDownload').addEventListener('click', () => {
   triggerDownload('gaitway_delhi_correlation_matrix.csv', toCSV(headers, rows));
 });
 
+document.getElementById('dlTrendsDownload').addEventListener('click', () => {
+  const headers = ['Year', 'Road Crashes', 'Road Crash Fatalities', 'Fatal Road Crashes'];
+  const rows = TRENDS.map(t => [t.year, t.crashes, t.fatalities, t.fatalCrashes]);
+  triggerDownload('gaitway_delhi_road_safety_trends_2014_2023.csv', toCSV(headers, rows));
+});
+
+document.getElementById('dlVictimsDownload').addEventListener('click', () => {
+  const headers = ['Year','Pedestrian Killed','Pedestrian Injured','Cyclists Killed','Cyclists Injured','Car Occupants Killed','Car Occupants Injured','Scooter/Motorcycle Riders Killed','Scooter/Motorcycle Riders Injured','Bus Passengers Killed','Bus Passengers Injured','Slow Moving Vehicles Killed','Slow Moving Vehicles Injured','Animal Driven Vehicles Killed','Animal Driven Vehicles Injured','Other Killed','Other Injured','Total Killed','Total Injured'];
+  const rows = VICTIMS.map(v => [v.year, v.pedestrianKilled, v.pedestrianInjured, v.cyclistKilled, v.cyclistInjured, v.carKilled, v.carInjured, v.twoWheelerKilled, v.twoWheelerInjured, v.busPassengerKilled, v.busPassengerInjured, v.slowMovingKilled, v.slowMovingInjured, v.animalDrivenKilled, v.animalDrivenInjured, v.otherKilled, v.otherInjured, v.totalKilled, v.totalInjured]);
+  triggerDownload('gaitway_delhi_road_deaths_by_mode_2019_2023.csv', toCSV(headers, rows));
+});
+
+document.getElementById('dlZonesDownload').addEventListener('click', () => {
+  const headers = ['Rank (per source report)', 'Accident-Prone Zone'];
+  const rows = ACCIDENT_ZONES.map((name, i) => [i+1, name]);
+  triggerDownload('gaitway_delhi_accident_prone_zones_2021.csv', toCSV(headers, rows));
+});
+
 function updateVersusLabel() {
   const inf = INFRA.find(i => i.key === scatterType);
   const m = METRICS.find(x => x.key === scatterYMetric);
@@ -1119,6 +1339,9 @@ function buildSourcesSheet() {
     ['SLL crimes (2023)', 'NCRB, Crime in India 2023 — Districtwise SLL (Special & Local Laws) Crimes', 'https://www.ncrb.gov.in/uploads/files/2DistrictwiseSLLCrimes2023.xlsx', 'All 15 districts.'],
     ['SLL crimes (2022)', 'NCRB, Crime in India 2022 — Districtwise SLL (Special & Local Laws) Crimes', 'https://www.ncrb.gov.in/uploads/nationalcrimerecordsbureau/custom/17016838002DistrictwiseSLLCrimes2022.xlsx', 'All 15 districts.'],
     ['Fatal road crashes, hit-and-run', 'Delhi Traffic Police / Transport Department GNCTD, 2022 Delhi Road Crash Fatalities Report', 'https://transport.delhi.gov.in/sites/default/files/2024-09/2022_delhi_road_crash_fatalities_report_1.pdf', '11 of 15 districts — Traffic Police uses its own 11-district reporting geography, not the 15 Delhi Police districts. Outer, Outer North, Rohini, South-West have no separate entry.'],
+    ['Citywide road crashes/fatalities, 2014-2023', 'Delhi Traffic Police annual road crash data', 'No single public URL — citywide totals, not district-level', 'Not broken down by district, so not merged into the per-district metrics above. Used only in the standalone "Citywide road safety trends" chart.'],
+    ['Road deaths by mode of travel, 2019-2023', 'Delhi Traffic Police annual road crash data', 'No single public URL — citywide totals, not district-level', 'Pedestrian, cyclist, car occupant, two-wheeler rider, bus passenger, slow-moving/animal-driven, and other categories. Citywide only, same caveat as above.'],
+    ['87 accident-prone zones, 2021', 'Delhi Traffic Police, "Accident-Prone Zones of the Year – 2021"', 'No single public URL', 'Named blackspot locations only. The source report also groups these into 6 Traffic Police Ranges (Outer, Eastern, Central, Western, New Delhi, Southern) on an accompanying map with a fatal-count legend (3 / 4-6 / 7-8 per zone) — not reproduced here since that Range geography is different from the 15 Delhi Police districts used elsewhere on this page, and the per-zone Range/severity was not reliably re-transcribable from the source map.'],
     ['Streetlights', 'PAPL streetlight survey', 'https://otd.delhi.gov.in/ — Delhi Transport Stack Open Transit Data, agency=paplilabs', '9 of 15 districts — the survey vehicle only physically drove through part of Delhi. Zero elsewhere means unsurveyed, not unlit.'],
     ['Pedestrian underpasses', 'PAPL underpass survey', 'https://otd.delhi.gov.in/ — Delhi Transport Stack Open Transit Data, same agency', 'Same 9 districts as streetlights — identical survey vehicle, identical gap.'],
     ['Metro station gates', 'OpenStreetMap, railway=subway_entrance tag', 'https://www.openstreetmap.org/copyright — ODbL license', 'All 15 districts — thorough community mapping citywide.'],
