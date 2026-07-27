@@ -322,7 +322,7 @@ let showLights = false;
 let showPolice = false;
 let selected = null;
 let scatterType = 'streetlight';
-let scatterYMetric = 'theft';
+let scatterYMetric = 'hitAndRunCrashes2022';
 
 function rustScale(t) {
   const c1 = [230, 214, 179], c2 = [177, 74, 52];
@@ -466,13 +466,27 @@ function computeAnalysis(d) {
   });
   const infraP = infraLines.join(' ');
 
+  // Headline finding: streetlight density vs. hit-and-run density, r=+0.664 (n=8) — see the
+  // scatter panel below for the live, checkable version of this same number.
+  const hrCovered = infraCovered(d, 'streetlight') && d.hitAndRunCrashes2022 != null;
+  let correlationP = null;
+  if (hrCovered) {
+    const hrRate = d.hitAndRunCrashes2022 / d.areaSqKm;
+    const hrRates = DATA.filter(x => infraCovered(x,'streetlight') && x.hitAndRunCrashes2022 != null)
+      .map(x => x.hitAndRunCrashes2022 / x.areaSqKm).sort((a,b)=>b-a);
+    const hrRank = hrRates.indexOf(hrRate) + 1;
+    correlationP = 'Citywide, streetlight density and hit-and-run crash density move together fairly strongly (<b>r = +0.664</b>, 8 districts with both real streetlight and 2022 road-safety data). ' + d.name + "'s own hit-and-run density ranks " + ordinal(hrRank) + ' of ' + hrRates.length + ' in that same group.';
+  } else if (d.hitAndRunCrashes2022 != null) {
+    correlationP = 'The streetlight-vs-hit-and-run relationship (r = +0.664 across 8 districts) cannot be checked here — this district has no PAPL streetlight survey coverage, even though it does have 2022 road-safety data.';
+  }
+
   const coveredCount = INFRA.filter(inf => infraCovered(d, inf.key)).length;
   const confidenceLevel = coveredCount >= Math.ceil(INFRA.length * 0.75) ? 'high' : 'partial';
   const confidenceLabel = confidenceLevel === 'high'
     ? 'High confidence — ' + coveredCount + ' of ' + INFRA.length + ' infrastructure layers covered here'
     : 'Limited confidence — only ' + coveredCount + ' of ' + INFRA.length + ' infrastructure layers covered here';
 
-  return { crimeP, roadP, infraP, confidenceLevel, confidenceLabel };
+  return { crimeP, roadP, infraP, correlationP, confidenceLevel, confidenceLabel };
 }
 
 function renderDetail() {
@@ -511,6 +525,7 @@ function renderDetail() {
       <div class="confidence-badge ${a.confidenceLevel}">${a.confidenceLevel === 'high' ? '●' : '◐'} ${a.confidenceLabel}</div>
       <p>${a.crimeP}</p>
       <p>${a.roadP}</p>
+      ${a.correlationP ? '<p style="color:var(--text);font-weight:600;">' + a.correlationP + '</p>' : ''}
       <p>${a.infraP}</p>
     </div>
   `;
